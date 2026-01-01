@@ -1,0 +1,85 @@
+---
+import { getSortedPosts } from "@utils/content-utils";
+import { buildCategoryTree } from "@utils/category-utils";
+import { Icon } from "astro-icon/components";
+import CategoryDrawer from "./CategoryDrawer.astro";
+
+const allPosts = await getSortedPosts();
+const categoryTree = await buildCategoryTree(allPosts);
+
+function getTotalCount(cat: any): number {
+  let count = cat.count;
+  if (cat.children) {
+    for (const child of cat.children) {
+      count += getTotalCount(child);
+    }
+  }
+  return count;
+}
+
+// Get only top-level categories, sort by total post count (including children), max 15
+const topCategories = Object.values(categoryTree)
+  .filter((cat) => cat.path.length === 1)
+  .map((cat) => ({ ...cat, totalCount: getTotalCount(cat) }))
+  .sort((a, b) => b.totalCount - a.totalCount)
+  .slice(0, 15);
+---
+
+<div class="card-base px-6 py-5">
+  <div class="flex items-center gap-2 mb-4">
+    <Icon
+      name="material-symbols:folder-outline-rounded"
+      class="text-[var(--primary)]"
+    />
+    <h2 class="text-lg font-bold text-90">分类</h2>
+  </div>
+
+  <div class="flex flex-col gap-0">
+    {topCategories.map((category) => <CategoryDrawer category={category} />)}
+  </div>
+
+  <a
+    href="/category/"
+    class="mt-4 text-center text-sm text-[var(--primary)] hover:underline block"
+  >
+    查看全部分类 &rarr;
+  </a>
+</div>
+
+<script>
+  function setupCategoryDrawer() {
+    const toggles = document.querySelectorAll(".drawer-toggle");
+    toggles.forEach((toggle) => {
+      if (toggle.hasAttribute("data-bound")) return;
+      toggle.setAttribute("data-bound", "true");
+
+      toggle.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const drawer = toggle.closest(".category-drawer");
+        const content = drawer.querySelector(".drawer-content");
+        const icon = toggle.querySelector("svg");
+
+        if (!content || !icon) return;
+
+        const isExpanded = content.style.gridTemplateRows === "1fr";
+
+        if (isExpanded) {
+          content.style.gridTemplateRows = "0fr";
+          icon.style.transform = "rotate(0deg)";
+        } else {
+          content.style.gridTemplateRows = "1fr";
+          icon.style.transform = "rotate(90deg)";
+        }
+      });
+    });
+  }
+
+  setupCategoryDrawer();
+
+  // Re-run on Swup navigation
+  if (window.swup) {
+    window.swup.hooks.on("content:replace", setupCategoryDrawer);
+  }
+</script>

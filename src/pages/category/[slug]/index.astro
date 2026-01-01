@@ -1,0 +1,146 @@
+---
+import type { GetStaticPaths } from "astro";
+import MainGridLayout from "@layouts/MainGridLayout.astro";
+import { getSortedPosts } from "@utils/content-utils";
+import {
+  parseCategoryPath,
+  getPostsByCategory,
+  getCategoryBreadcrumbs,
+  buildCategoryTree,
+  getCategorySlug,
+  parseSlugToCategoryPath,
+  CATEGORY_SEPARATOR,
+} from "@utils/category-utils";
+import CategoryPanel from "@components/CategoryPanel.astro";
+import CategoryTree from "@components/CategoryTree.astro";
+import { Icon } from "astro-icon/components";
+
+export const getStaticPaths = (async () => {
+  const allPosts = await getSortedPosts();
+  const paths: any[] = [];
+
+  const categoryMap = new Map<string, string[]>(); // slug -> path array
+
+  for (const post of allPosts) {
+    const categories = post.data.category;
+    if (!categories) continue;
+
+    const categoryArray =
+      typeof categories === "string" ? [categories] : categories;
+
+    for (const category of categoryArray) {
+      const parts = category.split(CATEGORY_SEPARATOR).map((s) => s.trim());
+
+      let currentPath: string[] = [];
+      for (const part of parts) {
+        currentPath.push(part);
+        const slug = getCategorySlug(currentPath);
+        categoryMap.set(slug, [...currentPath]);
+      }
+    }
+  }
+
+  for (const [slug, path] of categoryMap) {
+    paths.push({
+      params: { slug },
+      props: { categoryPath: path },
+    });
+  }
+
+  return paths;
+}) satisfies GetStaticPaths;
+
+let { categoryPath } = Astro.props;
+// Fallback: if categoryPath is not provided (shouldn't happen), parse from slug
+if (!categoryPath) {
+  categoryPath = parseSlugToCategoryPath(Astro.params.slug!);
+}
+const allPosts = await getSortedPosts();
+const categoryPosts = await getPostsByCategory(allPosts, categoryPath);
+const breadcrumbs = getCategoryBreadcrumbs(categoryPath);
+const categoryTree = await buildCategoryTree(allPosts);
+const currentCategoryNode = categoryTree[categoryPath.join(CATEGORY_SEPARATOR)];
+
+const categoryTitle = categoryPath.join(" > ");
+const postCount = categoryPosts.length;
+---
+
+<MainGridLayout title={`分类: ${categoryTitle}`}>
+  <div class="card-base px-8 py-6 mb-6">
+    <nav class="flex items-center gap-2 text-sm mb-4 text-50">
+      <a href="/" class="hover:text-[var(--primary)] transition">
+        <Icon name="material-symbols:home-outline-rounded" class="text-lg" />
+      </a>
+      <Icon name="material-symbols:chevron-right-rounded" class="text-sm" />
+      <a href="/category/" class="hover:text-[var(--primary)] transition"
+        >分类</a
+      >
+      {
+        breadcrumbs.map((crumb, index) => (
+          <>
+            <Icon
+              name="material-symbols:chevron-right-rounded"
+              class="text-sm"
+            />
+            {index === breadcrumbs.length - 1 ? (
+              <span class="text-75 font-medium">{crumb.name}</span>
+            ) : (
+              <a
+                href={crumb.url}
+                class="hover:text-[var(--primary)] transition"
+              >
+                {crumb.name}
+              </a>
+            )}
+          </>
+        ))
+      }
+    </nav>
+
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold text-90 mb-2">
+        {categoryTitle}
+      </h1>
+      <p class="text-50 text-sm">
+        共 {postCount} 篇文章
+      </p>
+    </div>
+
+    <!-- Debug Info -->
+    <div
+      class="p-4 bg-black/5 rounded mb-4 text-xs font-mono whitespace-pre-wrap"
+    >
+      Category Path: {JSON.stringify(categoryPath)}
+      Post Count: {categoryPosts.length}
+      All Posts: {allPosts.length}
+    </div>
+
+    {
+      currentCategoryNode &&
+        currentCategoryNode.children &&
+        currentCategoryNode.children.length > 0 && (
+          <div class="mb-6">
+            <div class="flex flex-col gap-2">
+              {currentCategoryNode.children.map((child) => (
+                <CategoryTree node={child} depth={0} />
+              ))}
+            </div>
+          </div>
+        )
+    }
+
+    {
+      categoryPosts.length > 0 ? (
+        <CategoryPanel posts={categoryPosts} />
+      ) : (
+        <div class="text-center py-12 text-50">
+          <Icon
+            name="material-symbols:folder-open-outline-rounded"
+            class="text-6xl mb-4"
+          />
+          <p>该分类下暂无文章</p>
+        </div>
+      )
+    }
+  </div>
+</MainGridLayout>

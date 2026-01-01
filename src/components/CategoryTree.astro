@@ -1,0 +1,62 @@
+---
+import type { CategoryNode } from "@/types/config";
+import { Icon } from "astro-icon/components";
+
+interface Props {
+  node: CategoryNode;
+  depth?: number;
+}
+
+const { node, depth = 0 } = Astro.props;
+---
+
+<div class="relative transition-all">
+  <div
+    class:list={[
+      "flex items-center justify-between rounded-lg hover:bg-[var(--btn-plain-bg-hover)] transition-all group select-none",
+      depth === 0
+        ? "p-4 bg-[var(--card-bg)] border border-[var(--line-divider)] mb-2"
+        : "p-2",
+    ]}
+  >
+    <a href={node.url} class="flex items-center gap-2 flex-1 min-w-0">
+      <Icon
+        name={depth === 0
+          ? "material-symbols:folder-open-rounded"
+          : "material-symbols:folder-outline-rounded"}
+        class:list={[
+          "text-[var(--primary)] shrink-0",
+          depth === 0 ? "text-2xl" : "text-xl",
+        ]}
+      />
+      <span
+        class:list={[
+          "truncate group-hover:text-[var(--primary)] transition-all",
+          depth === 0 ? "font-bold text-lg text-90" : "font-medium text-75",
+        ]}>{node.name}</span
+      >
+    </a>
+    <span
+      class="text-sm text-50 bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded shrink-0 ml-2"
+    >
+      {node.count}
+    </span>
+  </div>
+
+  {
+    node.children && node.children.length > 0 && (
+      <div
+        class:list={[
+          "flex flex-col gap-1",
+          depth === 0
+            ? "mt-1 mb-3 ml-6 pl-4 border-l-2 border-[var(--line-divider)]"
+            : "ml-4 pl-4 border-l-2 border-[var(--line-divider)]",
+        ]}
+      >
+        {node.children.map((child) => (
+          <Astro.self node={child} depth={depth + 1} />
+        ))}
+      </div>
+    )
+  }
+</div>

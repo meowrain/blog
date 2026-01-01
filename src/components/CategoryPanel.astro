@@ -1,0 +1,37 @@
+---
+import type { CollectionEntry } from "astro:content";
+import { getPostUrlBySlug } from "../utils/url-utils";
+import { formatDateToYYYYMMDD } from "../utils/date-utils";
+
+interface Props {
+	posts: CollectionEntry<"posts">[];
+}
+
+const { posts } = Astro.props;
+---
+
+<div class="flex flex-col gap-3">
+	{posts.map((post) => (
+		<a
+			href={getPostUrlBySlug(post.slug)}
+			class="card-base px-6 py-4 rounded-lg hover:border-[var(--primary)] transition-all group"
+		>
+			<div class="flex items-start gap-4">
+				<div class="text-sm text-50 whitespace-nowrap">
+					{formatDateToYYYYMMDD(post.data.published)}
+				</div>
+				<div class="w-px h-5 bg-[var(--line-divider)]"></div>
+				<div class="flex-1 min-w-0">
+					<h3 class="font-bold text-75 group-hover:text-[var(--primary)] transition-all">
+						{post.data.title}
+					</h3>
+					{post.data.description && (
+						<p class="text-sm text-50 mt-1 line-clamp-1">
+							{post.data.description}
+						</p>
+					)}
+				</div>
+			</div>
+		</a>
+	))}
+</div>

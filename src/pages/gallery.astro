@@ -1,0 +1,633 @@
+---
+import MainGridLayout from "@layouts/MainGridLayout.astro";
+import { Icon } from "astro-icon/components";
+---
+
+<MainGridLayout title="相册">
+  <div class="card-base p-4 md:p-8 min-h-[80vh]">
+    <!-- 标题和筛选器 -->
+    <div class="mb-6">
+      <div class="flex items-center gap-2 mb-4">
+        <div class="h-8 w-8 rounded-lg bg-[var(--primary)] flex items-center justify-center text-white dark:text-black/70">
+          <Icon name="material-symbols:photo-library-outline-rounded" class="text-[1.5rem]"></Icon>
+        </div>
+        <h1 class="text-2xl font-bold text-90">相册</h1>
+        <div id="total-count" class="ml-auto text-sm text-50">加载中...</div>
+      </div>
+
+      <!-- 年月筛选器 -->
+      <div id="filter-container" class="flex flex-wrap gap-2 items-center">
+        <!-- 由JS动态生成 -->
+        <div class="text-sm text-50">加载筛选器中...</div>
+      </div>
+    </div>
+
+    <!-- 空状态提示 -->
+    <div id="empty-state" class="hidden text-center py-12 text-50">
+      <Icon name="material-symbols:photo-library-outline-rounded" class="text-[4rem] mb-4 opacity-50"></Icon>
+      <p>暂无图片</p>
+      <p class="text-sm mt-2">将图片放入 <code class="px-2 py-1 rounded bg-black/5 dark:bg-white/5">public/api/i/年/月/</code> 目录即可</p>
+    </div>
+
+    <!-- 图片网格 -->
+    <div id="gallery-grid" class="hidden flex gap-3 items-start transition-opacity duration-500 opacity-0">
+      <!-- Columns injected by JS -->
+    </div>
+
+    <div id="loading-sentinel" class="hidden w-full py-10 flex justify-center">
+      <div class="loading-spinner w-8 h-8 border-4 border-[var(--primary)] border-t-transparent rounded-full animate-spin"></div>
+    </div>
+
+    <div id="end-message" class="hidden w-full py-10 text-center text-50">
+      已经到底啦 ~
+    </div>
+
+    <!-- 初始加载提示 -->
+    <div id="initial-loading" class="flex flex-col items-center justify-center py-20">
+      <div class="loading-spinner w-12 h-12 border-4 border-[var(--primary)] border-t-transparent rounded-full animate-spin mb-4"></div>
+      <p class="text-50">加载图片数据中...</p>
+    </div>
+  </div>
+
+  <!-- 图片放大查看器 -->
+  <div
+    id="lightbox"
+    class="fixed inset-0 z-[9999] bg-black/95 backdrop-blur-md hidden items-center justify-center transition-opacity duration-300"
+  >
+    <!-- 顶部工具栏 -->
+    <div class="absolute top-0 left-0 right-0 flex items-center justify-between p-4 bg-gradient-to-b from-black/50 to-transparent z-20">
+      <div id="lightbox-info" class="text-white/90 text-sm font-mono"></div>
+      <button
+        id="lightbox-close"
+        class="text-white/80 hover:text-white transition-colors p-2 rounded-lg hover:bg-white/10"
+      >
+        <Icon name="material-symbols:close-rounded" class="text-[2rem]"></Icon>
+      </button>
+    </div>
+
+    <!-- 导航按钮 -->
+    <button
+      id="lightbox-prev"
+      class="absolute left-4 z-20 text-white/80 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed p-2 rounded-lg hover:bg-white/10"
+    >
+      <Icon name="material-symbols:chevron-left-rounded" class="text-[3rem]"></Icon>
+    </button>
+    <button
+      id="lightbox-next"
+      class="absolute right-4 z-20 text-white/80 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed p-2 rounded-lg hover:bg-white/10"
+    >
+      <Icon name="material-symbols:chevron-right-rounded" class="text-[3rem]"></Icon>
+    </button>
+
+    <!-- 图片 -->
+    <img
+      id="lightbox-img"
+      src=""
+      alt="放大图片"
+      class="max-w-[90vw] max-h-[85vh] object-contain transition-transform duration-300 select-none"
+    />
+
+    <!-- 底部计数器 -->
+    <div
+      id="lightbox-counter"
+      class="absolute bottom-6 px-4 py-2 rounded-full bg-black/50 text-white/90 text-sm backdrop-blur-sm z-20"
+    ></div>
+  </div>
+</MainGridLayout>
+
+<style>
+  .loading-bar {
+    transition: opacity 0.5s ease-out;
+  }
+
+  @keyframes loading-progress {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+  }
+
+  .animate-loading-progress {
+    animation: loading-progress 1.5s ease-in-out infinite;
+  }
+
+  .filter-btn.active {
+    background: var(--primary);
+    color: white;
+  }
+
+  .dark .filter-btn.active {
+    color: rgba(0, 0, 0, 0.7);
+  }
+
+  .month-pills {
+    display: none;
+  }
+
+  .month-pills.show {
+    display: flex;
+  }
+</style>
+
+<script>
+  // 配置
+  const BATCH_SIZE = 20;
+
+  // 全局状态
+  let sortedImages = [];
+  let currentIndex = 0;
+  let lightboxIndex = 0;
+  let columns = [];
+  let columnHeights = [];
+  let colCount = 0;
+  let observer;
+  let currentFilter = 'all';
+  let filteredImages = [];
+  let loadedImageHeights = new Map();
+  let yearGroups = {};
+  let years = [];
+
+  // 从JSON文件加载图片数据
+  async function loadImagesData() {
+    try {
+      const response = await fetch('/api/i/images.json');
+      if (!response.ok) {
+        throw new Error('Failed to load images data');
+      }
+      const data = await response.json();
+
+      // 整理图片数据并提取年月信息
+      const imagesWithDate = data.map((item) => ({
+        ...item,
+        yearMonth: `${item.year}-${item.month.padStart(2, '0')}`
+      }));
+
+      // 按年月倒序排序
+      sortedImages = imagesWithDate.sort((a, b) => {
+        return b.date.localeCompare(a.date);
+      });
+
+      // 提取所有唯一的年月组合
+      const yearMonthSet = new Set(sortedImages.map(img => img.yearMonth));
+      const yearMonths = Array.from(yearMonthSet).sort((a, b) => b.localeCompare(a));
+
+      // 按年分组
+      yearGroups = yearMonths.reduce((acc, ym) => {
+        const [year, month] = ym.split('-');
+        if (!acc[year]) acc[year] = [];
+        acc[year].push({ year, month, value: ym });
+        return acc;
+      }, {});
+
+      years = Object.keys(yearGroups).sort((a, b) => b.localeCompare(a));
+
+      return sortedImages;
+    } catch (error) {
+      console.error('Error loading images data:', error);
+      const { initialLoading } = getElements();
+      if (initialLoading) {
+        initialLoading.innerHTML = '<p class="text-red-500">加载失败，请刷新页面重试</p>';
+      }
+      return [];
+    }
+  }
+
+  // 生成筛选按钮
+  function renderFilterButtons() {
+    const container = document.getElementById('filter-container');
+    if (!container) return;
+
+    let html = `
+      <button
+        id="filter-all"
+        class="filter-btn active px-3 py-1.5 rounded-lg text-sm font-medium transition-all
+               bg-[var(--primary)] text-white dark:text-black/70
+               hover:opacity-90"
+        data-filter="all"
+      >
+        全部
+      </button>
+    `;
+
+    years.forEach(year => {
+      html += `
+        <div class="flex gap-1 items-center">
+          <button
+            class="filter-btn year-btn px-3 py-1.5 rounded-lg text-sm font-medium transition-all
+                   bg-black/5 dark:bg-white/5 text-75 hover:bg-black/10 dark:hover:bg-white/10"
+            data-filter="${year}"
+          >
+            ${year}年
+          </button>
+          <div class="month-pills hidden flex-wrap gap-1">
+      `;
+
+      yearGroups[year].forEach(({ month, value }) => {
+        html += `
+          <button
+            class="filter-btn month-btn px-2 py-1 rounded text-xs transition-all
+                   bg-black/5 dark:bg-white/5 text-50 hover:bg-black/10 dark:hover:bg-white/10"
+            data-filter="${value}"
+            data-year="${year}"
+          >
+            ${parseInt(month)}月
+          </button>
+        `;
+      });
+
+      html += `
+          </div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+  }
+
+  // 获取 DOM 元素
+  function getElements() {
+    return {
+      grid: document.getElementById('gallery-grid'),
+      sentinel: document.getElementById('loading-sentinel'),
+      endMessage: document.getElementById('end-message'),
+      totalCount: document.getElementById('total-count'),
+      emptyState: document.getElementById('empty-state'),
+      initialLoading: document.getElementById('initial-loading'),
+      lightbox: document.getElementById("lightbox"),
+      lightboxImg: document.getElementById("lightbox-img"),
+      lightboxCounter: document.getElementById("lightbox-counter"),
+      lightboxInfo: document.getElementById("lightbox-info"),
+      prevBtn: document.getElementById("lightbox-prev"),
+      nextBtn: document.getElementById("lightbox-next")
+    };
+  }
+
+  // 初始化列数
+  function getColumnCount() {
+    const width = window.innerWidth;
+    if (width < 640) return 2;
+    if (width < 768) return 3;
+    if (width < 1024) return 4;
+    return 5;
+  }
+
+  function initGrid() {
+    const { grid, sentinel, emptyState } = getElements();
+    if (!grid) return;
+
+    // 检查是否有图片
+    if (filteredImages.length === 0) {
+      if (emptyState) emptyState.classList.remove('hidden');
+      if (grid) grid.classList.add('hidden');
+      if (sentinel) sentinel.classList.add('hidden');
+      return;
+    }
+
+    // 显示网格，隐藏空状态
+    if (emptyState) emptyState.classList.add('hidden');
+    grid.classList.remove('hidden');
+
+    const newColCount = getColumnCount();
+    colCount = newColCount;
+    grid.innerHTML = '';
+    columns = [];
+    columnHeights = new Array(colCount).fill(0);
+
+    for (let i = 0; i < colCount; i++) {
+      const col = document.createElement('div');
+      col.className = 'flex flex-col gap-3 flex-1 min-w-0';
+      grid.appendChild(col);
+      columns.push(col);
+    }
+
+    // 重置加载状态
+    currentIndex = 0;
+    loadMore();
+
+    // 显示网格
+    requestAnimationFrame(() => {
+      grid.classList.remove('opacity-0');
+    });
+
+    // 设置 Intersection Observer
+    if (observer) observer.disconnect();
+    observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        loadMore();
+      }
+    }, { rootMargin: '400px' });
+
+    if (sentinel) observer.observe(sentinel);
+  }
+
+  function createCard(imageData, index) {
+    const { url, year, month } = imageData;
+    const div = document.createElement('div');
+    div.className = 'gallery-item relative rounded-lg overflow-hidden cursor-zoom-in group/img bg-black/5 dark:bg-white/5';
+    div.dataset.index = index;
+    
+    const dateLabel = `${year}年${parseInt(month)}月`;
+
+    div.innerHTML = `
+      <div class="loading-bar absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-16 h-1 bg-black/10 dark:bg-white/10 z-10 rounded-full overflow-hidden">
+        <div class="loading-progress h-full w-8 bg-[var(--primary)] animate-loading-progress rounded-full"></div>
+      </div>
+      <img
+        src="${url}"
+        loading="lazy"
+        class="w-full h-auto object-cover opacity-0 transition-all duration-500 group-hover/img:scale-105 group-hover/img:opacity-90"
+        alt="Gallery Image"
+      />
+      <div class="absolute inset-0 bg-black/0 group-hover/img:bg-black/20 transition-all duration-300 flex items-center justify-center opacity-0 group-hover/img:opacity-100">
+        <div class="absolute bottom-2 right-2 text-white/90 text-xs font-bold px-2 py-1 bg-black/50 rounded backdrop-blur-sm">
+            ${dateLabel}
+        </div>
+      </div>
+    `;
+    
+    const img = div.querySelector('img');
+    const loadingBar = div.querySelector('.loading-bar');
+    
+    img.onload = function() {
+      this.style.opacity = '1';
+      loadingBar.style.opacity = '0';
+      
+      // 缓存图片高度用于重建时快速分配
+      const aspectRatio = this.naturalHeight / this.naturalWidth;
+      loadedImageHeights.set(url, aspectRatio);
+    };
+    
+    div.onclick = () => openLightbox(index);
+    
+    return div;
+  }
+
+  // 找到高度最小的列
+  function getShortestColumn() {
+    let minHeight = columnHeights[0];
+    let minIndex = 0;
+    for (let i = 1; i < columnHeights.length; i++) {
+      if (columnHeights[i] < minHeight) {
+        minHeight = columnHeights[i];
+        minIndex = i;
+      }
+    }
+    return minIndex;
+  }
+
+  function loadMore() {
+    const { grid, sentinel, endMessage } = getElements();
+    if (!grid) return;
+
+    if (currentIndex >= filteredImages.length) {
+      if (sentinel) sentinel.classList.add('hidden');
+      if (endMessage) endMessage.classList.remove('hidden');
+      return;
+    }
+
+    const end = Math.min(currentIndex + BATCH_SIZE, filteredImages.length);
+
+    for (let i = currentIndex; i < end; i++) {
+      const imageData = filteredImages[i];
+      const card = createCard(imageData, i);
+
+      // 使用高度平衡算法分配到最短的列
+      const colIndex = getShortestColumn();
+      columns[colIndex].appendChild(card);
+
+      // 估算高度(如果有缓存使用缓存,否则使用默认值)
+      const aspectRatio = loadedImageHeights.get(imageData.url) || 1.2;
+      const estimatedHeight = 300 * aspectRatio; // 假设列宽约300px
+      columnHeights[colIndex] += estimatedHeight + 12; // 12px gap
+    }
+
+    currentIndex = end;
+
+    if (currentIndex >= filteredImages.length) {
+      if (sentinel) sentinel.classList.add('hidden');
+      if (endMessage) endMessage.classList.remove('hidden');
+    }
+  }
+
+  // --- Filter Logic ---
+  
+  function applyFilter(filter) {
+    currentFilter = filter;
+
+    if (filter === 'all') {
+      filteredImages = [...sortedImages];
+    } else if (filter.includes('-')) {
+      // 月份筛选 "2025-12"
+      filteredImages = sortedImages.filter(img => img.yearMonth === filter);
+    } else {
+      // 年份筛选 "2025"
+      filteredImages = sortedImages.filter(img => img.year === filter);
+    }
+
+    // 更新计数
+    const { totalCount, sentinel, endMessage } = getElements();
+    if (totalCount) {
+      totalCount.textContent = `共 ${filteredImages.length} 张图片`;
+    }
+
+    // 显示加载指示器,隐藏结束消息
+    if (sentinel) sentinel.classList.remove('hidden');
+    if (endMessage) endMessage.classList.add('hidden');
+
+    // 重建网格
+    initGrid();
+  }
+
+  function initFilterButtons() {
+    const filterButtons = document.querySelectorAll('.filter-btn');
+    const yearButtons = document.querySelectorAll('.year-btn');
+    
+    filterButtons.forEach(btn => {
+      btn.addEventListener('click', function() {
+        const filter = this.dataset.filter;
+        
+        // 更新按钮状态
+        filterButtons.forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        
+        // 如果是年份按钮,切换月份显示
+        if (this.classList.contains('year-btn')) {
+          const monthPills = this.nextElementSibling;
+          const isShowing = monthPills?.classList.contains('show');
+          
+          // 关闭所有月份面板
+          document.querySelectorAll('.month-pills').forEach(m => m.classList.remove('show'));
+          
+          // 切换当前月份面板
+          if (!isShowing && monthPills) {
+            monthPills.classList.add('show');
+          }
+        } else if (this.classList.contains('month-btn')) {
+          // 点击月份按钮时,保持对应年份的月份面板显示
+          const year = this.dataset.year;
+          document.querySelectorAll('.month-pills').forEach(m => m.classList.remove('show'));
+          const yearBtn = document.querySelector(`[data-filter="${year}"]`);
+          if (yearBtn) {
+            const monthPills = yearBtn.nextElementSibling;
+            if (monthPills) monthPills.classList.add('show');
+          }
+        } else {
+          // 点击"全部"时关闭所有月份面板
+          document.querySelectorAll('.month-pills').forEach(m => m.classList.remove('show'));
+        }
+        
+        applyFilter(filter);
+      });
+    });
+  }
+
+  // --- Lightbox Logic ---
+  
+  function openLightbox(index) {
+    lightboxIndex = index;
+    const els = getElements();
+    if (!els.lightbox || !els.lightboxImg) return;
+
+    const imageData = filteredImages[index];
+    const src = imageData.url;
+    els.lightboxImg.src = src;
+    els.lightboxCounter.textContent = `${index + 1} / ${filteredImages.length}`;
+
+    const pathInfo = `${imageData.year}/${imageData.month}/${imageData.filename}`;
+    els.lightboxInfo.textContent = pathInfo;
+
+    els.lightbox.classList.remove("hidden");
+    els.lightbox.classList.add("flex");
+
+    els.prevBtn.disabled = index === 0;
+    els.nextBtn.disabled = index === filteredImages.length - 1;
+
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeLightbox() {
+    const { lightbox } = getElements();
+    if (!lightbox) return;
+    lightbox.classList.add("hidden");
+    lightbox.classList.remove("flex");
+    document.body.style.overflow = "";
+  }
+
+  function showPrev() {
+    if (lightboxIndex > 0) {
+      openLightbox(lightboxIndex - 1);
+    }
+  }
+
+  function showNext() {
+    if (lightboxIndex < filteredImages.length - 1) {
+      openLightbox(lightboxIndex + 1);
+    }
+  }
+
+  // Event Listeners for Lightbox
+  // 使用 document 代理事件，避免重复绑定
+  function initLightboxEvents() {
+    // 移除旧的监听器（如果有）
+    if (window.galleryLightboxCleanup) window.galleryLightboxCleanup();
+
+    const closeHandler = () => closeLightbox();
+    const prevHandler = () => showPrev();
+    const nextHandler = () => showNext();
+    const keyHandler = (e) => {
+        const { lightbox } = getElements();
+        if (!lightbox || lightbox.classList.contains("hidden")) return;
+        if (e.key === "Escape") closeLightbox();
+        if (e.key === "ArrowLeft") showPrev();
+        if (e.key === "ArrowRight") showNext();
+    };
+    const bgClickHandler = (e) => {
+        if (e.target === e.currentTarget) closeLightbox();
+    };
+
+    // 绑定
+    document.getElementById("lightbox-close")?.addEventListener("click", closeHandler);
+    document.getElementById("lightbox-prev")?.addEventListener("click", prevHandler);
+    document.getElementById("lightbox-next")?.addEventListener("click", nextHandler);
+    document.addEventListener("keydown", keyHandler);
+    document.getElementById("lightbox")?.addEventListener("click", bgClickHandler);
+
+    // 保存清理函数
+    window.galleryLightboxCleanup = () => {
+        document.getElementById("lightbox-close")?.removeEventListener("click", closeHandler);
+        document.getElementById("lightbox-prev")?.removeEventListener("click", prevHandler);
+        document.getElementById("lightbox-next")?.removeEventListener("click", nextHandler);
+        document.removeEventListener("keydown", keyHandler);
+        document.getElementById("lightbox")?.removeEventListener("click", bgClickHandler);
+    };
+  }
+
+  // Expose to global for onclick handlers
+  window.openLightbox = openLightbox;
+
+  // 初始化整个应用
+  async function initGallery() {
+    const { initialLoading, sentinel } = getElements();
+
+    // 加载图片数据
+    await loadImagesData();
+
+    // 初始化filteredImages
+    filteredImages = [...sortedImages];
+
+    // 更新计数
+    const { totalCount } = getElements();
+    if (totalCount) {
+      totalCount.textContent = `共 ${sortedImages.length} 张图片`;
+    }
+
+    // 隐藏初始加载状态
+    if (initialLoading) initialLoading.classList.add('hidden');
+
+    // 显示相关元素
+    if (sentinel) sentinel.classList.remove('hidden');
+
+    // 渲染筛选按钮
+    renderFilterButtons();
+
+    // 初始化其他功能
+    initGrid();
+    initLightboxEvents();
+    initFilterButtons();
+  }
+
+  // 初始化
+  initGallery();
+
+  // Resize handler
+  if (window.galleryResizeHandler) window.removeEventListener('resize', window.galleryResizeHandler);
+  window.galleryResizeHandler = () => {
+    clearTimeout(window.galleryResizeTimer);
+    window.galleryResizeTimer = setTimeout(initGrid, 200);
+  };
+  window.addEventListener('resize', window.galleryResizeHandler);
+
+  // Swup Integration
+  const handleSwup = async () => {
+    // 重置状态
+    currentIndex = 0;
+    loadedImageHeights.clear();
+
+    window.openLightbox = openLightbox;
+    await initGallery();
+  };
+
+  if (window.gallerySwupHandler) {
+    document.removeEventListener('swup:contentReplaced', window.gallerySwupHandler);
+  }
+  window.gallerySwupHandler = handleSwup;
+  document.addEventListener('swup:contentReplaced', handleSwup);
+
+  // Cleanup on leave
+  if (window.galleryUnloadHandler) {
+    document.removeEventListener('swup:willReplaceContent', window.galleryUnloadHandler);
+  }
+  window.galleryUnloadHandler = () => {
+    if (observer) observer.disconnect();
+  };
+  document.addEventListener('swup:willReplaceContent', window.galleryUnloadHandler);
+
+</script>

@@ -1,0 +1,28 @@
+---
+import MainGridLayout from "@layouts/MainGridLayout.astro";
+import { getSortedPosts } from "@utils/content-utils";
+import { buildCategoryTree } from "@utils/category-utils";
+import CategoryTree from "@components/CategoryTree.astro";
+
+const allPosts = await getSortedPosts();
+const categoryTree = await buildCategoryTree(allPosts);
+
+const processedCategories = Object.values(categoryTree)
+  .filter((cat) => cat.path.length === 1)
+  .sort((a, b) => b.count - a.count);
+---
+
+<MainGridLayout title="分类">
+  <div class="card-base px-8 py-6">
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold text-90 mb-2">文章分类</h1>
+      <p class="text-50 text-sm">
+        共 {Object.keys(categoryTree).length} 个分类，{allPosts.length} 篇文章
+      </p>
+    </div>
+
+    <div class="flex flex-col gap-2">
+      {processedCategories.map((category) => <CategoryTree node={category} />)}
+    </div>
+  </div>
+</MainGridLayout>

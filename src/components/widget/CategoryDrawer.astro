@@ -1,0 +1,61 @@
+---
+import type { CategoryNode } from "@/types/config";
+import { Icon } from "astro-icon/components";
+
+interface Props {
+  category: CategoryNode;
+  depth?: number;
+}
+
+const { category, depth = 0 } = Astro.props;
+const hasChildren = category.children && category.children.length > 0;
+---
+
+<div class="category-drawer relative">
+  <div
+    class="flex items-center justify-between px-3 py-2 rounded hover:bg-[var(--btn-plain-bg-hover)] transition-all group w-full"
+  >
+    <div class="flex items-center gap-2 overflow-hidden w-full">
+      {
+        hasChildren ? (
+          <button
+            class="drawer-toggle text-50 hover:text-[var(--primary)] transition-colors cursor-pointer shrink-0 flex items-center justify-center h-6 w-6 rounded-md hover:bg-black/5 dark:hover:bg-white/10"
+            aria-label="Toggle children"
+          >
+            <Icon
+              name="material-symbols:chevron-right-rounded"
+              class="text-xl transition-transform duration-200"
+            />
+          </button>
+        ) : (
+          <span class="w-6 shrink-0" />
+        )
+      }
+
+      <a
+        href={category.url}
+        class="text-75 group-hover:text-[var(--primary)] transition-all truncate flex-1"
+      >
+        {category.name}
+      </a>
+    </div>
+
+    <span
+      class="text-sm text-50 bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded shrink-0 ml-2"
+    >
+      {category.count}
+    </span>
+  </div>
+
+  {
+    hasChildren && (
+      <div class="drawer-content grid grid-rows-[0fr] transition-[grid-template-rows] duration-200 ease-out pl-3 ml-3 border-l border-[var(--line-divider)]">
+        <div class="overflow-hidden">
+          {category.children.map((child) => (
+            <Astro.self category={child} depth={depth + 1} />
+          ))}
+        </div>
+      </div>
+    )
+  }
+</div>
