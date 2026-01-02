@@ -318,12 +318,12 @@ import { Icon } from "astro-icon/components";
     if (sentinel) observer.observe(sentinel);
   }
 
-  function createCard(imageData, index) {
+  function createCard(imageData, index, isInitial = false) {
     const { url, year, month } = imageData;
     const div = document.createElement('div');
     div.className = 'gallery-item relative rounded-lg overflow-hidden cursor-zoom-in group/img bg-black/5 dark:bg-white/5';
     div.dataset.index = index;
-    
+
     const dateLabel = `${year}年${parseInt(month)}月`;
 
     div.innerHTML = `
@@ -332,7 +332,7 @@ import { Icon } from "astro-icon/components";
       </div>
       <img
         src="${url}"
-        loading="lazy"
+        ${isInitial ? '' : 'loading="lazy"'}
         class="w-full h-auto object-cover opacity-0 transition-all duration-500 group-hover/img:scale-105 group-hover/img:opacity-90"
         alt="Gallery Image"
       />
@@ -342,21 +342,21 @@ import { Icon } from "astro-icon/components";
         </div>
       </div>
     `;
-    
+
     const img = div.querySelector('img');
     const loadingBar = div.querySelector('.loading-bar');
-    
+
     img.onload = function() {
       this.style.opacity = '1';
       loadingBar.style.opacity = '0';
-      
+
       // 缓存图片高度用于重建时快速分配
       const aspectRatio = this.naturalHeight / this.naturalWidth;
       loadedImageHeights.set(url, aspectRatio);
     };
-    
+
     div.onclick = () => openLightbox(index);
-    
+
     return div;
   }
 
@@ -384,10 +384,11 @@ import { Icon } from "astro-icon/components";
     }
 
     const end = Math.min(currentIndex + BATCH_SIZE, filteredImages.length);
+    const isInitialBatch = currentIndex === 0;
 
     for (let i = currentIndex; i < end; i++) {
       const imageData = filteredImages[i];
-      const card = createCard(imageData, i);
+      const card = createCard(imageData, i, isInitialBatch);
 
       // 使用高度平衡算法分配到最短的列
       const colIndex = getShortestColumn();
