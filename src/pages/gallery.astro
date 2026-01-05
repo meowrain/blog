@@ -148,7 +148,7 @@ import { Icon } from "astro-icon/components";
   // 从JSON文件加载图片数据
   async function loadImagesData() {
     try {
-      const response = await fetch('/api/i/images.json');
+      const response = await fetch('https://blog.meowrain.cn/api/i/images.json');
       if (!response.ok) {
         throw new Error('Failed to load images data');
       }
@@ -306,6 +306,9 @@ import { Icon } from "astro-icon/components";
     requestAnimationFrame(() => {
       grid.classList.remove('opacity-0');
     });
+
+    // 显示 sentinel
+    if (sentinel) sentinel.classList.remove('hidden');
 
     // 设置 Intersection Observer
     if (observer) observer.disconnect();
@@ -595,8 +598,13 @@ import { Icon } from "astro-icon/components";
     initFilterButtons();
   }
 
-  // 初始化
-  initGallery();
+  // 初始化 - 等待 DOM 准备好
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initGallery);
+  } else {
+    // 延迟执行确保 Swup 容器已准备好
+    setTimeout(initGallery, 0);
+  }
 
   // Resize handler
   if (window.galleryResizeHandler) window.removeEventListener('resize', window.galleryResizeHandler);
