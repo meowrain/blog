@@ -120,11 +120,16 @@ onMount(async () => {
 				content = contentEncoded.replace(/<[^>]*>/g, "");
 			}
 
+			// 修正链接提取逻辑，使用贪婪匹配确保包含完整路径
+			const linkText = item.querySelector("link")?.textContent || "";
+			const linkMatch = linkText.match(/\/posts\/(.+?)\/?$/);
+			const link = linkMatch ? linkMatch[1] : "";
+
 			return {
 				title: item.querySelector("title")?.textContent || "",
 				description: item.querySelector("description")?.textContent || "",
 				content: content,
-				link: item.querySelector("link")?.textContent?.replace(/.*\/posts\/(.*?)\//, "$1") || "",
+				link: link,
 			};
 		});
 	} catch (error) {
