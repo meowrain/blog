@@ -19,25 +19,23 @@ export const siteConfig: SiteConfig = {
   keywords: [],
   lang: "zh_CN", // 'en', 'zh_CN', 'zh_TW', 'ja', 'ko', 'es', 'th'
   themeColor: {
-    hue: 361, // Default hue for the theme color, from 0 to 360. e.g. red: 0, teal: 200, cyan: 250, pink: 345
+    hue: 340, // Default hue for the theme color, from 0 to 360. e.g. red: 0, teal: 200, cyan: 250, pink: 345
     fixed: false, // Hide the theme color picker for visitors
     forceDarkMode: false, // Force dark mode and hide theme switcher
   },
   banner: {
     enable: false,
     src: "/xinghui.avif", // Relative to the /src directory. Relative to the /public directory if it starts with '/'
-
     position: "center", // Equivalent to object-position, only supports 'top', 'center', 'bottom'. 'center' by default
     credit: {
       enable: true, // Display the credit text of the banner image
       text: "Pixiv @chokei", // Credit text to be displayed
-
       url: "https://www.pixiv.net/artworks/122782209", // (Optional) URL link to the original artwork or artist's page
     },
   },
   background: {
     enable: true, // Enable background image
-    src: "", // Background image URL (supports HTTPS)
+    src: "https://t.alcy.cc/acg", // Background image URL (supports HTTPS)
     position: "center", // Background position: 'top', 'center', 'bottom'
     size: "cover", // Background size: 'cover', 'contain', 'auto'
     repeat: "no-repeat", // Background repeat: 'no-repeat', 'repeat', 'repeat-x', 'repeat-y'

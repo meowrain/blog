@@ -6,6 +6,8 @@ import "@fontsource/roboto/700.css";
 
 import { profileConfig, siteConfig } from "@/config";
 import ConfigCarrier from "@components/ConfigCarrier.astro";
+import Sakura from "@components/widget/Sakura.astro";
+import EmojiCursor from "@components/widget/EmojiCursor.astro";
 import {
   AUTO_MODE,
   BANNER_HEIGHT,
@@ -91,6 +93,9 @@ const bannerOffset =
   <!-- 手机端适配 -->
 
   <head>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700&display=swap" rel="stylesheet">
     <title>{pageTitle}</title>
 
     <meta charset="UTF-8" />
@@ -357,6 +362,8 @@ const bannerOffset =
     data-overlayscrollbars-initialize
   >
     <div id="bg-box"></div>
+    <Sakura />
+    <EmojiCursor />
     <ConfigCarrier />
     <slot />
 

@@ -6,6 +6,7 @@ image: ''
 
 draft: false 
 lang: ''
+category: '开发日记'
 ---
 
 # 开发日记/记一次springcloud项目启动显示端口被占用但是查不到占用进程的问题
