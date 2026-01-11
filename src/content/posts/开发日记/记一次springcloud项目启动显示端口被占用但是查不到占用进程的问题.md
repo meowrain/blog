@@ -29,3 +29,6 @@ netsh interface ipv4 show excludedportrange protocol=tcp
 奥原来是在预留端口范围里面。。。。
 
 ![](https://blog.meowrain.cn/api/i/2026/01/11/kck57k-1.webp)
+
+
+只能把项目端口号改到预留端口范围之外了，比如我这里改成8081就可以了
