@@ -41,7 +41,7 @@ export const siteConfig: SiteConfig = {
     size: "cover", // Background size: 'cover', 'contain', 'auto'
     repeat: "no-repeat", // Background repeat: 'no-repeat', 'repeat', 'repeat-x', 'repeat-y'
     attachment: "fixed", // Background attachment: 'fixed', 'scroll', 'local'
-    opacity: 1, // Background opacity (0-1)
+    opacity: 0.8, // Background opacity (0-1)
   },
   toc: {
     enable: true, // Display the table of contents on the right side of the post
