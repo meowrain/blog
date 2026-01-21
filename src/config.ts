@@ -100,9 +100,9 @@ export const navBarConfig: NavBarConfig = {
 };
 
 export const profileConfig: ProfileConfig = {
-  avatar: "https://blog.meowrain.cn/api/i/2025/07/18/zn3t6t-1.webp", // Relative to the /src directory. Relative to the /public directory if it starts with '/'
+  avatar: "http://blog.meowrain.cn/api/i/2026/01/21/12jahtr.png", // Relative to the /src directory. Relative to the /public directory if it starts with '/'
   name: "MeowRain",
-  bio: "A developer who loves to code and learn new things,build code for love❤️ and fun🎉",
+  bio: "💕华风夏韵，洛水天依💕",
   links: [
     {
       name: "GitHub",
