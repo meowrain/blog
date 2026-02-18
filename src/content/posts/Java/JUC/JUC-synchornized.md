@@ -1,7 +1,7 @@
 ---
-title: JUC-synchornized
+title: JUC-synchronized
 published: '2026-02-18T13:28:28.031Z'
-description: ''
+description: '从临界区与竞态条件出发，系统理解 Java synchronized 的原理、用法与常见场景。'
 image: ''
 tags:
   - JUC
@@ -9,151 +9,93 @@ category: Java > JUC
 draft: false
 lang: ''
 ---
-# JUC synchornized
+# JUC：深入理解 synchronized
 
+在并发编程中，`synchronized` 是最基础、也最常用的线程同步手段之一。本文先讲清楚「为什么需要锁」，再通过三个案例理解它的正确用法。
 
-在并发编程和多线程环境中，**临界区**（Critical Section）和**竞态条件**（Race Condition）是两个紧密相关且至关重要的核心概念。理解它们对于编写正确、安全的并行程序至关重要。
+## 1. 临界区与竞态条件
 
-### 1. 临界区 (Critical Section)
+### 临界区（Critical Section）
 
-**定义**：
-临界区是指代码中访问**共享资源**（如全局变量、文件、数据库连接、硬件设备等）的那一段逻辑。这些资源在同一时刻只能被一个线程（或进程）安全地访问。如果多个线程同时执行这段代码，就会导致数据不一致或程序错误。
+临界区是指访问共享资源（如共享变量、文件、连接等）的代码片段。这个区域在同一时刻通常只能有一个线程执行。
 
-**关键特征**：
-- **互斥性**：在任何给定时刻，只允许一个线程进入临界区执行。
-- **共享资源**：涉及的操作对象是被多个线程共用的。
-- **原子性需求**：临界区内的操作通常需要作为一个整体（原子操作）完成，中间不能被其他线程打断。
+示例（读-改-写）：
 
-**示例**：
-假设有一个全局计数器 `count`，两个线程都要对其进行加 1 操作：
-```python
-# 临界区开始
-temp = count      # 读取
-temp = temp + 1   # 计算
-count = temp      # 写入
-# 临界区结束
+```text
+temp = count      // 读取
+temp = temp + 1   // 计算
+count = temp      // 写回
 ```
-如果不加保护，这两行代码构成的区域就是临界区。
+
+### 竞态条件（Race Condition）
+
+当多个线程在没有同步保护的情况下交错执行临界区，程序结果就会依赖线程调度顺序，从而出现错误，这就是竞态条件。
+
+一句话总结：**临界区是风险区域，竞态条件是风险变成现实后的错误结果。**
 
 ---
 
-### 2. 竞态条件 (Race Condition)
+## 2. synchronized 能解决什么
 
-**定义**：
-竞态条件是指程序的最终结果依赖于多个线程执行的**相对时序**或**调度顺序**的一种错误状态。当两个或多个线程在没有适当同步的情况下，交替访问和修改同一个共享数据时，就会发生竞态条件。
+`synchronized` 是 Java 的内置监视器锁（Intrinsic Lock），主要保证：
 
-**为什么会发生**？
-因为现代操作系统对线程的调度是不可预测的。如果线程 A 和线程 B 同时试图修改同一个变量，而它们的“读 - 改 - 写”过程发生了交错，最终的数据就会出错。
+1. **互斥（原子性）**：同一时刻只有一个线程进入受保护代码。
+2. **可见性**：释放锁前对共享变量的修改，对后续获得同一把锁的线程可见。
 
-**经典场景分析**（基于上面的计数器例子）
-假设 `count` 初始值为 0，线程 A 和线程 B 都想让它变成 2。
-
-1.  **线程 A** 读取 `count` (得到 0)。
-2.  *(此时发生线程切换)*
-3.  **线程 B** 读取 `count` (也得到 0，因为 A 还没写回)。
-4.  **线程 B** 计算 0+1=1，并将 `count` 写回为 1。
-5.  *(线程切换回 A)*
-6.  **线程 A** 继续之前的逻辑，计算 0+1=1，并将 `count` 写回为 1。
-
-**结果**：两个线程都执行了加 1，但 `count` 的最终结果是 **1** 而不是预期的 **2**。这就是典型的竞态条件。
+> 注意：`synchronized` 不直接提供「公平性」保证。
 
 ---
 
-### 3. 两者的关系
+## 3. 第一组案例：共享变量自增/自减
 
-它们是**问题**与**解决方案对象**的关系：
+### 非线程安全版本
 
-*   **临界区**是代码中**潜在危险**的区域，即如果不加控制就会产生问题的地方。
-*   **竞态条件**是当多个线程**不受控制地同时进入临界区**时所导致的**实际错误后果**。
-
-简单来说：**因为没有保护好临界区，所以导致了竞态条件**。
-
----
-
-### 4. 如何解决？
-
-要消除竞态条件，必须确保同一时刻只有一个线程能进入临界区。这通常通过**同步机制**来实现：
-
-| 机制 | 描述 | 适用场景 |
-| :--- | :--- | :--- |
-| **互斥锁 **(Mutex) | 最基本的锁，保证一次只有一个线程持有锁并进入临界区。 | 绝大多数需要互斥访问的场景。 |
-| **信号量 **(Semaphore) | 允许指定数量的线程同时访问资源（计数信号量），或作为互斥锁使用（二元信号量）。 | 限制资源池大小（如数据库连接池）。 |
-| **监视器 **(Monitor) | 高级同步构造（如 Java 的 `synchronized`，Python 的 `Lock`），将数据和操作封装在一起自动管理锁。 | 面向对象语言中的常用模式。 |
-| **原子操作 **(Atomic) | 利用 CPU 指令直接保证操作的原子性，无需显式加锁，性能更高。 | 简单的计数器、标志位更新。 |
-
-# syncronized介绍
-
-synchronized 是 Java 提供的 内置锁（intrinsic lock）机制，用于：
-
-🔐 保证共享变量在多线程环境下的线程安全
-
-它主要解决两个问题：
-
-- 互斥（原子性）
-
-- 可见性（内存可见性）
-
-
-这个代码是非线程安全的
 ```java
 package demo;
-
 
 import demo.annotations.NoThreadSafe;
 
 public class InterruptSleepDemo {
     private static int a = 0;
 
-
-
     @NoThreadSafe
     public static void main(String[] args) throws InterruptedException {
-
-
         Thread t1 = new Thread(() -> {
             for (int i = 0; i < 100000; i++) {
                 a++;
             }
         });
 
-
         Thread t2 = new Thread(() -> {
             for (int i = 0; i < 100000; i++) {
                 a--;
             }
         });
+
         t1.start();
         t2.start();
-
         t1.join();
         t2.join();
-        System.out.println(a);
 
+        System.out.println(a);
     }
 }
 ```
 
-
 ![](https://blog.meowrain.cn/api/i/2026/02/18/zfhbw9-1.png)
 
----
+### 线程安全版本
 
 ```java
 package demo;
 
-
-import demo.annotations.NoThreadSafe;
 import demo.annotations.ThreadSafe;
 
 public class InterruptSleepDemo {
     private static int a = 0;
 
-
-
     @ThreadSafe
     public static void main(String[] args) throws InterruptedException {
-
-
         Thread t1 = new Thread(() -> {
             synchronized (InterruptSleepDemo.class) {
                 for (int i = 0; i < 100000; i++) {
@@ -162,7 +104,6 @@ public class InterruptSleepDemo {
             }
         });
 
-
         Thread t2 = new Thread(() -> {
             synchronized (InterruptSleepDemo.class) {
                 for (int i = 0; i < 100000; i++) {
@@ -170,34 +111,36 @@ public class InterruptSleepDemo {
                 }
             }
         });
+
         t1.start();
         t2.start();
-
         t1.join();
         t2.join();
-        System.out.println(a);
 
+        System.out.println(a);
     }
 }
 ```
-这个我们用监控锁控制住，就能保证线程安全了。这个结果现在符合预期了！
-
 
 ![](https://blog.meowrain.cn/api/i/2026/02/18/zkak8a-1.png)
 
-
-# synchronized加到不同地方的效果
-
-| 写法                       | 锁对象           |
-| ------------------------ | ------------- |
-| `synchronized` 实例方法      | 当前对象（this）    |
-| `static synchronized` 方法 | 当前类的 Class 对象 |
-
+通过让两个线程竞争同一把锁（`InterruptSleepDemo.class`），可以保证对 `a` 的复合操作不被打断。
 
 ---
 
+## 4. synchronized 加在不同位置，锁的对象不同
 
-# 案例
+| 写法 | 锁对象 |
+| :--- | :--- |
+| `synchronized` 实例方法 | 当前实例（`this`） |
+| `static synchronized` 方法 | 当前类的 `Class` 对象 |
+| `synchronized (obj) {}` | 指定对象 `obj` |
+
+---
+
+## 5. 第二组案例：卖票超卖问题
+
+### 非线程安全版本（会超卖）
 
 ```java
 package demo;
@@ -220,14 +163,16 @@ public class TicketTest {
             Random random = new Random();
             Thread thread = new Thread(() -> {
                 int want = random.nextInt(10);
-                int sold = ticketWindow.sell(want); // 记录实际卖出
+                int sold = ticketWindow.sell(want);
                 list.add(sold);
             });
             threads.add(thread);
             thread.start();
         }
 
-        for (Thread t : threads) t.join();
+        for (Thread t : threads) {
+            t.join();
+        }
 
         int soldTotal = list.stream().mapToInt(Integer::intValue).sum();
         System.out.println("最终剩余: " + ticketWindow.getCount());
@@ -238,53 +183,38 @@ public class TicketTest {
 
 class TicketWindow {
     private int count;
-    @NoThreadSafe
-    public    int getCount() {
-        return count;
-    }
-
-    public void setCount(int count) {
-        this.count = count;
-    }
 
     public TicketWindow(int count) {
         this.count = count;
     }
 
     @NoThreadSafe
-    public    int sell(int amount) {
+    public int getCount() {
+        return count;
+    }
+
+    @NoThreadSafe
+    public int sell(int amount) {
         if (count >= amount) {
             count -= amount;
-            System.out.println("卖出" + amount + "==== 剩余: " + count);
+            System.out.println("卖出" + amount + " ==== 剩余: " + count);
             return amount;
         }
-        System.out.println("卖出0==== 剩余: " + count);
+        System.out.println("卖出0 ==== 剩余: " + count);
         return 0;
     }
 }
-
-
 ```
-
-上面这个是非线程安全的
-
 
 ![](https://blog.meowrain.cn/api/i/2026/02/18/12gce7n-1.png)
 
-可以看到超卖了。。。。
+问题根因：`sell()` 中的 `if (count >= amount) + count -= amount` 不是原子操作，多个线程会交错执行。
 
-
-
-是因为这里的sell堆共享变量count先读取后减了，是典型的非线程安全
-
-
-我们改成线程安全的
-
+### 线程安全版本
 
 ```java
 package demo;
 
-import demo.annotations.NoThreadSafe;
 import demo.annotations.ThreadSafe;
 
 import java.util.ArrayList;
@@ -303,14 +233,16 @@ public class TicketTest {
             Random random = new Random();
             Thread thread = new Thread(() -> {
                 int want = random.nextInt(10);
-                int sold = ticketWindow.sell(want); // 记录实际卖出
+                int sold = ticketWindow.sell(want);
                 list.add(sold);
             });
             threads.add(thread);
             thread.start();
         }
 
-        for (Thread t : threads) t.join();
+        for (Thread t : threads) {
+            t.join();
+        }
 
         int soldTotal = list.stream().mapToInt(Integer::intValue).sum();
         System.out.println("最终剩余: " + ticketWindow.getCount());
@@ -321,31 +253,158 @@ public class TicketTest {
 
 class TicketWindow {
     private int count;
-    @ThreadSafe
-    public  synchronized   int getCount() {
-        return count;
-    }
-
-    public void setCount(int count) {
-        this.count = count;
-    }
 
     public TicketWindow(int count) {
         this.count = count;
     }
 
     @ThreadSafe
-    public  synchronized   int sell(int amount) {
+    public synchronized int getCount() {
+        return count;
+    }
+
+    @ThreadSafe
+    public synchronized int sell(int amount) {
         if (count >= amount) {
             count -= amount;
-            System.out.println("卖出" + amount + "==== 剩余: " + count);
+            System.out.println("卖出" + amount + " ==== 剩余: " + count);
             return amount;
         }
-        System.out.println("卖出0==== 剩余: " + count);
+        System.out.println("卖出0 ==== 剩余: " + count);
         return 0;
     }
 }
-
 ```
 
 ![](https://blog.meowrain.cn/api/i/2026/02/18/12h6fx9-1.png)
+
+---
+
+## 6. 第三组案例：转账（涉及两个对象）
+
+当一个操作同时涉及两个账户对象时，只锁 `this` 往往不够。
+
+### 非线程安全版本
+
+```java
+package demo;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class TransferTest {
+    public static void main(String[] args) {
+        Account a = new Account(10000);
+        Account b = new Account(10000);
+        List<Thread> threads = new ArrayList<>();
+
+        for (int i = 0; i < 1000; i++) {
+            Thread thread = new Thread(() -> {
+                a.transfer(b, 1000);
+                b.transfer(a, 1000);
+            });
+            thread.start();
+            threads.add(thread);
+        }
+
+        for (Thread thread : threads) {
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        System.out.println("a.getAmount() = " + a.getAmount());
+        System.out.println("b.getAmount() = " + b.getAmount());
+        System.out.println(a.getAmount() + b.getAmount());
+    }
+}
+
+class Account {
+    private long amount;
+
+    public Account(long amount) {
+        this.amount = amount;
+    }
+
+    public long getAmount() {
+        return amount;
+    }
+
+    public void setAmount(long amount) {
+        this.amount = amount;
+    }
+
+    public void transfer(Account target, long money) {
+        if (this.amount >= money) {
+            this.setAmount(this.getAmount() - money);
+            target.setAmount(target.getAmount() + money);
+        }
+    }
+}
+```
+
+![](https://blog.meowrain.cn/api/i/2026/02/18/12qzc87-1.png)
+
+### 改进版本（按固定顺序锁两个账户，避免死锁）
+
+> 你原来使用 `synchronized (Account.class)` 也能保证正确性，但并发度会很低（所有账户互相串行）。
+
+```java
+package demo;
+
+import demo.annotations.ThreadSafe;
+
+class Account {
+    private long amount;
+
+    public Account(long amount) {
+        this.amount = amount;
+    }
+
+    public long getAmount() {
+        return amount;
+    }
+
+    @ThreadSafe
+    public void transfer(Account target, long money) {
+        if (target == null || target == this || money <= 0) {
+            return;
+        }
+
+        Account first = this;
+        Account second = target;
+
+        if (System.identityHashCode(first) > System.identityHashCode(second)) {
+            first = target;
+            second = this;
+        }
+
+        synchronized (first) {
+            synchronized (second) {
+                if (this.amount >= money) {
+                    this.amount -= money;
+                    target.amount += money;
+                }
+            }
+        }
+    }
+}
+```
+
+这种做法的优点：
+
+- 正确性：同时保护两个账户余额。
+- 安全性：固定加锁顺序，降低死锁风险。
+- 并发性：不同账户对之间仍可并行执行，不会像类锁那样全局串行。
+
+---
+
+## 7. 小结
+
+- `synchronized` 的核心是：**同一把锁保护同一份共享状态**。
+- 只要是「读-改-写」复合操作，就要警惕竞态条件。
+- 涉及多个共享对象时，必须设计好锁粒度和加锁顺序。
+
+如果你正在系统学习 JUC，下一步建议对比：`synchronized`、`ReentrantLock` 与 `Atomic*` 的适用边界与性能差异。
