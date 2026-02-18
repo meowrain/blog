@@ -534,6 +534,16 @@ body {
     overflow-wrap: anywhere;
 }
 
+.preview-modal-content {
+    width: min(1200px, calc(100vw - 2.5rem));
+}
+
+.preview-pane {
+    max-height: calc(100vh - 220px);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+}
+
 .md-preview h1,
 .md-preview h2,
 .md-preview h3,

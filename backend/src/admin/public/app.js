@@ -27,6 +27,9 @@ const mdPreviewToggle = document.getElementById('md-preview-toggle');
 const mdEditorBody = document.querySelector('.md-editor-body');
 const categoryFilter = document.getElementById('category-filter');
 const toastContainer = document.getElementById('toast-container');
+const previewModal = document.getElementById('preview-modal');
+const previewTitle = document.getElementById('preview-title');
+const previewContent = document.getElementById('preview-content');
 const batchModeBtn = document.getElementById('batch-mode-btn');
 const batchDeleteBtn = document.getElementById('batch-delete-btn');
 const batchDraftBtn = document.getElementById('batch-draft-btn');
@@ -350,6 +353,7 @@ function renderArticles(articles) {
                 ` : ''}
             </div>
             <div class="article-actions" ${batchMode ? 'style="display:none;"' : ''}>
+                <button class="btn btn-small btn-secondary" onclick="previewArticle('${escapeJs(article.path)}')">预览</button>
                 <button class="btn btn-small" onclick="editArticle('${escapeJs(article.path)}')">编辑</button>
                 <button class="btn btn-small ${article.draft ? 'btn-primary' : 'btn-secondary'}" onclick="toggleDraft('${escapeJs(article.path)}')">
                     ${article.draft ? '发布' : '转草稿'}
@@ -445,6 +449,28 @@ window.editArticle = async (path) => {
     }
 };
 
+window.previewArticle = async (path) => {
+    try {
+        const article = await apiRequest(`/articles/${encodeURIComponent(path)}`);
+        if (previewTitle) previewTitle.textContent = `预览：${article.frontmatter.title}`;
+        if (previewContent) {
+            const html = window.marked?.parse
+                ? window.marked.parse(article.content || '')
+                : `<pre>${escapeHtml(article.content || '')}</pre>`;
+            previewContent.innerHTML = html;
+            if (window.hljs) {
+                previewContent.querySelectorAll('pre code').forEach((block) => {
+                    window.hljs.highlightElement(block);
+                });
+            }
+        }
+        previewModal?.classList.add('active');
+    } catch (error) {
+        console.error('Failed to preview article:', error);
+        showToast(`预览失败: ${error.message}`, 'error');
+    }
+};
+
 // Save Article
 articleForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -497,6 +523,10 @@ articleForm?.addEventListener('submit', async (e) => {
 // Close Editor
 document.getElementById('close-editor')?.addEventListener('click', closeEditor);
 document.getElementById('cancel-edit')?.addEventListener('click', closeEditor);
+document.getElementById('close-preview')?.addEventListener('click', () => previewModal?.classList.remove('active'));
+previewModal?.addEventListener('click', (e) => {
+    if (e.target === previewModal) previewModal.classList.remove('active');
+});
 
 function closeEditor() {
     editorModal.classList.remove('active');

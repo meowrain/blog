@@ -193,3 +193,159 @@ public class InterruptSleepDemo {
 | `synchronized` 实例方法      | 当前对象（this）    |
 | `static synchronized` 方法 | 当前类的 Class 对象 |
 
+
+---
+
+
+# 案例
+
+```java
+package demo;
+
+import demo.annotations.NoThreadSafe;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Random;
+
+public class TicketTest {
+    public static void main(String[] args) throws InterruptedException {
+        TicketWindow ticketWindow = new TicketWindow(10000);
+
+        List<Integer> list = Collections.synchronizedList(new ArrayList<>());
+        List<Thread> threads = new ArrayList<>();
+
+        for (int i = 0; i < 10000; i++) {
+            Random random = new Random();
+            Thread thread = new Thread(() -> {
+                int want = random.nextInt(10);
+                int sold = ticketWindow.sell(want); // 记录实际卖出
+                list.add(sold);
+            });
+            threads.add(thread);
+            thread.start();
+        }
+
+        for (Thread t : threads) t.join();
+
+        int soldTotal = list.stream().mapToInt(Integer::intValue).sum();
+        System.out.println("最终剩余: " + ticketWindow.getCount());
+        System.out.println("卖出统计: " + soldTotal);
+        System.out.println("校验（剩余+卖出）: " + (ticketWindow.getCount() + soldTotal));
+    }
+}
+
+class TicketWindow {
+    private int count;
+    @NoThreadSafe
+    public    int getCount() {
+        return count;
+    }
+
+    public void setCount(int count) {
+        this.count = count;
+    }
+
+    public TicketWindow(int count) {
+        this.count = count;
+    }
+
+    @NoThreadSafe
+    public    int sell(int amount) {
+        if (count >= amount) {
+            count -= amount;
+            System.out.println("卖出" + amount + "==== 剩余: " + count);
+            return amount;
+        }
+        System.out.println("卖出0==== 剩余: " + count);
+        return 0;
+    }
+}
+
+
+```
+
+上面这个是非线程安全的
+
+
+![](https://blog.meowrain.cn/api/i/2026/02/18/12gce7n-1.png)
+
+可以看到超卖了。。。。
+
+
+
+是因为这里的sell堆共享变量count先读取后减了，是典型的非线程安全
+
+
+我们改成线程安全的
+
+
+```java
+package demo;
+
+import demo.annotations.NoThreadSafe;
+import demo.annotations.ThreadSafe;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Random;
+
+public class TicketTest {
+    public static void main(String[] args) throws InterruptedException {
+        TicketWindow ticketWindow = new TicketWindow(10000);
+
+        List<Integer> list = Collections.synchronizedList(new ArrayList<>());
+        List<Thread> threads = new ArrayList<>();
+
+        for (int i = 0; i < 10000; i++) {
+            Random random = new Random();
+            Thread thread = new Thread(() -> {
+                int want = random.nextInt(10);
+                int sold = ticketWindow.sell(want); // 记录实际卖出
+                list.add(sold);
+            });
+            threads.add(thread);
+            thread.start();
+        }
+
+        for (Thread t : threads) t.join();
+
+        int soldTotal = list.stream().mapToInt(Integer::intValue).sum();
+        System.out.println("最终剩余: " + ticketWindow.getCount());
+        System.out.println("卖出统计: " + soldTotal);
+        System.out.println("校验（剩余+卖出）: " + (ticketWindow.getCount() + soldTotal));
+    }
+}
+
+class TicketWindow {
+    private int count;
+    @ThreadSafe
+    public  synchronized   int getCount() {
+        return count;
+    }
+
+    public void setCount(int count) {
+        this.count = count;
+    }
+
+    public TicketWindow(int count) {
+        this.count = count;
+    }
+
+    @ThreadSafe
+    public  synchronized   int sell(int amount) {
+        if (count >= amount) {
+            count -= amount;
+            System.out.println("卖出" + amount + "==== 剩余: " + count);
+            return amount;
+        }
+        System.out.println("卖出0==== 剩余: " + count);
+        return 0;
+    }
+}
+
+```
+
+![](https://blog.meowrain.cn/api/i/2026/02/18/12h6fx9-1.png)
