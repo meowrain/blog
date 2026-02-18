@@ -181,3 +181,15 @@ public class InterruptSleepDemo {
 }
 ```
 这个我们用监控锁控制住，就能保证线程安全了。这个结果现在符合预期了！
+
+
+![](https://blog.meowrain.cn/api/i/2026/02/18/zkak8a-1.png)
+
+
+# synchronized加到不同地方的效果
+
+| 写法                       | 锁对象           |
+| ------------------------ | ------------- |
+| `synchronized` 实例方法      | 当前对象（this）    |
+| `static synchronized` 方法 | 当前类的 Class 对象 |
+

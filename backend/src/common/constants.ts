@@ -15,6 +15,11 @@ export const PATHS = {
   POSTS_DIR: path.resolve(process.cwd(), '..', 'src', 'content', 'posts'),
 
   /**
+   * Directory containing automatic file backups
+   */
+  BACKUPS_DIR: path.resolve(process.cwd(), 'backups'),
+
+  /**
    * Allowed file extensions for markdown files
    */
   MARKDOWN_EXTENSIONS: ['.md', '.mdx'],
@@ -33,6 +38,11 @@ export const PATHS = {
    * Maximum pagination limit
    */
   MAX_PAGE_LIMIT: 100,
+
+  /**
+   * Default backups retention days
+   */
+  BACKUP_RETENTION_DAYS: Number(process.env.BACKUP_RETENTION_DAYS ?? 30),
 };
 
 /**

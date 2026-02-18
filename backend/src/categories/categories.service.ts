@@ -1,8 +1,7 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import path from 'path';
 import { FileService } from '../common/file.service';
 import { FrontmatterService } from '../common/frontmatter.service';
-import { PATHS } from '../common/constants';
 import { CategoryDto, CategoryTreeDto } from './dto/category.dto';
 
 interface CategoryNode {

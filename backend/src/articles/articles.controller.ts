@@ -12,7 +12,7 @@ import { ArticlesService } from './articles.service';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 import { ListArticlesDto } from './dto/list-articles.dto';
-import { BulkOperationDto } from './dto/bulk-operation.dto';
+import { BulkOperationDto, BulkOperationResultDto } from './dto/bulk-operation.dto';
 import { ArticleDto, PaginatedArticlesDto } from './dto/article.dto';
 
 @Controller('articles')
@@ -81,7 +81,7 @@ export class ArticlesController {
    * POST /api/articles/bulk
    */
   @Post('bulk')
-  async bulkOperation(@Body() bulkDto: BulkOperationDto): Promise<{ count: number }> {
+  async bulkOperation(@Body() bulkDto: BulkOperationDto): Promise<BulkOperationResultDto> {
     return this.articlesService.bulkOperation(bulkDto);
   }
 }

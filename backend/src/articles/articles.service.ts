@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import path from 'path';
 import { FileService } from '../common/file.service';
 import { FrontmatterService, ArticleFrontmatter, ParsedArticle } from '../common/frontmatter.service';
@@ -10,8 +10,7 @@ import {
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 import { ListArticlesDto } from './dto/list-articles.dto';
-import { BulkOperationDto, BulkOperationType } from './dto/bulk-operation.dto';
-import { PATHS } from '../common/constants';
+import { BulkOperationDto, BulkOperationResultDto, BulkOperationType } from './dto/bulk-operation.dto';
 
 @Injectable()
 export class ArticlesService {
@@ -242,25 +241,25 @@ export class ArticlesService {
   /**
    * Bulk operations on articles
    */
-  async bulkOperation(bulkDto: BulkOperationDto): Promise<{ count: number }> {
+  async bulkOperation(bulkDto: BulkOperationDto): Promise<BulkOperationResultDto> {
     const { paths, operation } = bulkDto;
-    let count = 0;
+    let success = 0;
+    const failures: Array<{ path: string; reason: string }> = [];
 
     for (const relativePath of paths) {
       try {
         switch (operation) {
           case BulkOperationType.DELETE:
             await this.remove(relativePath);
-            count++;
+            success++;
             break;
 
           case BulkOperationType.UPDATE_CATEGORY:
             if (bulkDto.category) {
-              const article = await this.getArticle(relativePath);
-              const updated = await this.update(relativePath, {
+              await this.update(relativePath, {
                 newCategory: bulkDto.category,
               });
-              count++;
+              success++;
             }
             break;
 
@@ -268,10 +267,10 @@ export class ArticlesService {
             if (bulkDto.tag) {
               const article = await this.getArticle(relativePath);
               if (!article.frontmatter.tags.includes(bulkDto.tag)) {
-                const updated = await this.update(relativePath, {
+                await this.update(relativePath, {
                   tags: [...article.frontmatter.tags, bulkDto.tag],
                 });
-                count++;
+                success++;
               }
             }
             break;
@@ -281,10 +280,10 @@ export class ArticlesService {
               const article = await this.getArticle(relativePath);
               const filteredTags = article.frontmatter.tags.filter((t) => t !== bulkDto.tag);
               if (filteredTags.length !== article.frontmatter.tags.length) {
-                const updated = await this.update(relativePath, {
+                await this.update(relativePath, {
                   tags: filteredTags,
                 });
-                count++;
+                success++;
               }
             }
             break;
@@ -292,10 +291,19 @@ export class ArticlesService {
       } catch (error) {
         // Continue with next file on error
         console.error(`Error processing ${relativePath}:`, error);
+        failures.push({
+          path: relativePath,
+          reason: error instanceof Error ? error.message : 'Unknown error',
+        });
       }
     }
 
-    return { count };
+    return {
+      total: paths.length,
+      success,
+      failed: failures.length,
+      failures,
+    };
   }
 
   /**

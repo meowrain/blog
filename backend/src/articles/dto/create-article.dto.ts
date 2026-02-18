@@ -1,4 +1,4 @@
-import { IsString, IsArray, IsOptional, IsBoolean, IsDateString } from 'class-validator';
+import { IsString, IsArray, IsOptional, IsBoolean } from 'class-validator';
 
 export class CreateArticleDto {
   @IsString()

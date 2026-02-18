@@ -1,4 +1,4 @@
-import { IsString, IsArray, IsOptional, IsBoolean, IsDateString } from 'class-validator';
+import { IsString, IsOptional } from 'class-validator';
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateArticleDto } from './create-article.dto';
 

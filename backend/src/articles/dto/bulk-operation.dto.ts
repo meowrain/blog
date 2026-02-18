@@ -23,3 +23,15 @@ export class BulkOperationDto {
   @IsString()
   tag?: string; // For ADD_TAG or REMOVE_TAG
 }
+
+export interface BulkFailureItem {
+  path: string;
+  reason: string;
+}
+
+export interface BulkOperationResultDto {
+  total: number;
+  success: number;
+  failed: number;
+  failures: BulkFailureItem[];
+}

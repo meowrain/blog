@@ -6,7 +6,7 @@ import { AppService } from './app.service';
 import { ArticlesModule } from './articles/articles.module';
 import { CategoriesModule } from './categories/categories.module';
 import { TagsModule } from './tags/tags.module';
-import { PATHS } from './common/constants';
+import { FileService } from './common/file.service';
 
 @Module({
   imports: [
@@ -19,6 +19,6 @@ import { PATHS } from './common/constants';
     }),
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, FileService],
 })
 export class AppModule {}

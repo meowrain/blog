@@ -36,4 +36,5 @@ ori
 .edgeone/*
 !.edgeone/project.json
 .tef_dist/*
+backend/backups/
   

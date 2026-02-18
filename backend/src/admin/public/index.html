@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Blog Admin Panel</title>
-    <link rel="stylesheet" href="styles.css?v=20260218-2">
+    <link rel="stylesheet" href="styles.css?v=20260218-3">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
@@ -36,6 +36,11 @@
                 <div class="view-header">
                     <h2>文章</h2>
                     <div class="actions">
+                        <button id="batch-mode-btn" class="btn btn-secondary">批量管理</button>
+                        <button id="batch-delete-btn" class="btn btn-danger" style="display:none;">批量删除</button>
+                        <button id="batch-draft-btn" class="btn btn-secondary" style="display:none;">批量转草稿/发布</button>
+                        <button id="batch-tag-add-btn" class="btn btn-secondary" style="display:none;">批量加标签</button>
+                        <button id="batch-category-btn" class="btn btn-secondary" style="display:none;">批量改分类</button>
                         <button id="new-article-btn" class="btn btn-primary">+ 新建文章</button>
                     </div>
                 </div>
@@ -167,6 +172,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
     <div id="toast-container" class="toast-container"></div>
-    <script src="app.js?v=20260218-4"></script>
+    <script src="app.js?v=20260218-5"></script>
 </body>
 </html>

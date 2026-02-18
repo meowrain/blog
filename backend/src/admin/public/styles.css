@@ -103,11 +103,19 @@ body {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1.5rem;
+    gap: 1rem;
 }
 
 .view-header h2 {
     font-size: 1.5rem;
     font-weight: 600;
+}
+
+.actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
 }
 
 /* Buttons */
@@ -250,6 +258,19 @@ body {
     border: 1px solid var(--border-color);
     border-radius: 0.5rem;
     padding: 1rem;
+}
+
+.article-card.selectable {
+    cursor: pointer;
+}
+
+.article-select {
+    margin-top: 0.15rem;
+}
+
+.article-select input {
+    width: 16px;
+    height: 16px;
 }
 
 .category-card.clickable {

@@ -8,6 +8,8 @@ let currentFilters = {};
 let editingArticlePath = null;
 let codeMirrorEditor = null;
 let previewVisible = true;
+let batchMode = false;
+let selectedArticlePaths = new Set();
 
 // DOM Elements
 const articlesView = document.getElementById('articles-view');
@@ -25,6 +27,11 @@ const mdPreviewToggle = document.getElementById('md-preview-toggle');
 const mdEditorBody = document.querySelector('.md-editor-body');
 const categoryFilter = document.getElementById('category-filter');
 const toastContainer = document.getElementById('toast-container');
+const batchModeBtn = document.getElementById('batch-mode-btn');
+const batchDeleteBtn = document.getElementById('batch-delete-btn');
+const batchDraftBtn = document.getElementById('batch-draft-btn');
+const batchTagAddBtn = document.getElementById('batch-tag-add-btn');
+const batchCategoryBtn = document.getElementById('batch-category-btn');
 
 function formatCategoryDisplay(category = '') {
     return category
@@ -82,6 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadCategoriesForFilter();
     loadTagsForSelect();
     bindMarkdownToolbar();
+    bindBatchActions();
     renderPreview();
 });
 
@@ -190,6 +198,94 @@ function showToast(message, type = 'success', duration = 2200) {
     }, duration);
 }
 
+function bindBatchActions() {
+    batchModeBtn?.addEventListener('click', () => {
+        batchMode = !batchMode;
+        if (!batchMode) {
+            selectedArticlePaths.clear();
+        }
+        updateBatchButtons();
+        loadArticles();
+    });
+
+    batchDeleteBtn?.addEventListener('click', async () => {
+        if (!ensureBatchSelection()) return;
+        if (!confirm(`确认批量删除 ${selectedArticlePaths.size} 篇文章吗？`)) return;
+        await executeBulkOperation({ operation: 'delete' }, '批量删除完成');
+    });
+
+    batchDraftBtn?.addEventListener('click', async () => {
+        if (!ensureBatchSelection()) return;
+        for (const p of selectedArticlePaths) {
+            try {
+                await apiRequest(`/articles/${encodeURIComponent(p)}/toggle-draft`, { method: 'PATCH' });
+            } catch (error) {
+                showToast(`部分文章切换草稿失败: ${error.message}`, 'error');
+                return;
+            }
+        }
+        showToast(`已切换 ${selectedArticlePaths.size} 篇文章状态`);
+        selectedArticlePaths.clear();
+        loadArticles();
+    });
+
+    batchTagAddBtn?.addEventListener('click', async () => {
+        if (!ensureBatchSelection()) return;
+        const tag = window.prompt('输入要追加的标签（单个）');
+        if (!tag || !tag.trim()) return;
+        await executeBulkOperation({ operation: 'add_tag', tag: tag.trim() }, '批量加标签完成');
+    });
+
+    batchCategoryBtn?.addEventListener('click', async () => {
+        if (!ensureBatchSelection()) return;
+        const category = window.prompt('输入目标分类，例如：Java > JUC');
+        if (category === null) return;
+        await executeBulkOperation({ operation: 'update_category', category }, '批量改分类完成');
+        await loadCategories();
+        await loadCategoriesForFilter();
+    });
+}
+
+function ensureBatchSelection() {
+    if (selectedArticlePaths.size === 0) {
+        showToast('请先选择文章', 'error');
+        return false;
+    }
+    return true;
+}
+
+async function executeBulkOperation(payload, successMessage) {
+    try {
+        const result = await apiRequest('/articles/bulk', {
+            method: 'POST',
+            body: JSON.stringify({
+                paths: Array.from(selectedArticlePaths),
+                ...payload,
+            }),
+        });
+        selectedArticlePaths.clear();
+        updateBatchButtons();
+        loadArticles();
+        const suffix = result?.failed ? `（成功 ${result.success}，失败 ${result.failed}）` : '';
+        showToast(`${successMessage}${suffix}`);
+        if (result?.failed) {
+            console.error('bulk failures:', result.failures);
+        }
+    } catch (error) {
+        showToast(`批量操作失败: ${error.message}`, 'error');
+    }
+}
+
+function updateBatchButtons() {
+    if (!batchModeBtn) return;
+    batchModeBtn.textContent = batchMode ? `退出批量（已选 ${selectedArticlePaths.size}）` : '批量管理';
+    const show = batchMode ? '' : 'none';
+    if (batchDeleteBtn) batchDeleteBtn.style.display = show;
+    if (batchDraftBtn) batchDraftBtn.style.display = show;
+    if (batchTagAddBtn) batchTagAddBtn.style.display = show;
+    if (batchCategoryBtn) batchCategoryBtn.style.display = show;
+}
+
 // API Helper Functions
 async function apiRequest(endpoint, options = {}) {
     const url = `${API_BASE}${endpoint}`;
@@ -234,7 +330,12 @@ function renderArticles(articles) {
     }
 
     articleList.innerHTML = articles.map(article => `
-        <div class="article-card ${article.draft ? 'draft' : 'published'}">
+        <div class="article-card ${article.draft ? 'draft' : 'published'} ${batchMode ? 'selectable' : ''}" ${batchMode ? `onclick="toggleSelectArticle('${escapeJs(article.path)}')"` : ''}>
+            ${batchMode ? `
+                <div class="article-select">
+                    <input type="checkbox" ${selectedArticlePaths.has(article.path) ? 'checked' : ''} onclick="event.stopPropagation(); toggleSelectArticle('${escapeJs(article.path)}')">
+                </div>
+            ` : ''}
             <div class="article-info">
                 <div class="article-title">${escapeHtml(article.title)}</div>
                 <div class="article-meta">
@@ -248,7 +349,7 @@ function renderArticles(articles) {
                     </div>
                 ` : ''}
             </div>
-            <div class="article-actions">
+            <div class="article-actions" ${batchMode ? 'style="display:none;"' : ''}>
                 <button class="btn btn-small" onclick="editArticle('${escapeJs(article.path)}')">编辑</button>
                 <button class="btn btn-small ${article.draft ? 'btn-primary' : 'btn-secondary'}" onclick="toggleDraft('${escapeJs(article.path)}')">
                     ${article.draft ? '发布' : '转草稿'}
@@ -485,7 +586,19 @@ function renderCategories(categories) {
             <button class="btn btn-small btn-secondary category-view-btn">查看文章</button>
         </div>
     `).join('');
+
+    updateBatchButtons();
 }
+
+window.toggleSelectArticle = (path) => {
+    if (selectedArticlePaths.has(path)) {
+        selectedArticlePaths.delete(path);
+    } else {
+        selectedArticlePaths.add(path);
+    }
+    updateBatchButtons();
+    loadArticles();
+};
 
 window.viewCategoryArticles = (categoryPath) => {
     currentFilters.category = categoryPath;
