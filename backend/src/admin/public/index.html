@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blog Admin Panel</title>
+    <link rel="stylesheet" href="styles.css?v=20260218-2">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>Blog Admin</h1>
+            </div>
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-view="articles">
+                    <span class="icon">📝</span> 文章
+                </button>
+                <button class="nav-item" data-view="categories">
+                    <span class="icon">📁</span> 分类
+                </button>
+                <button class="nav-item" data-view="tags">
+                    <span class="icon">🏷️</span> 标签
+                </button>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Articles View -->
+            <div id="articles-view" class="view active">
+                <div class="view-header">
+                    <h2>文章</h2>
+                    <div class="actions">
+                        <button id="new-article-btn" class="btn btn-primary">+ 新建文章</button>
+                    </div>
+                </div>
+                <div class="filters">
+                    <input type="text" id="search-input" placeholder="搜索文章...">
+                    <select id="category-filter">
+                        <option value="">全部分类</option>
+                    </select>
+                    <select id="draft-filter">
+                        <option value="">全部状态</option>
+                        <option value="false">已发布</option>
+                        <option value="true">草稿</option>
+                    </select>
+                </div>
+                <div class="article-list" id="article-list">
+                    <!-- Articles will be loaded here -->
+                </div>
+                <div class="pagination" id="pagination"></div>
+            </div>
+
+            <!-- Categories View -->
+            <div id="categories-view" class="view">
+                <div class="view-header">
+                    <h2>分类</h2>
+                </div>
+                <div class="category-list" id="category-list">
+                    <!-- Categories will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Tags View -->
+            <div id="tags-view" class="view">
+                <div class="view-header">
+                    <h2>标签</h2>
+                </div>
+                <div class="tag-list" id="tag-list">
+                    <!-- Tags will be loaded here -->
+                </div>
+            </div>
+        </main>
+
+        <!-- Article Editor Modal -->
+        <div id="editor-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="editor-title">编辑文章</h2>
+                    <button class="close-btn" id="close-editor">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="article-form">
+                        <div class="form-group">
+                            <label for="article-title">标题 *</label>
+                            <input type="text" id="article-title" required>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="article-category">分类</label>
+                                <input type="text" id="article-category" list="category-list-datalist">
+                                <datalist id="category-list-datalist"></datalist>
+                            </div>
+                            <div class="form-group">
+                                <label for="article-tags">标签（用逗号分隔）</label>
+                                <input type="text" id="article-tags" list="tag-list-datalist">
+                                <datalist id="tag-list-datalist"></datalist>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="article-image">封面图 URL</label>
+                                <input type="text" id="article-image">
+                            </div>
+                            <div class="form-group">
+                                <label for="article-lang">语言</label>
+                                <input type="text" id="article-lang" placeholder="例如：zh_CN">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="article-description">描述</label>
+                            <input type="text" id="article-description">
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="article-draft">
+                                草稿
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label for="article-content">正文（Markdown）</label>
+                            <div class="md-editor">
+                                <div class="md-toolbar" id="md-toolbar">
+                                    <button type="button" class="md-tool-btn" data-action="h2">H2</button>
+                                    <button type="button" class="md-tool-btn" data-action="h3">H3</button>
+                                    <button type="button" class="md-tool-btn" data-action="bold"><b>B</b></button>
+                                    <button type="button" class="md-tool-btn" data-action="italic"><i>I</i></button>
+                                    <button type="button" class="md-tool-btn" data-action="quote">"</button>
+                                    <button type="button" class="md-tool-btn" data-action="code">Code</button>
+                                    <button type="button" class="md-tool-btn" data-action="link">Link</button>
+                                    <button type="button" class="md-tool-btn" data-action="image">Image</button>
+                                    <button type="button" class="md-tool-btn" data-action="ul">UL</button>
+                                    <button type="button" class="md-tool-btn" data-action="ol">OL</button>
+                                    <button type="button" class="md-tool-btn md-tool-preview" id="md-preview-toggle">隐藏预览</button>
+                                </div>
+                                <div class="md-editor-body">
+                                    <textarea id="article-content"></textarea>
+                                    <div id="md-preview" class="md-preview"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">保存</button>
+                            <button type="button" class="btn btn-secondary" id="cancel-edit">取消</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/markdown/markdown.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/meta.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/clike/clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/sql/sql.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/shell/shell.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/yaml/yaml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/xml/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+    <div id="toast-container" class="toast-container"></div>
+    <script src="app.js?v=20260218-4"></script>
+</body>
+</html>
