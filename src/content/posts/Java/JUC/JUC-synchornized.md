@@ -1,6 +1,6 @@
 ---
 title: JUC-synchronized
-published: '2026-02-18T13:28:28.031Z'
+published: 2026-02-18T13:28:28
 description: '从临界区与竞态条件出发，系统理解 Java synchronized 的原理、用法与常见场景。'
 image: ''
 tags:
