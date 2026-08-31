@@ -1,7 +1,6 @@
 import {
   Controller,
   Get,
-  Post,
   Patch,
   Delete,
   Body,
@@ -9,7 +8,16 @@ import {
   Query,
 } from '@nestjs/common';
 import { CategoriesService } from './categories.service';
-import { CategoryDto, CategoryTreeDto, RenameCategoryDto, DeleteCategoryDto } from './dto/category.dto';
+import { ArticleListItemDto } from '../articles/dto/article.dto';
+import { MutationResultDto } from '../common/batch.util';
+import { PageQueryDto } from '../common/page-query.dto';
+import { PagedResult } from '../common/pagination.util';
+import {
+  CategoryDto,
+  CategoryTreeDto,
+  DeleteCategoryQueryDto,
+  RenameCategoryDto,
+} from './dto/category.dto';
 
 @Controller('categories')
 export class CategoriesController {
@@ -44,11 +52,14 @@ export class CategoriesController {
 
   /**
    * Get articles by category
-   * GET /api/categories/:name/articles
+   * GET /api/categories/:name/articles?page=1&limit=20
    */
   @Get(':name/articles')
-  async getArticles(@Param('name') name: string): Promise<string[]> {
-    return this.categoriesService.getArticles(name);
+  async getArticles(
+    @Param('name') name: string,
+    @Query() query: PageQueryDto,
+  ): Promise<PagedResult<ArticleListItemDto>> {
+    return this.categoriesService.getArticles(name, query);
   }
 
   /**
@@ -56,21 +67,25 @@ export class CategoriesController {
    * PATCH /api/categories/rename
    */
   @Patch('rename')
-  async rename(@Body() renameDto: { oldName: string; newName: string }): Promise<{ count: number }> {
+  async rename(
+    @Body() renameDto: RenameCategoryDto,
+  ): Promise<MutationResultDto> {
     return this.categoriesService.rename(renameDto.oldName, renameDto.newName);
   }
 
   /**
    * Delete a category
-   * DELETE /api/categories/:name
+   * DELETE /api/categories/:name?moveTo=<category> | ?deleteArticles=true
    */
   @Delete(':name')
   async delete(
     @Param('name') name: string,
-    @Query('moveTo') moveTo?: string,
-    @Query('deleteArticles') deleteArticles?: string,
-  ): Promise<{ count: number }> {
-    const shouldDelete = deleteArticles === 'true';
-    return this.categoriesService.delete(name, moveTo, shouldDelete);
+    @Query() query: DeleteCategoryQueryDto,
+  ): Promise<MutationResultDto> {
+    return this.categoriesService.delete(
+      name,
+      query.moveTo,
+      query.deleteArticles === 'true',
+    );
   }
 }

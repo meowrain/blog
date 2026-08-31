@@ -29,6 +29,11 @@ export class CreateArticleDto {
   @IsString()
   lang?: string;
 
+  /** Replace the file when the generated path already exists (default: 409). */
+  @IsOptional()
+  @IsBoolean()
+  overwrite?: boolean;
+
   @IsString()
   content!: string;
 }

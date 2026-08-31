@@ -1,5 +1,9 @@
+import { IsOptional, IsString, Length } from 'class-validator';
+import { Transform } from 'class-transformer';
+
 export interface CategoryDto {
   name: string;
+  /** Posix path relative to POSTS_DIR, e.g. `frontend/react`. */
   path: string;
   articleCount: number;
   parent?: string;
@@ -12,13 +16,31 @@ export interface CategoryTreeDto {
   children: CategoryTreeDto[];
 }
 
-export interface RenameCategoryDto {
+const trim = ({ value }: { value: unknown }): unknown =>
+  typeof value === 'string' ? value.trim() : value;
+
+export class RenameCategoryDto {
+  @Transform(trim)
+  @IsString()
+  @Length(1, 512)
   oldName: string;
+
+  @Transform(trim)
+  @IsString()
+  @Length(1, 512)
   newName: string;
 }
 
-export interface DeleteCategoryDto {
-  name: string;
-  moveArticlesTo?: string; // Destination category for articles
-  deleteArticles?: boolean; // If true, delete articles instead of moving
+export class DeleteCategoryQueryDto {
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(0, 512)
+  moveTo?: string;
+
+  /** Anything other than `true` counts as false: the caller must opt in. */
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  deleteArticles?: string;
 }

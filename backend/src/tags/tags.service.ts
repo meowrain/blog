@@ -1,54 +1,110 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { FileService } from '../common/file.service';
 import { FrontmatterService } from '../common/frontmatter.service';
+import { ContentIndexService, IndexedArticle } from '../common/content-index.service';
+import { LIMITS } from '../common/constants';
+import { BatchOutcome, MutationResultDto, runBatch } from '../common/batch.util';
+import {
+  clampLimit,
+  paginate,
+  PagedResult,
+  resolvePage,
+  sortByPublishedDesc,
+} from '../common/pagination.util';
+import { PageQueryDto } from '../common/page-query.dto';
+import { toPosix } from '../common/path.util';
+import { ArticleListItemDto, toArticleListItem } from '../articles/dto/article.dto';
 import { TagDto } from './dto/tag.dto';
 
+/** Tags are compared case-insensitively but stored with their original casing. */
+function isSameTag(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
+}
+
+function replaceTag(tags: string[], from: string, to: string): string[] {
+  let replaced = false;
+  const next: string[] = [];
+
+  for (const tag of tags) {
+    if (!replaced && isSameTag(tag, from)) {
+      replaced = true;
+      if (!next.some((existing) => isSameTag(existing, to))) {
+        next.push(to);
+      }
+      continue;
+    }
+    if (!next.some((existing) => isSameTag(existing, tag))) {
+      next.push(tag);
+    }
+  }
+
+  return next;
+}
+
+function removeTag(tags: string[], name: string): string[] {
+  return tags.filter((tag) => !isSameTag(tag, name));
+}
+
+function addTag(tags: string[], name: string): string[] {
+  return tags.some((tag) => isSameTag(tag, name)) ? tags : [...tags, name];
+}
+
+/** Exact, order-sensitive equality: a rename or reorder is still a real change. */
+function sameTags(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((tag, index) => tag === b[index]);
+}
+
+/**
+ * Tags come from article frontmatter, so the article set is the tag set.
+ *
+ * Counts and matching articles are read from ContentIndexService instead of a
+ * private cache that stayed warm for the life of the process, and mutations
+ * only touch the articles the index already says carry the tag rather than
+ * re-reading every document in POSTS_DIR.
+ */
 @Injectable()
 export class TagsService {
-  private tagCache: Map<string, number> = new Map();
+  private readonly logger = new Logger(TagsService.name);
 
   constructor(
     private readonly fileService: FileService,
     private readonly frontmatterService: FrontmatterService,
+    private readonly contentIndexService: ContentIndexService,
   ) {}
 
   /**
    * Get all tags
    */
   async findAll(sortBy = 'name'): Promise<TagDto[]> {
-    await this.refreshCache();
-
-    const tags = Array.from(this.tagCache.entries()).map(([name, count]) => ({
-      name,
-      count,
-    }));
-
-    if (sortBy === 'count') {
-      tags.sort((a, b) => b.count - a.count);
-    } else {
-      tags.sort((a, b) => a.name.localeCompare(b.name));
-    }
-
-    return tags;
+    const { tags } = await this.contentIndexService.aggregate();
+    return this.toDtos(tags, sortBy === 'count' ? 'count' : 'name');
   }
 
   /**
    * Get popular tags
    */
-  async findPopular(limit = 20): Promise<TagDto[]> {
-    const tags = await this.findAll('count');
-    return tags.slice(0, limit);
+  async findPopular(limit?: number | string): Promise<TagDto[]> {
+    const { tags } = await this.contentIndexService.aggregate();
+    return this.toDtos(tags, 'count').slice(0, this.resolveLimit(limit, 20));
   }
 
   /**
-   * Get one tag
+   * Get one tag, matched case-insensitively.
    */
   async findOne(name: string): Promise<TagDto> {
-    await this.refreshCache();
+    const target = name.trim();
+    if (!target) {
+      throw new NotFoundException(`Tag not found: ${name}`);
+    }
 
-    const normalizedName = name.toLowerCase();
-    for (const [tagName, count] of this.tagCache.entries()) {
-      if (tagName.toLowerCase() === normalizedName) {
+    const { tags } = await this.contentIndexService.aggregate();
+    for (const [tagName, count] of tags) {
+      if (isSameTag(tagName, target)) {
         return { name: tagName, count };
       }
     }
@@ -57,249 +113,179 @@ export class TagsService {
   }
 
   /**
-   * Get articles by tag
+   * Get articles by tag, newest first, with the metadata callers need to render
+   * a row (bare paths forced a follow-up request per article).
    */
-  async getArticles(tagName: string): Promise<string[]> {
+  async getArticles(
+    tagName: string,
+    query: PageQueryDto = {},
+  ): Promise<PagedResult<ArticleListItemDto>> {
+    const items = await this.matching(tagName);
+    const { page, limit } = resolvePage(query);
+    return paginate(sortByPublishedDesc(items).map(toArticleListItem), page, limit);
+  }
+
+  /**
+   * Rename a tag: rewrite the frontmatter of every article carrying it, and
+   * collapse duplicates the rename creates.
+   */
+  async rename(oldName: string, newName: string): Promise<MutationResultDto> {
+    const from = await this.findOne(oldName);
+    const to = newName.trim();
+
+    if (!to) {
+      throw new BadRequestException('New tag name must not be empty');
+    }
+
+    const items = await this.matching(from.name);
+    return this.run(items, (item) =>
+      this.rewriteTags(item.relativePath, (tags) => replaceTag(tags, from.name, to)),
+    );
+  }
+
+  /**
+   * Delete a tag from every article carrying it. The tag disappears with the
+   * last article, because tags have no storage of their own.
+   */
+  async delete(tagName: string): Promise<MutationResultDto> {
     const tag = await this.findOne(tagName);
-    const files = await this.fileService.listFiles();
-    const matchingFiles: string[] = [];
+    const items = await this.matching(tag.name);
 
-    const searchTag = tag.name.toLowerCase();
-
-    for (const file of files) {
-      try {
-        const markdown = await this.fileService.readFile(file);
-        const parsed = this.frontmatterService.parseFrontmatter(markdown);
-
-        if (parsed.frontmatter.tags.some((t) => t.toLowerCase() === searchTag)) {
-          matchingFiles.push(file);
-        }
-      } catch (error) {
-        // Skip files that can't be read
-      }
-    }
-
-    return matchingFiles;
+    return this.run(items, (item) =>
+      this.rewriteTags(item.relativePath, (tags) => removeTag(tags, tag.name)),
+    );
   }
 
   /**
-   * Rename a tag
+   * Get tag suggestions, most used first.
    */
-  async rename(oldName: string, newName: string): Promise<{ count: number }> {
-    const files = await this.fileService.listFiles();
-    const oldTagLower = oldName.toLowerCase();
-    let count = 0;
+  async suggest(query?: string, limit?: number | string): Promise<TagDto[]> {
+    const target = (query ?? '').trim().toLowerCase();
+    if (!target) {
+      return [];
+    }
 
-    for (const file of files) {
-      try {
-        const markdown = await this.fileService.readFile(file);
-        const parsed = this.frontmatterService.parseFrontmatter(markdown);
-
-        const tagIndex = parsed.frontmatter.tags.findIndex(
-          (t) => t.toLowerCase() === oldTagLower,
-        );
-
-        if (tagIndex !== -1) {
-          // Replace tag (preserving original case if exact match, otherwise use exact oldName)
-          parsed.frontmatter.tags[tagIndex] = newName;
-
-          // Remove duplicates that might result from rename
-          const uniqueTags = Array.from(new Set(parsed.frontmatter.tags));
-          parsed.frontmatter.tags = uniqueTags;
-
-          const updatedMarkdown = this.frontmatterService.writeFrontmatter(parsed);
-          await this.fileService.writeFile(file, updatedMarkdown);
-
-          count++;
-        }
-      } catch (error) {
-        console.error(`Error updating ${file}:`, error);
+    const { tags } = await this.contentIndexService.aggregate();
+    const matches = new Map<string, number>();
+    for (const [name, count] of tags) {
+      if (name.toLowerCase().includes(target)) {
+        matches.set(name, count);
       }
     }
 
-    // Clear cache
-    this.tagCache.clear();
-
-    return { count };
-  }
-
-  /**
-   * Delete a tag
-   */
-  async delete(tagName: string): Promise<{ count: number }> {
-    const tag = await this.findOne(tagName);
-    const files = await this.fileService.listFiles();
-    const searchTag = tag.name.toLowerCase();
-    let count = 0;
-
-    for (const file of files) {
-      try {
-        const markdown = await this.fileService.readFile(file);
-        const parsed = this.frontmatterService.parseFrontmatter(markdown);
-
-        const originalLength = parsed.frontmatter.tags.length;
-        parsed.frontmatter.tags = parsed.frontmatter.tags.filter(
-          (t) => t.toLowerCase() !== searchTag,
-        );
-
-        if (parsed.frontmatter.tags.length !== originalLength) {
-          const updatedMarkdown = this.frontmatterService.writeFrontmatter(parsed);
-          await this.fileService.writeFile(file, updatedMarkdown);
-          count++;
-        }
-      } catch (error) {
-        console.error(`Error updating ${file}:`, error);
-      }
-    }
-
-    // Clear cache
-    this.tagCache.clear();
-
-    return { count };
-  }
-
-  /**
-   * Get tag suggestions
-   */
-  async suggest(query: string, limit = 10): Promise<TagDto[]> {
-    await this.refreshCache();
-
-    const queryLower = query.toLowerCase();
-    const matches: TagDto[] = [];
-
-    for (const [name, count] of this.tagCache.entries()) {
-      if (name.toLowerCase().includes(queryLower)) {
-        matches.push({ name, count });
-        if (matches.length >= limit) {
-          break;
-        }
-      }
-    }
-
-    return matches.sort((a, b) => b.count - a.count);
+    return this.toDtos(matches, 'count').slice(0, this.resolveLimit(limit, 10));
   }
 
   /**
    * Get related tags (frequently co-occurring)
    */
-  async getRelated(tagName: string, limit = 10): Promise<TagDto[]> {
+  async getRelated(tagName: string, limit?: number | string): Promise<TagDto[]> {
     const tag = await this.findOne(tagName);
-    const files = await this.getArticles(tag.name);
+    const items = await this.matching(tag.name);
     const coOccurrences = new Map<string, number>();
 
-    const searchTag = tag.name.toLowerCase();
-
-    for (const file of files) {
-      try {
-        const markdown = await this.fileService.readFile(file);
-        const parsed = this.frontmatterService.parseFrontmatter(markdown);
-
-        for (const t of parsed.frontmatter.tags) {
-          if (t.toLowerCase() !== searchTag) {
-            coOccurrences.set(
-              t,
-              (coOccurrences.get(t) ?? 0) + 1,
-            );
-          }
+    for (const item of items) {
+      for (const other of item.frontmatter.tags) {
+        if (!isSameTag(other, tag.name)) {
+          coOccurrences.set(other, (coOccurrences.get(other) ?? 0) + 1);
         }
-      } catch (error) {
-        // Skip files that can't be read
       }
     }
 
-    const related = Array.from(coOccurrences.entries())
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, limit);
-
-    return related;
+    return this.toDtos(coOccurrences, 'count').slice(0, this.resolveLimit(limit, 10));
   }
 
   /**
    * Bulk tag operations
    */
-  async bulkAdd(
-    tagName: string,
-    articlePaths: string[],
-  ): Promise<{ count: number }> {
-    let count = 0;
-
-    for (const file of articlePaths) {
-      try {
-        const markdown = await this.fileService.readFile(file);
-        const parsed = this.frontmatterService.parseFrontmatter(markdown);
-
-        const tagLower = tagName.toLowerCase();
-        if (!parsed.frontmatter.tags.some((t) => t.toLowerCase() === tagLower)) {
-          parsed.frontmatter.tags.push(tagName);
-          const updatedMarkdown = this.frontmatterService.writeFrontmatter(parsed);
-          await this.fileService.writeFile(file, updatedMarkdown);
-          count++;
-        }
-      } catch (error) {
-        console.error(`Error updating ${file}:`, error);
-      }
-    }
-
-    this.tagCache.clear();
-    return { count };
+  async bulkAdd(tagName: string, articlePaths: string[]): Promise<MutationResultDto> {
+    const tag = this.requireTag(tagName);
+    return this.bulkApply(articlePaths, (relativePath) =>
+      this.rewriteTags(relativePath, (tags) => addTag(tags, tag)),
+    );
   }
 
-  async bulkRemove(
-    tagName: string,
-    articlePaths: string[],
-  ): Promise<{ count: number }> {
-    let count = 0;
+  async bulkRemove(tagName: string, articlePaths: string[]): Promise<MutationResultDto> {
+    const tag = this.requireTag(tagName);
+    return this.bulkApply(articlePaths, (relativePath) =>
+      this.rewriteTags(relativePath, (tags) => removeTag(tags, tag)),
+    );
+  }
 
-    for (const file of articlePaths) {
-      try {
-        const markdown = await this.fileService.readFile(file);
-        const parsed = this.frontmatterService.parseFrontmatter(markdown);
-
-        const originalLength = parsed.frontmatter.tags.length;
-        const tagLower = tagName.toLowerCase();
-        parsed.frontmatter.tags = parsed.frontmatter.tags.filter(
-          (t) => t.toLowerCase() !== tagLower,
-        );
-
-        if (parsed.frontmatter.tags.length !== originalLength) {
-          const updatedMarkdown = this.frontmatterService.writeFrontmatter(parsed);
-          await this.fileService.writeFile(file, updatedMarkdown);
-          count++;
-        }
-      } catch (error) {
-        console.error(`Error updating ${file}:`, error);
-      }
+  private requireTag(tagName: string): string {
+    const tag = (tagName ?? '').trim();
+    if (!tag) {
+      throw new BadRequestException('Tag name must not be empty');
     }
+    return tag;
+  }
 
-    this.tagCache.clear();
-    return { count };
+  private async bulkApply(
+    articlePaths: readonly string[],
+    mutate: (relativePath: string) => Promise<BatchOutcome>,
+  ): Promise<MutationResultDto> {
+    return runBatch(
+      articlePaths,
+      LIMITS.BULK_CONCURRENCY,
+      (rawPath) => toPosix(rawPath),
+      (rawPath) => mutate(toPosix(rawPath)),
+      (failedPath, reason) => this.logger.warn(`Failed on ${failedPath}: ${reason}`),
+    );
+  }
+
+  /** Articles whose frontmatter carries a tag. */
+  private async matching(tagName: string): Promise<IndexedArticle[]> {
+    const items = await this.contentIndexService.getItems();
+    return items.filter((item) => item.frontmatter.tags.some((tag) => isSameTag(tag, tagName)));
   }
 
   /**
-   * Refresh tag cache from all articles
+   * Rewrite `tags` only, with the transform applied to the content read under
+   * the file lock, so an unrelated concurrent edit cannot be dropped by a stale
+   * body. Returning the document untouched means nothing is written and counted.
    */
-  private async refreshCache(): Promise<void> {
-    if (this.tagCache.size > 0) {
-      return; // Cache is still valid
-    }
+  private async rewriteTags(
+    relativePath: string,
+    transform: (tags: string[]) => string[],
+  ): Promise<BatchOutcome> {
+    let changed = false;
 
-    const files = await this.fileService.listFiles();
-    const tagMap = new Map<string, number>();
-
-    for (const file of files) {
-      try {
-        const markdown = await this.fileService.readFile(file);
-        const parsed = this.frontmatterService.parseFrontmatter(markdown);
-
-        for (const tag of parsed.frontmatter.tags) {
-          tagMap.set(tag, (tagMap.get(tag) ?? 0) + 1);
-        }
-      } catch (error) {
-        // Skip files that can't be read
+    await this.fileService.updateFile(relativePath, (markdown) => {
+      const parsed = this.frontmatterService.parseFrontmatter(markdown);
+      const tags = transform(parsed.frontmatter.tags);
+      if (sameTags(parsed.frontmatter.tags, tags)) {
+        return markdown;
       }
-    }
+      changed = true;
+      parsed.frontmatter.tags = tags;
+      return this.frontmatterService.writeFrontmatter(parsed);
+    });
 
-    this.tagCache = tagMap;
+    return changed ? 'applied' : 'skipped';
+  }
+
+  /** Query-string limits arrive as text that may not parse; never let that mean "all" or "none". */
+  private resolveLimit(limit: number | string | undefined, fallback: number): number {
+    return clampLimit(limit, fallback, LIMITS.MAX_PAGE_LIMIT);
+  }
+
+  private toDtos(counts: Map<string, number>, sortBy: 'name' | 'count'): TagDto[] {
+    const tags = Array.from(counts, ([name, count]) => ({ name, count }));
+    return sortBy === 'count'
+      ? tags.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+      : tags.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  private run(
+    items: IndexedArticle[],
+    mutate: (item: IndexedArticle) => Promise<BatchOutcome>,
+  ): Promise<MutationResultDto> {
+    return runBatch(
+      items,
+      LIMITS.BULK_CONCURRENCY,
+      (item) => item.relativePath,
+      mutate,
+      (failedPath, reason) => this.logger.warn(`Failed on ${failedPath}: ${reason}`),
+    );
   }
 }

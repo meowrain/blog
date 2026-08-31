@@ -1,7 +1,30 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import path from 'path';
 import { FileService } from '../common/file.service';
 import { FrontmatterService } from '../common/frontmatter.service';
+import { ContentIndexService, IndexedArticle } from '../common/content-index.service';
+import { LIMITS } from '../common/constants';
+import { BatchOutcome, MutationResultDto, runBatch } from '../common/batch.util';
+import { PageQueryDto } from '../common/page-query.dto';
+import {
+  paginate,
+  PagedResult,
+  resolvePage,
+  sortByPublishedDesc,
+} from '../common/pagination.util';
+import {
+  categoryOf,
+  isInCategory,
+  normalizeCategoryPath,
+  replacePathPrefix,
+  toDisplayCategory,
+} from '../common/path.util';
+import { ArticleListItemDto, toArticleListItem } from '../articles/dto/article.dto';
 import { CategoryDto, CategoryTreeDto } from './dto/category.dto';
 
 interface CategoryNode {
@@ -11,23 +34,29 @@ interface CategoryNode {
   children: Map<string, CategoryNode>;
 }
 
+/**
+ * Categories are directories: a category exists when at least one article sits
+ * in it (or below it), and counts come from ContentIndexService rather than a
+ * cache of this service's own, which stayed warm for the life of the process.
+ */
 @Injectable()
 export class CategoriesService {
-  private categoryCache: Map<string, CategoryDto> = new Map();
+  private readonly logger = new Logger(CategoriesService.name);
 
   constructor(
     private readonly fileService: FileService,
     private readonly frontmatterService: FrontmatterService,
+    private readonly contentIndexService: ContentIndexService,
   ) {}
 
   /**
    * Get all categories (flat list)
    */
   async findAll(): Promise<CategoryDto[]> {
-    await this.refreshCache();
-    return Array.from(this.categoryCache.values()).sort((a, b) =>
-      a.path.localeCompare(b.path),
-    );
+    const { categories } = await this.contentIndexService.aggregate();
+    return Array.from(categories.entries())
+      .map(([categoryPath, count]) => this.toDto(categoryPath, count))
+      .sort((a, b) => a.path.localeCompare(b.path));
   }
 
   /**
@@ -37,15 +66,14 @@ export class CategoriesService {
     const categories = await this.findAll();
     const rootMap = new Map<string, CategoryNode>();
 
-    // Initialize root nodes
     for (const category of categories) {
-      const parts = category.path.split(path.sep);
+      const parts = category.path.split('/');
       let currentLevel = rootMap;
       let currentPath = '';
 
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
-        currentPath = i === 0 ? part : path.join(currentPath, part);
+        currentPath = i === 0 ? part : `${currentPath}/${part}`;
 
         if (!currentLevel.has(part)) {
           currentLevel.set(part, {
@@ -56,195 +84,173 @@ export class CategoriesService {
           });
         }
 
+        const node = currentLevel.get(part)!;
         if (i === parts.length - 1) {
-          // This is the actual category node
-          const node = currentLevel.get(part)!;
           node.articleCount = category.articleCount;
         }
-
-        currentLevel = currentLevel.get(part)!.children;
+        currentLevel = node.children;
       }
     }
 
-    // Convert to tree structure
     return this.buildTree(Array.from(rootMap.values()));
   }
 
   /**
-   * Get one category by name/path
+   * Get one category by path, or by its last segment when that is unambiguous.
    */
   async findOne(pathOrName: string): Promise<CategoryDto> {
-    await this.refreshCache();
-
-    // Normalize path
-    const normalizedPath = this.normalizeCategoryPath(pathOrName).replace(/\//g, path.sep);
-
-    // Try exact match first
-    if (this.categoryCache.has(normalizedPath)) {
-      return this.categoryCache.get(normalizedPath)!;
+    const target = normalizeCategoryPath(pathOrName);
+    if (!target) {
+      throw new NotFoundException(`Category not found: ${pathOrName}`);
     }
 
-    // Try finding by partial match
-    for (const [key, value] of this.categoryCache.entries()) {
-      if (key === normalizedPath || key.endsWith(path.sep + normalizedPath)) {
-        return value;
-      }
+    const categories = await this.findAll();
+    const exact = categories.find((category) => category.path === target);
+    if (exact) {
+      return exact;
+    }
+
+    const matches = categories.filter((category) =>
+      category.path.endsWith(`/${target}`),
+    );
+    if (matches.length === 1) {
+      return matches[0];
+    }
+    if (matches.length > 1) {
+      throw new BadRequestException(
+        `Category name "${pathOrName}" is ambiguous: ${matches
+          .map((category) => category.path)
+          .join(', ')}`,
+      );
     }
 
     throw new NotFoundException(`Category not found: ${pathOrName}`);
   }
 
   /**
-   * Get articles by category
+   * Get articles by category, newest first, with the metadata the callers need
+   * to render a row (bare paths forced a follow-up request per article).
    */
-  async getArticles(categoryPath: string): Promise<string[]> {
+  async getArticles(
+    categoryPath: string,
+    query: PageQueryDto = {},
+  ): Promise<PagedResult<ArticleListItemDto>> {
     const category = await this.findOne(categoryPath);
-    const allFiles = await this.fileService.listFiles();
+    const items = await this.contentIndexService.getItems();
 
-    const categoryPattern = this.normalizeCategoryPath(category.path).replace(/\//g, path.sep);
-    return allFiles.filter((f) => {
-      const dir = path.dirname(f);
-      return dir === categoryPattern || dir.startsWith(categoryPattern + path.sep);
+    const sorted = sortByPublishedDesc(
+      items.filter((item) => isInCategory(item.relativePath, category.path)),
+    ).map(toArticleListItem);
+
+    const { page, limit } = resolvePage(query);
+    return paginate(sorted, page, limit);
+  }
+
+  /**
+   * Rename a category: move every article below it and resync their frontmatter.
+   */
+  async rename(oldPath: string, newPath: string): Promise<MutationResultDto> {
+    const from = (await this.findOne(oldPath)).path;
+    const to = normalizeCategoryPath(newPath);
+
+    if (!to) {
+      throw new BadRequestException('New category path must not be empty');
+    }
+    if (to === from) {
+      throw new BadRequestException(`Category is already named "${to}"`);
+    }
+
+    const items = await this.itemsIn(from);
+
+    return this.run(items, async (item) => {
+      const targetPath = replacePathPrefix(item.relativePath, from, to);
+      // Each article's own destination directory, so a moved subtree keeps its
+      // frontmatter in sync instead of collapsing onto the renamed parent.
+      const display = toDisplayCategory(categoryOf(targetPath));
+      await this.fileService.moveAndUpdate(item.relativePath, targetPath, (markdown) =>
+        this.withCategory(markdown, display),
+      );
     });
   }
 
   /**
-   * Rename a category
-   */
-  async rename(oldPath: string, newPath: string): Promise<{ count: number }> {
-    const category = await this.findOne(oldPath);
-    const normalizedNewPath = this.normalizeCategoryPath(newPath);
-
-    // Get all articles in this category
-    const articlePaths = await this.getArticles(oldPath);
-    let count = 0;
-
-    for (const articlePath of articlePaths) {
-      try {
-        // Build new path
-        const relativePath = articlePath.replace(
-          category.path.replace(/\//g, path.sep),
-          normalizedNewPath.replace(/\//g, path.sep),
-        );
-
-        // Read article
-        const markdown = await this.fileService.readFile(articlePath);
-        const parsed = this.frontmatterService.parseFrontmatter(markdown);
-
-        // Update frontmatter category
-        parsed.frontmatter.category = normalizedNewPath.split('/').join(' > ');
-        const updatedMarkdown = this.frontmatterService.writeFrontmatter(parsed);
-
-        // Move file and update content
-        await this.fileService.moveFile(articlePath, relativePath);
-        await this.fileService.writeFile(relativePath, updatedMarkdown);
-
-        count++;
-      } catch (error) {
-        console.error(`Error moving ${articlePath}:`, error);
-      }
-    }
-
-    // Refresh cache after operation
-    this.categoryCache.clear();
-
-    return { count };
-  }
-
-  /**
-   * Delete a category
+   * Delete a category by moving or removing every article it contains.
+   *
+   * Doing nothing was previously reported as a successful `{count: 0}` delete;
+   * an explicit choice is now required so the caller cannot lose articles by
+   * forgetting a query parameter. `moveTo` has to name a real category — an
+   * empty one is indistinguishable from "no decision yet". Moving a single
+   * article out of its category is an article edit instead.
    */
   async delete(
     categoryPath: string,
     moveArticlesTo?: string,
     deleteArticles = false,
-  ): Promise<{ count: number }> {
+  ): Promise<MutationResultDto> {
     const category = await this.findOne(categoryPath);
-    const articlePaths = await this.getArticles(categoryPath);
-    let count = 0;
+    const items = await this.itemsIn(category.path);
 
     if (deleteArticles) {
-      // Delete all articles
-      for (const articlePath of articlePaths) {
-        try {
-          await this.fileService.deleteFile(articlePath);
-          count++;
-        } catch (error) {
-          console.error(`Error deleting ${articlePath}:`, error);
-        }
-      }
-    } else if (moveArticlesTo) {
-      // Move articles to new category
-      const normalizedTargetPath = this.normalizeCategoryPath(moveArticlesTo);
-      const targetPath = normalizedTargetPath.replace(/\//g, path.sep);
-
-      for (const articlePath of articlePaths) {
-        try {
-          const filename = path.basename(articlePath);
-          const newRelativePath = path.join(targetPath, filename);
-
-          // Read and update article
-          const markdown = await this.fileService.readFile(articlePath);
-          const parsed = this.frontmatterService.parseFrontmatter(markdown);
-          parsed.frontmatter.category = normalizedTargetPath.split('/').join(' > ');
-          const updatedMarkdown = this.frontmatterService.writeFrontmatter(parsed);
-
-          // Move file
-          await this.fileService.moveFile(articlePath, newRelativePath);
-          await this.fileService.writeFile(newRelativePath, updatedMarkdown);
-
-          count++;
-        } catch (error) {
-          console.error(`Error moving ${articlePath}:`, error);
-        }
-      }
-    }
-
-    // Refresh cache
-    this.categoryCache.clear();
-
-    return { count };
-  }
-
-  /**
-   * Refresh category cache from file system
-   */
-  private async refreshCache(): Promise<void> {
-    if (this.categoryCache.size > 0) {
-      return; // Cache is still valid
-    }
-
-    const files = await this.fileService.listFiles();
-    const categoryMap = new Map<string, number>();
-
-    // Count articles per category
-    for (const file of files) {
-      const dir = path.dirname(file);
-      const categoryPath = dir === '.' ? '' : dir;
-
-      categoryMap.set(categoryPath, (categoryMap.get(categoryPath) ?? 0) + 1);
-
-      // Also count all parent categories
-      const parts = categoryPath.split(path.sep);
-      for (let i = 0; i < parts.length - 1; i++) {
-        const parentPath = parts.slice(0, i + 1).join(path.sep);
-        categoryMap.set(parentPath, (categoryMap.get(parentPath) ?? 0) + 1);
-      }
-    }
-
-    // Build category DTOs
-    this.categoryCache.clear();
-    for (const [categoryPath, count] of categoryMap.entries()) {
-      const parts = categoryPath.split(path.sep);
-      const name = parts[parts.length - 1] || 'Root';
-
-      this.categoryCache.set(categoryPath, {
-        name,
-        path: categoryPath,
-        articleCount: count,
-        parent: parts.length > 1 ? parts.slice(0, -1).join(path.sep) : undefined,
+      return this.run(items, async (item) => {
+        await this.fileService.deleteFile(item.relativePath);
       });
     }
+
+    const to = normalizeCategoryPath(moveArticlesTo);
+    if (!to) {
+      throw new BadRequestException(
+        'Choose how to handle the articles: pass deleteArticles=true or moveTo=<category>',
+      );
+    }
+    if (to === category.path) {
+      throw new BadRequestException(`Target category is the category being deleted: "${to}"`);
+    }
+
+    const display = toDisplayCategory(to);
+    return this.run(items, async (item) => {
+      const targetPath = `${to}/${path.posix.basename(item.relativePath)}`;
+      await this.fileService.moveAndUpdate(item.relativePath, targetPath, (markdown) =>
+        this.withCategory(markdown, display),
+      );
+    });
+  }
+
+  private toDto(categoryPath: string, articleCount: number): CategoryDto {
+    const parts = categoryPath.split('/');
+    return {
+      name: parts[parts.length - 1],
+      path: categoryPath,
+      articleCount,
+      parent: parts.length > 1 ? parts.slice(0, -1).join('/') : undefined,
+    };
+  }
+
+  private async itemsIn(categoryPath: string): Promise<IndexedArticle[]> {
+    const items = await this.contentIndexService.getItems();
+    return items.filter((item) => isInCategory(item.relativePath, categoryPath));
+  }
+
+  /** Rewrite `category` only, so an unrelated edit cannot be dropped by a stale body. */
+  private withCategory(markdown: string, display: string): string {
+    const parsed = this.frontmatterService.parseFrontmatter(markdown);
+    if (parsed.frontmatter.category === display) {
+      return markdown;
+    }
+    parsed.frontmatter.category = display;
+    return this.frontmatterService.writeFrontmatter(parsed);
+  }
+
+  private run(
+    items: IndexedArticle[],
+    mutate: (item: IndexedArticle) => Promise<BatchOutcome | void>,
+  ): Promise<MutationResultDto> {
+    return runBatch(
+      items,
+      LIMITS.BULK_CONCURRENCY,
+      (item) => item.relativePath,
+      mutate,
+      (failedPath, reason) => this.logger.warn(`Failed on ${failedPath}: ${reason}`),
+    );
   }
 
   /**
@@ -257,16 +263,5 @@ export class CategoriesService {
       articleCount: node.articleCount,
       children: this.buildTree(Array.from(node.children.values())),
     }));
-  }
-
-  private normalizeCategoryPath(input?: string): string {
-    if (!input) return '';
-    return input
-      .replace(/>/g, '/')
-      .replace(/[\\\/]+/g, '/')
-      .split('/')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0)
-      .join('/');
   }
 }

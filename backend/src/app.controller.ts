@@ -1,7 +1,10 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { FileService } from './common/file.service';
 import { AppService } from './app.service';
-import { PATHS } from './common/constants';
+import { PATHS, LIMITS } from './common/constants';
+import { CATEGORY_DISPLAY_SEPARATOR } from './common/path.util';
+import { resolvePage } from './common/pagination.util';
+import { ListBackupsDto, PruneBackupsDto, RestoreBackupDto } from './app.dto';
 
 @Controller()
 export class AppController {
@@ -17,14 +20,10 @@ export class AppController {
 
   @Get('health')
   async health() {
-    const postsReadable = await this.fileService.listFiles(PATHS.POSTS_DIR).then(
-      () => true,
-      () => false,
-    );
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
-      postsReadable,
+      postsReadable: await this.fileService.isPostsDirReadable(),
       backupsDir: PATHS.BACKUPS_DIR,
     };
   }
@@ -33,30 +32,25 @@ export class AppController {
   getMeta() {
     return {
       version: this.appService.getVersion(),
-      categoryDisplaySeparator: ' > ',
+      categoryDisplaySeparator: CATEGORY_DISPLAY_SEPARATOR,
       categoryPathSeparator: '/',
-      backupRetentionDays: PATHS.BACKUP_RETENTION_DAYS,
+      backupRetentionDays: LIMITS.BACKUP_RETENTION_DAYS,
     };
   }
 
   @Get('backups')
-  async listBackups(
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-  ) {
-    return this.fileService.listBackups(
-      page ? Number(page) : 1,
-      limit ? Number(limit) : 50,
-    );
+  async listBackups(@Query() query: ListBackupsDto) {
+    const { page, limit } = resolvePage(query);
+    return this.fileService.listBackups(page, limit);
   }
 
   @Post('backups/restore')
-  async restoreBackup(@Body() body: { backupPath: string }) {
+  async restoreBackup(@Body() body: RestoreBackupDto) {
     return this.fileService.restoreBackup(body.backupPath);
   }
 
   @Post('backups/prune')
-  async pruneBackups(@Body() body?: { retentionDays?: number }) {
+  async pruneBackups(@Body() body: PruneBackupsDto) {
     return this.fileService.pruneBackups(body?.retentionDays);
   }
 }

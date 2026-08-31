@@ -14,7 +14,12 @@ import { UpdateArticleDto } from './dto/update-article.dto';
 import { ListArticlesDto } from './dto/list-articles.dto';
 import { BulkOperationDto, BulkOperationResultDto } from './dto/bulk-operation.dto';
 import { ArticleDto, PaginatedArticlesDto } from './dto/article.dto';
+import { wildcardParam } from '../common/path.util';
 
+/**
+ * `*path` arrives as an array of segments on Express 5, so every route below passes
+ * it through `wildcardParam` before handing it to the service.
+ */
 @Controller('articles')
 export class ArticlesController {
   constructor(private readonly articlesService: ArticlesService) {}
@@ -33,8 +38,8 @@ export class ArticlesController {
    * GET /api/articles/Java/Spring/Article.md
    */
   @Get('*path')
-  async findOne(@Param('path') path: string): Promise<ArticleDto> {
-    return this.articlesService.findOne(path);
+  async findOne(@Param('path') path: string | string[]): Promise<ArticleDto> {
+    return this.articlesService.findOne(wildcardParam(path));
   }
 
   /**
@@ -47,15 +52,28 @@ export class ArticlesController {
   }
 
   /**
+   * Toggle draft status
+   * PATCH /api/articles/Java/Spring/Article.md/toggle-draft
+   *
+   * Declared before the wildcard update route: `*path` also matches slashes, so
+   * the generic route would otherwise capture this request and leave
+   * `toggle-draft` inside the article path.
+   */
+  @Patch('*path/toggle-draft')
+  async toggleDraft(@Param('path') path: string | string[]): Promise<ArticleDto> {
+    return this.articlesService.toggleDraft(wildcardParam(path));
+  }
+
+  /**
    * Update an article
    * PATCH /api/articles/Java/Spring/Article.md
    */
   @Patch('*path')
   async update(
-    @Param('path') path: string,
+    @Param('path') path: string | string[],
     @Body() updateArticleDto: UpdateArticleDto,
   ): Promise<ArticleDto> {
-    return this.articlesService.update(path, updateArticleDto);
+    return this.articlesService.update(wildcardParam(path), updateArticleDto);
   }
 
   /**
@@ -63,17 +81,10 @@ export class ArticlesController {
    * DELETE /api/articles/Java/Spring/Article.md
    */
   @Delete('*path')
-  async remove(@Param('path') path: string): Promise<void> {
-    return this.articlesService.remove(path);
-  }
-
-  /**
-   * Toggle draft status
-   * PATCH /api/articles/Java/Spring/Article.md/toggle-draft
-   */
-  @Patch('*path/toggle-draft')
-  async toggleDraft(@Param('path') path: string): Promise<ArticleDto> {
-    return this.articlesService.toggleDraft(path);
+  async remove(
+    @Param('path') path: string | string[],
+  ): Promise<{ backupPath: string | null }> {
+    return this.articlesService.remove(wildcardParam(path));
   }
 
   /**

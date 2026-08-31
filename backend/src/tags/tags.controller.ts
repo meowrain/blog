@@ -9,7 +9,18 @@ import {
   Query,
 } from '@nestjs/common';
 import { TagsService } from './tags.service';
-import { TagDto } from './dto/tag.dto';
+import { MutationResultDto } from '../common/batch.util';
+import { PageQueryDto } from '../common/page-query.dto';
+import { PagedResult } from '../common/pagination.util';
+import { ArticleListItemDto } from '../articles/dto/article.dto';
+import {
+  BulkTagBodyDto,
+  LimitQueryDto,
+  ListTagsQueryDto,
+  RenameTagBodyDto,
+  SuggestTagsQueryDto,
+  TagDto,
+} from './dto/tag.dto';
 
 @Controller('tags')
 export class TagsController {
@@ -20,8 +31,8 @@ export class TagsController {
    * GET /api/tags?sortBy=name|count
    */
   @Get()
-  async findAll(@Query('sortBy') sortBy?: string): Promise<TagDto[]> {
-    return this.tagsService.findAll(sortBy);
+  async findAll(@Query() query: ListTagsQueryDto): Promise<TagDto[]> {
+    return this.tagsService.findAll(query.sortBy);
   }
 
   /**
@@ -29,8 +40,8 @@ export class TagsController {
    * GET /api/tags/popular?limit=20
    */
   @Get('popular')
-  async findPopular(@Query('limit') limit?: string): Promise<TagDto[]> {
-    return this.tagsService.findPopular(limit ? parseInt(limit) : 20);
+  async findPopular(@Query() query: LimitQueryDto): Promise<TagDto[]> {
+    return this.tagsService.findPopular(query.limit);
   }
 
   /**
@@ -38,14 +49,8 @@ export class TagsController {
    * GET /api/tags/suggest?q=Spr&limit=10
    */
   @Get('suggest')
-  async suggest(
-    @Query('q') query: string,
-    @Query('limit') limit?: string,
-  ): Promise<TagDto[]> {
-    if (!query) {
-      return [];
-    }
-    return this.tagsService.suggest(query, limit ? parseInt(limit) : 10);
+  async suggest(@Query() query: SuggestTagsQueryDto): Promise<TagDto[]> {
+    return this.tagsService.suggest(query.q, query.limit);
   }
 
   /**
@@ -59,11 +64,14 @@ export class TagsController {
 
   /**
    * Get articles by tag
-   * GET /api/tags/:name/articles
+   * GET /api/tags/:name/articles?page=1&limit=20
    */
   @Get(':name/articles')
-  async getArticles(@Param('name') name: string): Promise<string[]> {
-    return this.tagsService.getArticles(name);
+  async getArticles(
+    @Param('name') name: string,
+    @Query() query: PageQueryDto,
+  ): Promise<PagedResult<ArticleListItemDto>> {
+    return this.tagsService.getArticles(name, query);
   }
 
   /**
@@ -73,9 +81,9 @@ export class TagsController {
   @Get(':name/related')
   async getRelated(
     @Param('name') name: string,
-    @Query('limit') limit?: string,
+    @Query() query: LimitQueryDto,
   ): Promise<TagDto[]> {
-    return this.tagsService.getRelated(name, limit ? parseInt(limit) : 10);
+    return this.tagsService.getRelated(name, query.limit);
   }
 
   /**
@@ -85,8 +93,8 @@ export class TagsController {
   @Patch(':name')
   async rename(
     @Param('name') oldName: string,
-    @Body() body: { newName: string },
-  ): Promise<{ count: number }> {
+    @Body() body: RenameTagBodyDto,
+  ): Promise<MutationResultDto> {
     return this.tagsService.rename(oldName, body.newName);
   }
 
@@ -95,7 +103,7 @@ export class TagsController {
    * DELETE /api/tags/:name
    */
   @Delete(':name')
-  async delete(@Param('name') name: string): Promise<{ count: number }> {
+  async delete(@Param('name') name: string): Promise<MutationResultDto> {
     return this.tagsService.delete(name);
   }
 
@@ -104,9 +112,7 @@ export class TagsController {
    * POST /api/tags/bulk/add
    */
   @Post('bulk/add')
-  async bulkAdd(
-    @Body() body: { tag: string; articlePaths: string[] },
-  ): Promise<{ count: number }> {
+  async bulkAdd(@Body() body: BulkTagBodyDto): Promise<MutationResultDto> {
     return this.tagsService.bulkAdd(body.tag, body.articlePaths);
   }
 
@@ -115,9 +121,7 @@ export class TagsController {
    * POST /api/tags/bulk/remove
    */
   @Post('bulk/remove')
-  async bulkRemove(
-    @Body() body: { tag: string; articlePaths: string[] },
-  ): Promise<{ count: number }> {
+  async bulkRemove(@Body() body: BulkTagBodyDto): Promise<MutationResultDto> {
     return this.tagsService.bulkRemove(body.tag, body.articlePaths);
   }
 }
