@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Blog Admin Panel</title>
-    <link rel="stylesheet" href="styles.css?v=20260218-3">
+    <script>try { document.documentElement.dataset.theme = localStorage.getItem('admin:theme') || 'light'; } catch { /* storage may be unavailable */ }</script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5/daisyui.css">
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="styles.css?v=20260904-1">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
@@ -14,19 +17,41 @@
         <!-- Sidebar -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <h1>Blog Admin</h1>
+                <div class="logo-mark">B</div>
+                <div>
+                    <h1>Blog Admin</h1>
+                    <p class="sidebar-sub">内容管理控制台</p>
+                </div>
             </div>
             <nav class="sidebar-nav">
                 <button class="nav-item active" data-view="articles">
-                    <span class="icon">📝</span> 文章
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+                    文章
                 </button>
                 <button class="nav-item" data-view="categories">
-                    <span class="icon">📁</span> 分类
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+                    分类
                 </button>
                 <button class="nav-item" data-view="tags">
-                    <span class="icon">🏷️</span> 标签
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>
+                    标签
+                </button>
+                <button class="nav-item" data-view="backups">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M12 7v5l3 3"/></svg>
+                    备份
                 </button>
             </nav>
+            <div class="sidebar-footer">
+                <button id="refresh-btn" class="btn btn-ghost btn-sm btn-block justify-start">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+                    刷新数据
+                </button>
+                <button id="theme-toggle" class="btn btn-ghost btn-sm btn-block justify-start" title="切换主题">
+                    <svg class="theme-icon-light" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+                    <svg class="theme-icon-dark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+                    <span class="theme-label">暗色模式</span>
+                </button>
+            </div>
         </aside>
 
         <!-- Main Content -->
@@ -34,26 +59,55 @@
             <!-- Articles View -->
             <div id="articles-view" class="view active">
                 <div class="view-header">
-                    <h2>文章</h2>
+                    <div>
+                        <h2>文章管理</h2>
+                        <p class="view-summary" id="articles-summary"></p>
+                    </div>
                     <div class="actions">
-                        <button id="batch-mode-btn" class="btn btn-secondary">批量管理</button>
-                        <button id="batch-delete-btn" class="btn btn-danger" style="display:none;">批量删除</button>
-                        <button id="batch-draft-btn" class="btn btn-secondary" style="display:none;">批量转草稿/发布</button>
-                        <button id="batch-tag-add-btn" class="btn btn-secondary" style="display:none;">批量加标签</button>
-                        <button id="batch-category-btn" class="btn btn-secondary" style="display:none;">批量改分类</button>
-                        <button id="new-article-btn" class="btn btn-primary">+ 新建文章</button>
+                        <button id="batch-mode-btn" class="btn btn-outline btn-sm">批量管理</button>
+                        <button id="new-article-btn" class="btn btn-primary btn-sm">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                            新建文章
+                        </button>
                     </div>
                 </div>
-                <div class="filters">
-                    <input type="text" id="search-input" placeholder="搜索文章...">
-                    <select id="category-filter">
-                        <option value="">全部分类</option>
-                    </select>
-                    <select id="draft-filter">
-                        <option value="">全部状态</option>
-                        <option value="false">已发布</option>
-                        <option value="true">草稿</option>
-                    </select>
+
+                <!-- Batch Toolbar -->
+                <div id="batch-toolbar" class="batch-toolbar" hidden>
+                    <label class="label cursor-pointer gap-2 text-sm">
+                        <input id="batch-select-all" type="checkbox" class="checkbox checkbox-sm checkbox-primary">
+                        全选本页
+                    </label>
+                    <span id="batch-count" class="badge badge-primary badge-soft">已选 0 篇</span>
+                    <div class="batch-toolbar-actions">
+                        <button id="batch-clear-btn" class="btn btn-ghost btn-xs">取消选择</button>
+                        <button id="batch-publish-btn" class="btn btn-success btn-soft btn-xs" disabled>发布</button>
+                        <button id="batch-draft-btn" class="btn btn-warning btn-soft btn-xs" disabled>转草稿</button>
+                        <button id="batch-tag-add-btn" class="btn btn-soft btn-xs" disabled>加标签</button>
+                        <button id="batch-tag-remove-btn" class="btn btn-soft btn-xs" disabled>移除标签</button>
+                        <button id="batch-category-btn" class="btn btn-soft btn-xs" disabled>改分类</button>
+                        <button id="batch-delete-btn" class="btn btn-error btn-soft btn-xs" disabled>删除</button>
+                    </div>
+                </div>
+
+                <div class="filters card bg-base-100">
+                    <div class="card-body p-4 flex-row flex-wrap gap-3 items-center">
+                        <label class="input input-sm input-bordered flex items-center gap-2 grow min-w-48">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="size-4 opacity-60"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                            <input type="text" id="search-input" class="grow" placeholder="搜索标题、描述、标签...">
+                        </label>
+                        <select id="category-filter" class="select select-sm select-bordered w-44">
+                            <option value="">全部分类</option>
+                        </select>
+                        <select id="tag-filter" class="select select-sm select-bordered w-40">
+                            <option value="">全部标签</option>
+                        </select>
+                        <select id="draft-filter" class="select select-sm select-bordered w-32">
+                            <option value="">全部状态</option>
+                            <option value="false">已发布</option>
+                            <option value="true">草稿</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="article-list" id="article-list">
                     <!-- Articles will be loaded here -->
@@ -64,7 +118,18 @@
             <!-- Categories View -->
             <div id="categories-view" class="view">
                 <div class="view-header">
-                    <h2>分类</h2>
+                    <div>
+                        <h2>分类管理</h2>
+                        <p class="view-summary">分类由文章的分类字段自动聚合</p>
+                    </div>
+                </div>
+                <div class="filters card bg-base-100">
+                    <div class="card-body p-4 flex-row gap-3 items-center">
+                        <label class="input input-sm input-bordered flex items-center gap-2 grow max-w-sm">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="size-4 opacity-60"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                            <input type="text" id="category-search" class="grow" placeholder="搜索分类...">
+                        </label>
+                    </div>
                 </div>
                 <div class="category-list" id="category-list">
                     <!-- Categories will be loaded here -->
@@ -74,73 +139,129 @@
             <!-- Tags View -->
             <div id="tags-view" class="view">
                 <div class="view-header">
-                    <h2>标签</h2>
+                    <div>
+                        <h2>标签管理</h2>
+                        <p class="view-summary">标签由文章的 tags 字段自动聚合</p>
+                    </div>
+                </div>
+                <div class="filters card bg-base-100">
+                    <div class="card-body p-4 flex-row gap-3 items-center">
+                        <label class="input input-sm input-bordered flex items-center gap-2 grow max-w-sm">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="size-4 opacity-60"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                            <input type="text" id="tag-search" class="grow" placeholder="搜索标签...">
+                        </label>
+                        <select id="tag-sort" class="select select-sm select-bordered w-36">
+                            <option value="count">按数量排序</option>
+                            <option value="name">按名称排序</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="tag-list" id="tag-list">
                     <!-- Tags will be loaded here -->
                 </div>
             </div>
-        </main>
 
-        <!-- Article Editor Modal -->
-        <div id="editor-modal" class="modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2 id="editor-title">编辑文章</h2>
-                    <button class="close-btn" id="close-editor">&times;</button>
+            <!-- Backups View -->
+            <div id="backups-view" class="view">
+                <div class="view-header">
+                    <div>
+                        <h2>备份管理</h2>
+                        <p class="view-summary" id="backups-summary"></p>
+                    </div>
+                    <div class="actions">
+                        <button id="prune-backups-btn" class="btn btn-outline btn-warning btn-sm">清理过期备份</button>
+                    </div>
                 </div>
-                <div class="modal-body">
-                    <form id="article-form">
+                <div class="card bg-base-100">
+                    <div class="card-body p-0">
+                        <div id="backup-table-wrap" class="backup-table-wrap"></div>
+                    </div>
+                </div>
+                <div class="pagination" id="backup-pagination"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Article Editor Modal -->
+    <div id="editor-modal" class="modal">
+        <div class="modal-box editor-modal-box max-w-5xl">
+            <div class="modal-header">
+                <div>
+                    <h2 id="editor-title">编辑文章</h2>
+                    <p id="editor-path" class="editor-path"></p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="dirty-hint" class="badge badge-warning badge-soft" hidden>有未保存的更改</span>
+                    <button class="btn btn-circle btn-ghost btn-sm" id="close-editor" aria-label="关闭">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="size-5"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+                </div>
+            </div>
+            <form id="article-form">
+                <div class="editor-grid">
+                    <div class="editor-meta">
                         <div class="form-group">
                             <label for="article-title">标题 *</label>
-                            <input type="text" id="article-title" required>
+                            <input type="text" id="article-title" class="input input-bordered w-full" required>
                         </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="article-category">分类</label>
-                                <input type="text" id="article-category" list="category-list-datalist">
-                                <datalist id="category-list-datalist"></datalist>
-                            </div>
-                            <div class="form-group">
-                                <label for="article-tags">标签（用逗号分隔）</label>
-                                <input type="text" id="article-tags" list="tag-list-datalist">
-                                <datalist id="tag-list-datalist"></datalist>
-                            </div>
+                        <div class="form-group">
+                            <label for="article-category">分类</label>
+                            <input type="text" id="article-category" class="input input-bordered w-full" list="category-list-datalist" autocomplete="off">
+                            <datalist id="category-list-datalist"></datalist>
+                        </div>
+                        <div class="form-group">
+                            <label for="article-tags">标签（用逗号分隔）</label>
+                            <input type="text" id="article-tags" class="input input-bordered w-full" list="tag-list-datalist" autocomplete="off">
+                            <datalist id="tag-list-datalist"></datalist>
                         </div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="article-image">封面图 URL</label>
-                                <input type="text" id="article-image">
+                                <input type="text" id="article-image" class="input input-bordered w-full">
                             </div>
                             <div class="form-group">
                                 <label for="article-lang">语言</label>
-                                <input type="text" id="article-lang" placeholder="例如：zh_CN">
+                                <input type="text" id="article-lang" class="input input-bordered w-full" placeholder="例如：zh_CN">
                             </div>
                         </div>
                         <div class="form-group">
                             <label for="article-description">描述</label>
-                            <input type="text" id="article-description">
+                            <input type="text" id="article-description" class="input input-bordered w-full">
                         </div>
                         <div class="form-group">
-                            <label>
-                                <input type="checkbox" id="article-draft">
-                                草稿
+                            <label class="label cursor-pointer gap-3 justify-start p-0 text-sm">
+                                <input type="checkbox" id="article-draft" class="toggle toggle-sm toggle-warning">
+                                存为草稿
                             </label>
                         </div>
-                        <div class="form-group">
+                        <div id="image-preview" class="image-preview" hidden>
+                            <img id="image-preview-img" alt="封面图预览">
+                            <p id="image-preview-error" class="image-preview-error" hidden>封面图加载失败，请检查 URL</p>
+                        </div>
+                    </div>
+                    <div class="editor-content">
+                        <div class="form-group grow">
                             <label for="article-content">正文（Markdown）</label>
                             <div class="md-editor">
                                 <div class="md-toolbar" id="md-toolbar">
-                                    <button type="button" class="md-tool-btn" data-action="h2">H2</button>
-                                    <button type="button" class="md-tool-btn" data-action="h3">H3</button>
-                                    <button type="button" class="md-tool-btn" data-action="bold"><b>B</b></button>
-                                    <button type="button" class="md-tool-btn" data-action="italic"><i>I</i></button>
-                                    <button type="button" class="md-tool-btn" data-action="quote">"</button>
-                                    <button type="button" class="md-tool-btn" data-action="code">Code</button>
-                                    <button type="button" class="md-tool-btn" data-action="link">Link</button>
-                                    <button type="button" class="md-tool-btn" data-action="image">Image</button>
-                                    <button type="button" class="md-tool-btn" data-action="ul">UL</button>
-                                    <button type="button" class="md-tool-btn" data-action="ol">OL</button>
+                                    <button type="button" class="md-tool-btn" data-action="h1" title="标题 1">H1</button>
+                                    <button type="button" class="md-tool-btn" data-action="h2" title="标题 2">H2</button>
+                                    <button type="button" class="md-tool-btn" data-action="h3" title="标题 3">H3</button>
+                                    <span class="md-tool-sep"></span>
+                                    <button type="button" class="md-tool-btn" data-action="bold" title="加粗 (Ctrl+B)"><b>B</b></button>
+                                    <button type="button" class="md-tool-btn" data-action="italic" title="斜体 (Ctrl+I)"><i>I</i></button>
+                                    <button type="button" class="md-tool-btn" data-action="strike" title="删除线"><s>S</s></button>
+                                    <span class="md-tool-sep"></span>
+                                    <button type="button" class="md-tool-btn" data-action="quote" title="引用">&ldquo;&rdquo;</button>
+                                    <button type="button" class="md-tool-btn" data-action="code" title="代码">&lt;/&gt;</button>
+                                    <button type="button" class="md-tool-btn" data-action="link" title="链接 (Ctrl+K)">Link</button>
+                                    <button type="button" class="md-tool-btn" data-action="image" title="图片">Img</button>
+                                    <span class="md-tool-sep"></span>
+                                    <button type="button" class="md-tool-btn" data-action="ul" title="无序列表">UL</button>
+                                    <button type="button" class="md-tool-btn" data-action="ol" title="有序列表">OL</button>
+                                    <button type="button" class="md-tool-btn" data-action="table" title="表格">表格</button>
+                                    <button type="button" class="md-tool-btn" data-action="hr" title="分隔线">—</button>
+                                    <span class="md-tool-spacer"></span>
                                     <button type="button" class="md-tool-btn md-tool-preview" id="md-preview-toggle">隐藏预览</button>
                                 </div>
                                 <div class="md-editor-body">
@@ -149,28 +270,50 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="form-actions">
-                            <button type="submit" class="btn btn-primary">保存</button>
-                            <button type="button" class="btn btn-secondary" id="cancel-edit">取消</button>
-                        </div>
-                    </form>
+                    </div>
                 </div>
-            </div>
-        </div>
-
-        <!-- Article Preview Modal -->
-        <div id="preview-modal" class="modal">
-            <div class="modal-content preview-modal-content">
-                <div class="modal-header">
-                    <h2 id="preview-title">文章预览</h2>
-                    <button class="close-btn" id="close-preview">&times;</button>
+                <div class="form-actions">
+                    <span class="form-actions-hint">Ctrl+S 保存 · Esc 关闭</span>
+                    <button type="button" class="btn btn-ghost" id="cancel-edit">取消</button>
+                    <button type="submit" class="btn btn-primary" id="save-article-btn">保存</button>
                 </div>
-                <div class="modal-body">
-                    <div id="preview-content" class="md-preview preview-pane"></div>
-                </div>
-            </div>
+            </form>
         </div>
     </div>
+
+    <!-- Article Preview Modal -->
+    <div id="preview-modal" class="modal">
+        <div class="modal-box preview-modal-box max-w-4xl">
+            <div class="modal-header">
+                <div>
+                    <h2 id="preview-title">文章预览</h2>
+                    <div id="preview-meta" class="preview-meta"></div>
+                </div>
+                <button class="btn btn-circle btn-ghost btn-sm" id="close-preview" aria-label="关闭">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="size-5"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+            </div>
+            <div id="preview-content" class="md-preview preview-pane"></div>
+        </div>
+    </div>
+
+    <!-- Confirm / Prompt Dialog Modal -->
+    <div id="dialog-modal" class="modal">
+        <div class="modal-box dialog-modal-box max-w-md">
+            <h2 id="dialog-title" class="dialog-title"></h2>
+            <p id="dialog-message" class="dialog-message"></p>
+            <div id="dialog-fields"></div>
+            <div class="dialog-actions">
+                <button id="dialog-cancel" class="btn btn-ghost"></button>
+                <button id="dialog-confirm" class="btn btn-primary"></button>
+            </div>
+            <button id="dialog-close" class="btn btn-circle btn-ghost btn-sm dialog-x" aria-label="关闭">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="size-4"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/markdown/markdown.min.js"></script>
@@ -184,7 +327,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/xml/xml.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
-    <div id="toast-container" class="toast-container"></div>
-    <script src="app.js?v=20260831-7"></script>
+    <script src="app.js?v=20260904-1" defer></script>
 </body>
 </html>

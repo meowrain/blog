@@ -290,12 +290,12 @@ function showToast(message, options = {}) {
     if (!dom.toastContainer) return;
 
     const key = `${type}:${message}`;
-    dom.toastContainer.querySelectorAll('.toast').forEach((toast) => {
+    dom.toastContainer.querySelectorAll('.admin-toast').forEach((toast) => {
         if (toast.dataset.key === key) toast.remove();
     });
 
     const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
+    toast.className = `admin-toast admin-toast-${type}`;
     toast.dataset.key = key;
 
     const text = document.createElement('span');
@@ -358,7 +358,7 @@ function openDialog(config) {
         dom.dialogMessage.hidden = !message;
 
         dom.dialogConfirm.textContent = confirmText;
-        dom.dialogConfirm.className = `btn ${danger ? 'btn-danger' : 'btn-primary'}`;
+        dom.dialogConfirm.className = `btn ${danger ? 'btn-error' : 'btn-primary'}`;
         dom.dialogCancel.textContent = cancelText;
 
         const errorNode = (field) => {
@@ -389,6 +389,7 @@ function openDialog(config) {
 
             if (field.type === 'select') {
                 const select = document.createElement('select');
+                select.className = 'select select-bordered w-full select-sm';
                 select.id = `dialog-field-${field.key}`;
                 (field.options || []).forEach((opt) => {
                     const option = document.createElement('option');
@@ -410,6 +411,7 @@ function openDialog(config) {
                 (field.options || []).forEach((opt, index) => {
                     const item = document.createElement('label');
                     const input = document.createElement('input');
+                    input.className = 'radio radio-primary radio-sm';
                     input.type = 'radio';
                     input.name = `dialog-radio-${field.key}`;
                     input.value = opt.value;
@@ -427,6 +429,7 @@ function openDialog(config) {
                 wrap.appendChild(group);
             } else {
                 const input = document.createElement('input');
+                input.className = 'input input-bordered w-full input-sm';
                 input.type = 'text';
                 input.id = `dialog-field-${field.key}`;
                 input.value = field.value ?? '';
@@ -1065,7 +1068,7 @@ function renderListError(message) {
         <div class="state-block error-state">
             <p class="state-title">加载失败</p>
             <p class="state-desc">${escapeHtml(message)}</p>
-            <button type="button" class="btn btn-secondary btn-small" data-action="retry">重试</button>
+            <button type="button" class="btn btn-soft btn-sm" data-action="retry">重试</button>
         </div>
     `;
 }
@@ -1077,8 +1080,8 @@ function renderEmptyState() {
             <p class="state-title">${hasFilters ? '没有符合条件的文章' : '还没有文章'}</p>
             <p class="state-desc">${hasFilters ? '试试放宽筛选条件。' : '点击「新建文章」开始写作。'}</p>
             ${hasFilters
-                ? '<button type="button" class="btn btn-ghost btn-small" data-action="clear-filters">清除筛选</button>'
-                : '<button type="button" class="btn btn-primary btn-small" data-action="new-article">新建文章</button>'}
+                ? '<button type="button" class="btn btn-ghost btn-sm" data-action="clear-filters">清除筛选</button>'
+                : '<button type="button" class="btn btn-primary btn-sm" data-action="new-article">新建文章</button>'}
         </div>
     `;
 }
@@ -1118,35 +1121,35 @@ function renderArticles(articles) {
         const selected = state.selected.has(article.path);
         const classes = [
             'article-card',
-            article.draft ? 'draft' : 'published',
-            state.batchMode ? 'selectable' : '',
-            selected ? 'selected' : '',
+            article.draft ? 'is-draft' : '',
+            state.batchMode ? 'is-selectable' : '',
+            selected ? 'is-selected' : '',
         ].filter(Boolean).join(' ');
 
         const status = article.draft
-            ? '<span class="status-badge badge-draft">草稿</span>'
-            : '<span class="status-badge badge-published">已发布</span>';
+            ? '<span class="badge badge-soft badge-warning">草稿</span>'
+            : '<span class="badge badge-soft badge-success">已发布</span>';
 
         const publishedLabel = article.published ? formatDate(article.published) : '未定日期';
         const publishedTitle = article.published ? formatDateTime(article.published) : '';
 
         const tags = (article.tags || []).map((tag) => `
-            <button type="button" class="tag-badge" data-action="filter-tag" data-tag="${escapeHtml(tag)}" title="按此标签筛选">${escapeHtml(tag)}</button>
+            <button type="button" class="tag-badge badge badge-ghost" data-action="filter-tag" data-tag="${escapeHtml(tag)}" title="按此标签筛选">${escapeHtml(tag)}</button>
         `).join('');
 
         const batchControl = state.batchMode
             ? `<div class="article-select">
-                   <input type="checkbox" data-action="select" ${selected ? 'checked' : ''} aria-label="选择文章">
+                   <input type="checkbox" class="checkbox checkbox-sm checkbox-primary" data-action="select" ${selected ? 'checked' : ''} aria-label="选择文章">
                </div>`
             : '';
 
         const actions = state.batchMode
             ? ''
             : `<div class="article-actions">
-                   <button type="button" class="btn btn-small btn-secondary" data-action="preview">预览</button>
-                   <button type="button" class="btn btn-small" data-action="edit">编辑</button>
-                   <button type="button" class="btn btn-small ${article.draft ? 'btn-primary' : 'btn-secondary'}" data-action="toggle-draft" data-draft="${article.draft ? 'true' : 'false'}">${article.draft ? '发布' : '转草稿'}</button>
-                   <button type="button" class="btn btn-small btn-danger" data-action="delete">删除</button>
+                   <button type="button" class="btn btn-ghost btn-xs" data-action="preview">预览</button>
+                   <button type="button" class="btn btn-soft btn-xs" data-action="edit">编辑</button>
+                   <button type="button" class="btn btn-xs ${article.draft ? 'btn-success btn-soft' : 'btn-warning btn-soft'}" data-action="toggle-draft" data-draft="${article.draft ? 'true' : 'false'}">${article.draft ? '发布' : '转草稿'}</button>
+                   <button type="button" class="btn btn-error btn-soft btn-xs" data-action="delete">删除</button>
                </div>`;
 
         return `
@@ -1189,13 +1192,13 @@ function renderPagination(container, page, totalPages, onGo) {
         return;
     }
 
-    container.innerHTML = [
-        `<button type="button" class="page-btn" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''}>上一页</button>`,
+    container.innerHTML = `<div class="join">` + [
+        `<button type="button" class="join-item btn btn-sm" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''}>«</button>`,
         ...buildPages(page, totalPages).map((i) => `
-            <button type="button" class="page-btn ${i === page ? 'active' : ''}" data-page="${i}">${i}</button>
+            <button type="button" class="join-item btn btn-sm ${i === page ? 'btn-primary' : ''}" data-page="${i}">${i}</button>
         `),
-        `<button type="button" class="page-btn" data-page="${page + 1}" ${page >= totalPages ? 'disabled' : ''}>下一页</button>`,
-    ].join('');
+        `<button type="button" class="join-item btn btn-sm" data-page="${page + 1}" ${page >= totalPages ? 'disabled' : ''}>»</button>`,
+    ].join('') + `</div>`;
 
     container.onclick = (e) => {
         const btn = e.target.closest('[data-page]');
@@ -1220,7 +1223,7 @@ function syncBatchUI() {
     if (dom.batchModeBtn) {
         dom.batchModeBtn.textContent = state.batchMode ? '退出批量' : '批量管理';
         dom.batchModeBtn.classList.toggle('btn-primary', state.batchMode);
-        dom.batchModeBtn.classList.toggle('btn-secondary', !state.batchMode);
+        dom.batchModeBtn.classList.toggle('btn-outline', !state.batchMode);
     }
     if (dom.batchCount) dom.batchCount.textContent = `已选 ${state.selected.size} 篇`;
 
@@ -1578,9 +1581,9 @@ function renderCategories(categories) {
             <div class="category-path">${escapeHtml(formatCategoryDisplay(cat.path))}</div>
             <div class="tag-count">${cat.articleCount ?? 0} 篇文章</div>
             <div class="card-actions">
-                <button type="button" class="btn btn-small" data-action="view">查看文章</button>
-                <button type="button" class="btn btn-small btn-secondary" data-action="rename">重命名</button>
-                <button type="button" class="btn btn-small btn-danger" data-action="delete">删除</button>
+                <button type="button" class="btn btn-primary btn-soft btn-xs" data-action="view">查看文章</button>
+                <button type="button" class="btn btn-soft btn-xs" data-action="rename">重命名</button>
+                <button type="button" class="btn btn-error btn-soft btn-xs" data-action="delete">删除</button>
             </div>
         </div>
     `).join('');
@@ -1723,9 +1726,9 @@ function renderTags(tags) {
             <div class="tag-name">${escapeHtml(tag.name)}</div>
             <div class="tag-count">${tag.count ?? 0} 篇文章</div>
             <div class="card-actions">
-                <button type="button" class="btn btn-small" data-action="view">查看文章</button>
-                <button type="button" class="btn btn-small btn-secondary" data-action="rename">重命名</button>
-                <button type="button" class="btn btn-small btn-danger" data-action="delete">删除</button>
+                <button type="button" class="btn btn-primary btn-soft btn-xs" data-action="view">查看文章</button>
+                <button type="button" class="btn btn-soft btn-xs" data-action="rename">重命名</button>
+                <button type="button" class="btn btn-error btn-soft btn-xs" data-action="delete">删除</button>
             </div>
         </div>
     `).join('');
@@ -1829,7 +1832,7 @@ function renderBackups(data) {
     }
 
     dom.backupTableWrap.innerHTML = `
-        <table class="backup-table">
+        <table class="table table-sm backup-table">
             <thead>
                 <tr><th>时间</th><th>源文件</th><th>操作</th><th>大小</th><th></th></tr>
             </thead>
@@ -1838,9 +1841,9 @@ function renderBackups(data) {
                     <tr data-index="${index}" data-backup="${escapeHtml(item.backupPath)}">
                         <td title="${escapeHtml(formatDateTime(item.createdAt))}">${escapeHtml(relativeTime(item.createdAt))}</td>
                         <td class="backup-source" title="${escapeHtml(item.backupPath)}">${escapeHtml(item.sourcePath)}</td>
-                        <td><span class="action-chip action-${escapeHtml(item.action)}">${escapeHtml(item.action)}</span></td>
+                        <td><span class="badge badge-soft badge-warning action-chip action-${escapeHtml(item.action)}">${escapeHtml(item.action)}</span></td>
                         <td>${escapeHtml(formatBytes(item.size))}</td>
-                        <td><button type="button" class="btn btn-small btn-secondary" data-action="restore">恢复</button></td>
+                        <td><button type="button" class="btn btn-soft btn-xs" data-action="restore">恢复</button></td>
                     </tr>
                 `).join('')}
             </tbody>
@@ -2064,6 +2067,14 @@ function bindFilters() {
     });
 
     $('prune-backups-btn')?.addEventListener('click', pruneBackups);
+
+    $('theme-toggle')?.addEventListener('click', () => {
+        const root = document.documentElement;
+        const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+        root.dataset.theme = next;
+        try { localStorage.setItem('admin:theme', next); } catch { /* storage may be unavailable */ }
+        showToast(next === 'dark' ? '已切换到暗色模式' : '已切换到亮色模式', { type: 'info', duration: 1500 });
+    });
 
     $('close-preview')?.addEventListener('click', () => dom.previewModal?.classList.remove('active'));
     dom.previewModal?.addEventListener('click', (e) => {
