@@ -22,6 +22,24 @@ export function toDisplayCategory(input?: string | null): string {
   return normalized ? normalized.split('/').join(CATEGORY_DISPLAY_SEPARATOR) : '';
 }
 
+/**
+ * Characters that cannot appear in a directory name. `>` and `\` are not
+ * listed: normalizeCategoryPath already turns them into separators.
+ */
+const ILLEGAL_CATEGORY_CHARS = /[<>:"|?*\u0000-\u001f]/;
+
+/** Every segment must be nameable as a directory: no `.`, `..` or illegal chars. */
+export function isValidCategoryPath(input: string): boolean {
+  return normalizeCategoryPath(input)
+    .split('/')
+    .every(
+      (segment) =>
+        segment !== '.' &&
+        segment !== '..' &&
+        !ILLEGAL_CATEGORY_CHARS.test(segment),
+    );
+}
+
 export function toPosix(p: string): string {
   return p.replace(/\\/g, '/');
 }

@@ -19,6 +19,14 @@ export interface CategoryTreeDto {
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
+export class CreateCategoryDto {
+  /** Category path, e.g. `Java/JUC` or `Java > JUC` — separators are normalized. */
+  @Transform(trim)
+  @IsString()
+  @Length(1, 512)
+  path: string;
+}
+
 export class RenameCategoryDto {
   @Transform(trim)
   @IsString()

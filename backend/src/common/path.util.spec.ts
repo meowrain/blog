@@ -1,5 +1,6 @@
 import {
   isInCategory,
+  isValidCategoryPath,
   normalizeCategoryPath,
   replacePathPrefix,
   toDisplayCategory,
@@ -25,6 +26,23 @@ describe('toDisplayCategory', () => {
   it('renders a path with the display separator', () => {
     expect(toDisplayCategory('java/spring')).toBe('java > spring');
     expect(toDisplayCategory('')).toBe('');
+  });
+});
+
+describe('isValidCategoryPath', () => {
+  it('accepts ordinary nested names', () => {
+    expect(isValidCategoryPath('Java/Spring')).toBe(true);
+    expect(isValidCategoryPath('数据结构/图')).toBe(true);
+  });
+
+  it('rejects unnameable directory segments', () => {
+    expect(isValidCategoryPath('a<b')).toBe(false);
+    expect(isValidCategoryPath('a:b')).toBe(false);
+    expect(isValidCategoryPath('a|b')).toBe(false);
+    expect(isValidCategoryPath('a?b')).toBe(false);
+    expect(isValidCategoryPath('a*b')).toBe(false);
+    expect(isValidCategoryPath('.')).toBe(false);
+    expect(isValidCategoryPath('a/../b')).toBe(false);
   });
 });
 

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -20,6 +21,7 @@ import {
 import {
   categoryOf,
   isInCategory,
+  isValidCategoryPath,
   normalizeCategoryPath,
   replacePathPrefix,
   toDisplayCategory,
@@ -51,10 +53,19 @@ export class CategoriesService {
 
   /**
    * Get all categories (flat list)
+   *
+   * Directories with no articles yet count as categories too, so a freshly
+   * created one stays visible (count 0) instead of disappearing.
    */
   async findAll(): Promise<CategoryDto[]> {
-    const { categories } = await this.contentIndexService.aggregate();
-    return Array.from(categories.entries())
+    const { categories, directories } = await this.contentIndexService.aggregate();
+    const merged = new Map<string, number>(categories);
+    for (const directory of directories) {
+      if (!merged.has(directory)) {
+        merged.set(directory, 0);
+      }
+    }
+    return Array.from(merged.entries())
       .map(([categoryPath, count]) => this.toDto(categoryPath, count))
       .sort((a, b) => a.path.localeCompare(b.path));
   }
@@ -128,6 +139,37 @@ export class CategoriesService {
   }
 
   /**
+   * Create an empty category directory. Categories normally materialize from
+   * the article folders, but a pre-created one keeps the taxonomy listed
+   * (count 0) and ready for the next article.
+   */
+  async create(categoryPath: string): Promise<CategoryDto> {
+    const target = normalizeCategoryPath(categoryPath);
+    if (!target) {
+      throw new BadRequestException('Category path must not be empty');
+    }
+    if (!isValidCategoryPath(target)) {
+      throw new BadRequestException(`Category path contains invalid characters: ${target}`);
+    }
+
+    // A file anywhere along the path would block mkdir with an opaque error.
+    let prefix = '';
+    for (const segment of target.split('/')) {
+      prefix = prefix ? `${prefix}/${segment}` : segment;
+      const kind = await this.fileService.pathKind(prefix);
+      if (kind === 'file') {
+        throw new ConflictException(`A file already exists at "${prefix}"`);
+      }
+    }
+    if ((await this.fileService.pathKind(target)) === 'directory') {
+      throw new ConflictException(`Category already exists: ${target}`);
+    }
+
+    await this.fileService.createDirectory(target);
+    return this.toDto(target, 0);
+  }
+
+  /**
    * Get articles by category, newest first, with the metadata the callers need
    * to render a row (bare paths forced a follow-up request per article).
    */
@@ -148,6 +190,8 @@ export class CategoriesService {
 
   /**
    * Rename a category: move every article below it and resync their frontmatter.
+   * Directories the articles left behind are pruned, so the old path does not
+   * linger as an empty category.
    */
   async rename(oldPath: string, newPath: string): Promise<MutationResultDto> {
     const from = (await this.findOne(oldPath)).path;
@@ -162,7 +206,7 @@ export class CategoriesService {
 
     const items = await this.itemsIn(from);
 
-    return this.run(items, async (item) => {
+    const result = await this.run(items, async (item) => {
       const targetPath = replacePathPrefix(item.relativePath, from, to);
       // Each article's own destination directory, so a moved subtree keeps its
       // frontmatter in sync instead of collapsing onto the renamed parent.
@@ -171,6 +215,9 @@ export class CategoriesService {
         this.withCategory(markdown, display),
       );
     });
+
+    await this.pruneEmptyDirs(from);
+    return result;
   }
 
   /**
@@ -180,7 +227,8 @@ export class CategoriesService {
    * an explicit choice is now required so the caller cannot lose articles by
    * forgetting a query parameter. `moveTo` has to name a real category — an
    * empty one is indistinguishable from "no decision yet". Moving a single
-   * article out of its category is an article edit instead.
+   * article out of its category is an article edit instead. A category with no
+   * articles is just a directory: it is removed outright.
    */
   async delete(
     categoryPath: string,
@@ -190,10 +238,17 @@ export class CategoriesService {
     const category = await this.findOne(categoryPath);
     const items = await this.itemsIn(category.path);
 
+    if (items.length === 0) {
+      await this.fileService.removeEmptyDirectoryTree(category.path);
+      return { total: 0, count: 0, skipped: 0, failed: 0, failures: [] };
+    }
+
     if (deleteArticles) {
-      return this.run(items, async (item) => {
+      const result = await this.run(items, async (item) => {
         await this.fileService.deleteFile(item.relativePath);
       });
+      await this.pruneEmptyDirs(category.path);
+      return result;
     }
 
     const to = normalizeCategoryPath(moveArticlesTo);
@@ -207,12 +262,26 @@ export class CategoriesService {
     }
 
     const display = toDisplayCategory(to);
-    return this.run(items, async (item) => {
+    const result = await this.run(items, async (item) => {
       const targetPath = `${to}/${path.posix.basename(item.relativePath)}`;
       await this.fileService.moveAndUpdate(item.relativePath, targetPath, (markdown) =>
         this.withCategory(markdown, display),
       );
     });
+    await this.pruneEmptyDirs(category.path);
+    return result;
+  }
+
+  /**
+   * Best-effort cleanup of directories emptied by a delete or rename: empty
+   * subtrees below the old path go first, then upwards for as long as the
+   * parents have emptied out too. A directory holding any file survives.
+   */
+  private async pruneEmptyDirs(relativeDir: string): Promise<void> {
+    const normalized = normalizeCategoryPath(relativeDir);
+    if (normalized) {
+      await this.fileService.pruneEmptyDirectories(normalized);
+    }
   }
 
   private toDto(categoryPath: string, articleCount: number): CategoryDto {

@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Patch,
   Delete,
   Body,
@@ -15,6 +16,7 @@ import { PagedResult } from '../common/pagination.util';
 import {
   CategoryDto,
   CategoryTreeDto,
+  CreateCategoryDto,
   DeleteCategoryQueryDto,
   RenameCategoryDto,
 } from './dto/category.dto';
@@ -22,6 +24,15 @@ import {
 @Controller('categories')
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
+
+  /**
+   * Create an empty category directory
+   * POST /api/categories
+   */
+  @Post()
+  async create(@Body() createDto: CreateCategoryDto): Promise<CategoryDto> {
+    return this.categoriesService.create(createDto.path);
+  }
 
   /**
    * Get all categories (flat list)

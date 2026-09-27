@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { TagsService } from './tags.service';
 import { FileService } from '../common/file.service';
 import { FrontmatterService, ParsedArticle } from '../common/frontmatter.service';
@@ -183,6 +183,58 @@ describe('TagsService', () => {
 
     it('requires a tag name', async () => {
       await expect(service.bulkAdd('  ', ['A.md'])).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('pre-created tags', () => {
+    it('registers a tag with a count of 0 until an article uses it', async () => {
+      const created = await service.create('Rust');
+
+      expect(created).toEqual({ name: 'Rust', count: 0 });
+      expect(await service.findAll()).toEqual([{ name: 'Rust', count: 0 }]);
+      expect(await service.findOne('RUST')).toEqual({ name: 'Rust', count: 0 });
+    });
+
+    it('rejects duplicates and names frontmatter could not hold', async () => {
+      await service.create('Rust');
+
+      await expect(service.create('rust')).rejects.toThrow(ConflictException);
+      await expect(service.create('')).rejects.toThrow(BadRequestException);
+      await expect(service.create('a,b')).rejects.toThrow(BadRequestException);
+    });
+
+    it('yields to the used casing once an article picks the tag up', async () => {
+      await service.create('Rust');
+      await seed('A.md', ['rust']);
+
+      expect(await service.findAll()).toEqual([{ name: 'rust', count: 1 }]);
+    });
+
+    it('removes the registry entry when the tag is deleted', async () => {
+      await service.create('Rust');
+
+      await service.delete('Rust');
+
+      expect(await service.findAll()).toEqual([]);
+      await expect(service.findOne('Rust')).rejects.toThrow(NotFoundException);
+    });
+
+    it('renames a registry entry that no article carries yet', async () => {
+      await service.create('Rust');
+
+      await service.rename('Rust', 'Oxide');
+
+      expect(await service.findAll()).toEqual([{ name: 'Oxide', count: 0 }]);
+    });
+
+    it('suggests registered tags alongside used ones', async () => {
+      await seed('A.md', ['rustc']);
+      await service.create('Rust');
+
+      expect(await service.suggest('rus')).toEqual([
+        { name: 'rustc', count: 1 },
+        { name: 'Rust', count: 0 },
+      ]);
     });
   });
 });

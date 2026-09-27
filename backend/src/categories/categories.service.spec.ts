@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { CategoriesService } from './categories.service';
 import { FileService } from '../common/file.service';
 import { FrontmatterService, ParsedArticle } from '../common/frontmatter.service';
@@ -127,6 +127,48 @@ describe('CategoriesService', () => {
     });
   });
 
+  describe('create', () => {
+    it('creates a nested directory and lists it with a count of 0', async () => {
+      const created = await service.create('Java/JUC');
+
+      expect(created).toEqual({ name: 'JUC', path: 'Java/JUC', articleCount: 0, parent: 'Java' });
+      expect(await exists('Java/JUC')).toBe(true);
+      expect(await service.findAll()).toEqual([
+        { name: 'Java', path: 'Java', articleCount: 0, parent: undefined },
+        { name: 'JUC', path: 'Java/JUC', articleCount: 0, parent: 'Java' },
+      ]);
+    });
+
+    it('normalizes display separators and stray slashes', async () => {
+      await service.create(' Java > JUC // Notes ');
+
+      expect(await exists('Java/JUC/Notes')).toBe(true);
+    });
+
+    it('rejects empty and unnameable paths', async () => {
+      await expect(service.create('')).rejects.toThrow(BadRequestException);
+      await expect(service.create(' / ')).rejects.toThrow(BadRequestException);
+      await expect(service.create('a<b')).rejects.toThrow(BadRequestException);
+      await expect(service.create('a/../b')).rejects.toThrow(BadRequestException);
+    });
+
+    it('refuses to shadow an existing file', async () => {
+      // A file named exactly `Java` (no extension) blocks the category `Java`
+      // itself and anything nested below it.
+      await seed('Java', 'Java');
+
+      await expect(service.create('Java')).rejects.toThrow(ConflictException);
+      await expect(service.create('Java/JUC')).rejects.toThrow(ConflictException);
+      expect(await exists('Java')).toBe(true);
+    });
+
+    it('refuses to create the same category twice', async () => {
+      await service.create('Java');
+
+      await expect(service.create('Java')).rejects.toThrow(ConflictException);
+    });
+  });
+
   describe('rename', () => {
     beforeEach(async () => {
       await seed('Bar/One.md', 'Bar');
@@ -156,6 +198,30 @@ describe('CategoriesService', () => {
 
     it('rejects a rename onto itself', async () => {
       await expect(service.rename('Bar', 'Bar')).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('rename cleanup', () => {
+    beforeEach(async () => {
+      await seed('Bar/One.md', 'Bar');
+    });
+
+    it('prunes the directories a rename emptied out', async () => {
+      await service.rename('Bar', 'Kotlin');
+
+      expect(await exists('Bar')).toBe(false);
+      expect(await service.findAll()).toEqual([
+        { name: 'Kotlin', path: 'Kotlin', articleCount: 1, parent: undefined },
+      ]);
+    });
+
+    it('keeps a pre-created empty sibling category while pruning', async () => {
+      await fileService.createDirectory('Pinned');
+
+      await service.rename('Bar', 'Kotlin');
+
+      expect(await exists('Pinned')).toBe(true);
+      expect((await service.findAll()).map((c) => c.path)).toEqual(['Kotlin', 'Pinned']);
     });
   });
 
@@ -197,6 +263,32 @@ describe('CategoriesService', () => {
 
     it('refuses to move a category into itself', async () => {
       await expect(service.delete('Bar', 'Bar')).rejects.toThrow(BadRequestException);
+    });
+
+    it('removes an empty category outright, without asking for a decision', async () => {
+      await fileService.createDirectory('Archive');
+
+      const result = await service.delete('Archive');
+
+      expect(result).toMatchObject({ total: 0, count: 0, failed: 0 });
+      expect(await exists('Archive')).toBe(false);
+    });
+
+    it('prunes empty subdirectories with an empty category', async () => {
+      await fileService.createDirectory('Archive/2024');
+
+      await service.delete('Archive');
+
+      expect(await exists('Archive')).toBe(false);
+    });
+
+    it('stays away from an empty category that still holds other files', async () => {
+      await fileService.createDirectory('Archive');
+      await fs.writeFile(path.join(PATHS.POSTS_DIR, 'Archive', 'cover.png'), 'x');
+
+      await service.delete('Archive');
+
+      expect(await exists('Archive')).toBe(true);
     });
   });
 });

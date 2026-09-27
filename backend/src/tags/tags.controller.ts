@@ -15,6 +15,7 @@ import { PagedResult } from '../common/pagination.util';
 import { ArticleListItemDto } from '../articles/dto/article.dto';
 import {
   BulkTagBodyDto,
+  CreateTagDto,
   LimitQueryDto,
   ListTagsQueryDto,
   RenameTagBodyDto,
@@ -25,6 +26,15 @@ import {
 @Controller('tags')
 export class TagsController {
   constructor(private readonly tagsService: TagsService) {}
+
+  /**
+   * Pre-create a tag (it stays unused, count 0, until an article picks it up)
+   * POST /api/tags
+   */
+  @Post()
+  async create(@Body() createDto: CreateTagDto): Promise<TagDto> {
+    return this.tagsService.create(createDto.name);
+  }
 
   /**
    * Get all tags

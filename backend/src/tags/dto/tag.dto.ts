@@ -9,6 +9,14 @@ export interface TagDto {
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
+/** Body for `POST /tags` — pre-create a tag before any article uses it. */
+export class CreateTagDto {
+  @Transform(trim)
+  @IsString()
+  @Length(1, 128)
+  name: string;
+}
+
 /** Body for `PATCH /tags/:name` — the tag being renamed comes from the path. */
 export class RenameTagBodyDto {
   @Transform(trim)

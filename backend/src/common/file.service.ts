@@ -312,6 +312,136 @@ export class FileService {
   }
 
   /**
+   * All directories below POSTS_DIR (recursively), as posix relative paths.
+   * Empty directories are included so a freshly created category stays
+   * visible before it holds its first article.
+   */
+  async listDirectories(): Promise<string[]> {
+    const directories: string[] = [];
+
+    const scan = async (currentPath: string): Promise<void> => {
+      const entries = await fs
+        .readdir(currentPath, { withFileTypes: true })
+        .catch(() => undefined);
+      if (!entries) {
+        return;
+      }
+
+      for (const entry of entries) {
+        if (!entry.isDirectory() || entry.name.startsWith('.')) {
+          continue;
+        }
+        const fullPath = path.join(currentPath, entry.name);
+        directories.push(toPosix(path.relative(PATHS.POSTS_DIR, fullPath)));
+        await scan(fullPath);
+      }
+    };
+
+    await scan(PATHS.POSTS_DIR);
+    return directories;
+  }
+
+  /**
+   * Create a directory below POSTS_DIR (recursively), so the admin can add an
+   * empty category ahead of its first article.
+   */
+  async createDirectory(relativePath: string): Promise<void> {
+    const validatedPath = this.validatePath(relativePath);
+    await fs.mkdir(validatedPath, { recursive: true });
+    this.notifyMutation(relativePath);
+  }
+
+  /**
+   * Remove the directory at relativePath together with any subdirectories of
+   * its own that are empty all the way down. Directories holding files (and
+   * therefore parents) are left alone. Returns false when the directory could
+   * not be removed.
+   */
+  async removeEmptyDirectoryTree(relativePath: string): Promise<boolean> {
+    const validatedPath = this.validatePath(relativePath);
+    if (path.resolve(validatedPath) === path.resolve(PATHS.POSTS_DIR)) {
+      return false; // never remove the posts root itself
+    }
+    const removed = await this.pruneEmptyTree(validatedPath);
+    if (removed) {
+      this.notifyMutation(relativePath);
+    }
+    return removed;
+  }
+
+  /**
+   * Cleanup after articles moved or were deleted out of a category: prune the
+   * empty subtree below relativePath, then keep removing upwards for as long
+   * as the parents have emptied out too. POSTS_DIR itself is never removed.
+   */
+  async pruneEmptyDirectories(relativePath: string): Promise<void> {
+    const validatedPath = this.validatePath(relativePath);
+    if (path.resolve(validatedPath) === path.resolve(PATHS.POSTS_DIR)) {
+      return; // never prune the posts root itself
+    }
+    if (!(await this.pruneEmptyTree(validatedPath))) {
+      return;
+    }
+
+    const postsRoot = path.resolve(PATHS.POSTS_DIR);
+    let current = path.dirname(validatedPath);
+    while (current.startsWith(postsRoot + path.sep)) {
+      if (!(await this.pruneEmptyTree(current))) {
+        break;
+      }
+      current = path.dirname(current);
+    }
+    this.notifyMutation(relativePath);
+  }
+
+  /**
+   * Post-order removal of a directory that contains nothing but empty
+   * directories. True means the directory itself is gone afterwards.
+   */
+  private async pruneEmptyTree(absoluteDir: string): Promise<boolean> {
+    const entries = await fs
+      .readdir(absoluteDir, { withFileTypes: true })
+      .catch(() => null);
+    if (!entries) {
+      return true; // already gone, nothing left to prune
+    }
+
+    let hasContent = false;
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (!(await this.pruneEmptyTree(path.join(absoluteDir, entry.name)))) {
+          hasContent = true;
+        }
+        continue;
+      }
+      if (entry.isFile()) {
+        hasContent = true; // any file blocks removal of this directory
+      }
+    }
+
+    if (hasContent) {
+      return false;
+    }
+    try {
+      await fs.rmdir(absoluteDir);
+    } catch {
+      return false;
+    }
+    return true;
+  }
+
+  /** What sits at a POSTS_DIR-relative path, for create/delete preconditions. */
+  async pathKind(relativePath: string): Promise<'missing' | 'file' | 'directory'> {
+    const validatedPath = this.validatePath(relativePath);
+    try {
+      const stats = await fs.stat(validatedPath);
+      return stats.isDirectory() ? 'directory' : 'file';
+    } catch {
+      return 'missing';
+    }
+  }
+
+  /**
    * Check if a file exists
    */
   async fileExists(filePath: string): Promise<boolean> {

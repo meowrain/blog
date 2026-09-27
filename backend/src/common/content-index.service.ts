@@ -35,6 +35,7 @@ interface CacheEntry {
 export class ContentIndexService implements OnModuleDestroy {
   private readonly logger = new Logger(ContentIndexService.name);
   private readonly cache = new Map<string, CacheEntry>();
+  private directories: string[] = [];
   private builtAt = 0;
   private built = false;
   private inflight: Promise<void> | null = null;
@@ -68,11 +69,13 @@ export class ContentIndexService implements OnModuleDestroy {
 
   /**
    * Tag name -> article count, and category path -> article count, both in one
-   * pass over the index. Used by /tags and /categories.
+   * pass over the index. Used by /tags and /categories. `directories` lists
+   * every category directory on disk, including empty ones.
    */
   async aggregate(): Promise<{
     tags: Map<string, number>;
     categories: Map<string, number>;
+    directories: string[];
   }> {
     const items = await this.getItems();
     const tags = new Map<string, number>();
@@ -91,7 +94,7 @@ export class ContentIndexService implements OnModuleDestroy {
       }
     }
 
-    return { tags, categories };
+    return { tags, categories, directories: [...this.directories] };
   }
 
   onModuleDestroy(): void {
@@ -138,6 +141,7 @@ export class ContentIndexService implements OnModuleDestroy {
   private async build(): Promise<void> {
     const started = Date.now();
     const entries = await this.fileService.listFilesWithStats();
+    this.directories = await this.fileService.listDirectories();
     const seen = new Set<string>();
 
     const pending = entries.filter((entry) => {
