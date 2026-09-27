@@ -568,6 +568,21 @@ const editor = {
 };
 
 let previewVisible = true;
+let zenMode = false;
+
+function setZenMode(on) {
+    zenMode = on;
+    dom.editorModal?.classList.toggle('zen', on);
+    const btn = $('zen-toggle');
+    if (btn) {
+        btn.textContent = on ? '退出沉浸' : '沉浸模式';
+        btn.title = on ? '退出沉浸模式 (Esc)' : '沉浸模式';
+    }
+    if (on) {
+        editor.cm?.focus();
+    }
+    refreshEditorLayout();
+}
 
 function initEditor() {
     const textarea = dom.articleContent;
@@ -673,6 +688,7 @@ function fillEditor(article, path) {
     setContent(article.content ?? '');
     updateImagePreview();
 
+    setZenMode(false);
     dom.editorModal.classList.add('active');
     refreshEditorLayout();
     snapshotEditor();
@@ -700,6 +716,7 @@ function openEditorForNew() {
     setContent('');
     updateImagePreview();
 
+    setZenMode(false);
     dom.editorModal.classList.add('active');
     refreshEditorLayout();
     snapshotEditor();
@@ -947,6 +964,8 @@ function bindEditorChrome() {
         }
     });
 
+    $('zen-toggle')?.addEventListener('click', () => setZenMode(!zenMode));
+
     Object.values(formFields).forEach((field) => {
         if (!field) return;
         field.addEventListener('input', markDirtyState);
@@ -973,6 +992,10 @@ function bindEditorChrome() {
 
         if (e.key === 'Escape') {
             e.preventDefault();
+            if (zenMode) {
+                setZenMode(false);
+                return;
+            }
             attemptCloseEditor();
             return;
         }

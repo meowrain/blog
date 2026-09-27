@@ -7,7 +7,7 @@
     <script>try { document.documentElement.dataset.theme = localStorage.getItem('admin:theme') || 'light'; } catch { /* storage may be unavailable */ }</script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5/daisyui.css">
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <link rel="stylesheet" href="styles.css?v=20260904-1">
+    <link rel="stylesheet" href="styles.css?v=20260927-2">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
@@ -43,12 +43,12 @@
             </nav>
             <div class="sidebar-footer">
                 <button id="refresh-btn" class="btn btn-ghost btn-sm btn-block justify-start">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+                    <svg class="size-4 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
                     刷新数据
                 </button>
                 <button id="theme-toggle" class="btn btn-ghost btn-sm btn-block justify-start" title="切换主题">
-                    <svg class="theme-icon-light" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
-                    <svg class="theme-icon-dark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+                    <svg class="theme-icon-light size-4 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+                    <svg class="theme-icon-dark size-4 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
                     <span class="theme-label">暗色模式</span>
                 </button>
             </div>
@@ -66,7 +66,7 @@
                     <div class="actions">
                         <button id="batch-mode-btn" class="btn btn-outline btn-sm">批量管理</button>
                         <button id="new-article-btn" class="btn btn-primary btn-sm">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                            <svg class="size-4 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                             新建文章
                         </button>
                     </div>
@@ -198,77 +198,73 @@
                 </div>
             </div>
             <form id="article-form">
-                <div class="editor-grid">
-                    <div class="editor-meta">
-                        <div class="form-group">
-                            <label for="article-title">标题 *</label>
-                            <input type="text" id="article-title" class="input input-bordered w-full" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="article-category">分类</label>
-                            <input type="text" id="article-category" class="input input-bordered w-full" list="category-list-datalist" autocomplete="off">
-                            <datalist id="category-list-datalist"></datalist>
-                        </div>
-                        <div class="form-group">
-                            <label for="article-tags">标签（用逗号分隔）</label>
-                            <input type="text" id="article-tags" class="input input-bordered w-full" list="tag-list-datalist" autocomplete="off">
-                            <datalist id="tag-list-datalist"></datalist>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="article-image">封面图 URL</label>
-                                <input type="text" id="article-image" class="input input-bordered w-full">
-                            </div>
-                            <div class="form-group">
-                                <label for="article-lang">语言</label>
-                                <input type="text" id="article-lang" class="input input-bordered w-full" placeholder="例如：zh_CN">
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="article-description">描述</label>
-                            <input type="text" id="article-description" class="input input-bordered w-full">
-                        </div>
-                        <div class="form-group">
-                            <label class="label cursor-pointer gap-3 justify-start p-0 text-sm">
-                                <input type="checkbox" id="article-draft" class="toggle toggle-sm toggle-warning">
-                                存为草稿
-                            </label>
-                        </div>
-                        <div id="image-preview" class="image-preview" hidden>
-                            <img id="image-preview-img" alt="封面图预览">
-                            <p id="image-preview-error" class="image-preview-error" hidden>封面图加载失败，请检查 URL</p>
-                        </div>
+                <div class="editor-meta">
+                    <div class="meta-field field-title">
+                        <label for="article-title">标题 *</label>
+                        <input type="text" id="article-title" class="input input-bordered w-full" required>
                     </div>
-                    <div class="editor-content">
-                        <div class="form-group grow">
-                            <label for="article-content">正文（Markdown）</label>
-                            <div class="md-editor">
-                                <div class="md-toolbar" id="md-toolbar">
-                                    <button type="button" class="md-tool-btn" data-action="h1" title="标题 1">H1</button>
-                                    <button type="button" class="md-tool-btn" data-action="h2" title="标题 2">H2</button>
-                                    <button type="button" class="md-tool-btn" data-action="h3" title="标题 3">H3</button>
-                                    <span class="md-tool-sep"></span>
-                                    <button type="button" class="md-tool-btn" data-action="bold" title="加粗 (Ctrl+B)"><b>B</b></button>
-                                    <button type="button" class="md-tool-btn" data-action="italic" title="斜体 (Ctrl+I)"><i>I</i></button>
-                                    <button type="button" class="md-tool-btn" data-action="strike" title="删除线"><s>S</s></button>
-                                    <span class="md-tool-sep"></span>
-                                    <button type="button" class="md-tool-btn" data-action="quote" title="引用">&ldquo;&rdquo;</button>
-                                    <button type="button" class="md-tool-btn" data-action="code" title="代码">&lt;/&gt;</button>
-                                    <button type="button" class="md-tool-btn" data-action="link" title="链接 (Ctrl+K)">Link</button>
-                                    <button type="button" class="md-tool-btn" data-action="image" title="图片">Img</button>
-                                    <span class="md-tool-sep"></span>
-                                    <button type="button" class="md-tool-btn" data-action="ul" title="无序列表">UL</button>
-                                    <button type="button" class="md-tool-btn" data-action="ol" title="有序列表">OL</button>
-                                    <button type="button" class="md-tool-btn" data-action="table" title="表格">表格</button>
-                                    <button type="button" class="md-tool-btn" data-action="hr" title="分隔线">—</button>
-                                    <span class="md-tool-spacer"></span>
-                                    <button type="button" class="md-tool-btn md-tool-preview" id="md-preview-toggle">隐藏预览</button>
-                                </div>
-                                <div class="md-editor-body">
-                                    <textarea id="article-content"></textarea>
-                                    <div id="md-preview" class="md-preview"></div>
-                                </div>
-                            </div>
+                    <div class="meta-field">
+                        <label for="article-category">分类</label>
+                        <input type="text" id="article-category" class="input input-bordered w-full" list="category-list-datalist" autocomplete="off">
+                        <datalist id="category-list-datalist"></datalist>
+                    </div>
+                    <div class="meta-field">
+                        <label for="article-lang">语言</label>
+                        <input type="text" id="article-lang" class="input input-bordered w-full" placeholder="例如：zh_CN">
+                    </div>
+                    <div class="meta-field">
+                        <label for="article-tags">标签（用逗号分隔）</label>
+                        <input type="text" id="article-tags" class="input input-bordered w-full" list="tag-list-datalist" autocomplete="off">
+                        <datalist id="tag-list-datalist"></datalist>
+                    </div>
+                    <div class="meta-field">
+                        <label for="article-image">封面图 URL</label>
+                        <input type="text" id="article-image" class="input input-bordered w-full">
+                    </div>
+                    <div class="meta-field field-desc">
+                        <label for="article-description">描述</label>
+                        <input type="text" id="article-description" class="input input-bordered w-full">
+                    </div>
+                    <div class="meta-field meta-field-draft">
+                        <label class="label cursor-pointer gap-3 justify-start p-0 text-sm">
+                            <input type="checkbox" id="article-draft" class="toggle toggle-sm toggle-warning">
+                            存为草稿
+                        </label>
+                    </div>
+                    <div id="image-preview" class="image-preview" hidden>
+                        <img id="image-preview-img" alt="封面图预览">
+                        <p id="image-preview-error" class="image-preview-error" hidden>封面图加载失败，请检查 URL</p>
+                    </div>
+                </div>
+                <div class="editor-content">
+                    <label for="article-content">正文（Markdown）</label>
+                    <div class="md-editor">
+                        <div class="md-toolbar" id="md-toolbar">
+                            <button type="button" class="md-tool-btn" data-action="h1" title="标题 1">H1</button>
+                            <button type="button" class="md-tool-btn" data-action="h2" title="标题 2">H2</button>
+                            <button type="button" class="md-tool-btn" data-action="h3" title="标题 3">H3</button>
+                            <span class="md-tool-sep"></span>
+                            <button type="button" class="md-tool-btn" data-action="bold" title="加粗 (Ctrl+B)"><b>B</b></button>
+                            <button type="button" class="md-tool-btn" data-action="italic" title="斜体 (Ctrl+I)"><i>I</i></button>
+                            <button type="button" class="md-tool-btn" data-action="strike" title="删除线"><s>S</s></button>
+                            <span class="md-tool-sep"></span>
+                            <button type="button" class="md-tool-btn" data-action="quote" title="引用">&ldquo;&rdquo;</button>
+                            <button type="button" class="md-tool-btn" data-action="code" title="代码">&lt;/&gt;</button>
+                            <button type="button" class="md-tool-btn" data-action="link" title="链接 (Ctrl+K)">Link</button>
+                            <button type="button" class="md-tool-btn" data-action="image" title="图片">Img</button>
+                            <span class="md-tool-sep"></span>
+                            <button type="button" class="md-tool-btn" data-action="ul" title="无序列表">UL</button>
+                            <button type="button" class="md-tool-btn" data-action="ol" title="有序列表">OL</button>
+                            <button type="button" class="md-tool-btn" data-action="table" title="表格">表格</button>
+                            <button type="button" class="md-tool-btn" data-action="hr" title="分隔线">—</button>
+                            <span class="md-tool-spacer"></span>
+                            <button type="button" class="md-tool-btn md-tool-preview" id="md-preview-toggle">隐藏预览</button>
+                            <span class="md-tool-sep"></span>
+                            <button type="button" class="md-tool-btn md-tool-zen" id="zen-toggle" title="沉浸模式">沉浸模式</button>
+                        </div>
+                        <div class="md-editor-body">
+                            <textarea id="article-content"></textarea>
+                            <div id="md-preview" class="md-preview"></div>
                         </div>
                     </div>
                 </div>
@@ -327,6 +323,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/xml/xml.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
-    <script src="app.js?v=20260904-1" defer></script>
+    <script src="app.js?v=20260927-2" defer></script>
 </body>
 </html>
