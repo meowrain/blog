@@ -34,9 +34,10 @@ export const siteConfig: SiteConfig = {
     },
   },
   background: {
-    enable: true, // Enable background image
+    // 关闭随机图背景，改用跟随主题（明暗模式 + 主题色）的渐变背景，见 Layout.astro 中 #bg-box
+    enable: false, // Enable background image
     // src: "https://riscv-nas.acetaffy.top/random?type=horizontal",
-    src: "https://t.alcy.cc/ycy", // Background image URL (supports HTTPS)
+    // src: "https://t.alcy.cc/ycy", // Background image URL (supports HTTPS)
     position: "center", // Background position: 'top', 'center', 'bottom'
     size: "cover", // Background size: 'cover', 'contain', 'auto'
     repeat: "no-repeat", // Background repeat: 'no-repeat', 'repeat', 'repeat-x', 'repeat-y'
@@ -100,7 +101,7 @@ export const navBarConfig: NavBarConfig = {
 };
 
 export const profileConfig: ProfileConfig = {
-  avatar: "http://blog.meowrain.cn/api/i/2026/01/21/12jahtr.png", // Relative to the /src directory. Relative to the /public directory if it starts with '/'
+  avatar: "https://q1.qlogo.cn/g?b=qq&nk=782157532&s=640", // QQ 头像接口，s 可选 40/100/140/640
   name: "MeowRain",
   bio: "💕华风夏韵，洛水天依💕",
   links: [

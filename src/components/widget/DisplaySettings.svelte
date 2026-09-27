@@ -16,12 +16,16 @@ import {
     setBgHueRotate,
     getHideBg,
     setHideBg,
-    getDevMode,
-    setDevMode,
-    getDevServer,
-    setDevServer,
+	getDevMode,
+	setDevMode,
+	getDevServer,
+	setDevServer,
+	getFallingEffect,
+	setFallingEffect,
+	FALLING_EFFECT_OPTIONS,
 } from "@utils/setting-utils";
 import { AUTO_MODE, DARK_MODE, LIGHT_MODE } from "@constants/constants";
+import type { FallingEffectType } from "@utils/setting-utils";
 
 let hue = getHue();
 let theme = getStoredTheme();
@@ -31,6 +35,7 @@ let bgBlur = getBgBlur();
 let hideBg = getHideBg();
 let isDevMode = getDevMode();
 let devServer = getDevServer();
+let fallingEffect: FallingEffectType = getFallingEffect();
 let animationId: number;
 let lastUpdate = 0;
 let rainbowHue = 0; // Independent hue for background rotation
@@ -86,6 +91,16 @@ function toggleHideBg() {
 function toggleDevMode() {
 	isDevMode = !isDevMode;
 	setDevMode(isDevMode);
+}
+
+function toggleFallingEffect() {
+	fallingEffect = fallingEffect === "off" ? "sakura" : "off";
+	setFallingEffect(fallingEffect);
+}
+
+function selectFallingEffect(value: (typeof FALLING_EFFECT_OPTIONS)[number]["value"]) {
+	fallingEffect = value;
+	setFallingEffect(value);
 }
 
 function onDevServerChange() {
@@ -222,6 +237,30 @@ onMount(() => {
         <input aria-label="背景模糊" type="range" min="0" max="20" bind:value={bgBlur}
                class="slider" step="1" style="width: 100%">
     </div>
+
+    <div class="flex flex-row gap-2 mb-3 mt-3 items-center justify-between">
+        <div class="flex gap-2 font-bold text-lg text-neutral-900 dark:text-neutral-100 transition relative ml-3
+            before:w-1 before:h-4 before:rounded-md before:bg-[var(--primary)]
+            before:absolute before:-left-3 before:top-[0.33rem]"
+        >
+            下雨效果
+        </div>
+        <input type="checkbox" class="toggle-switch" checked={fallingEffect !== "off"} on:change={toggleFallingEffect} />
+    </div>
+
+    {#if fallingEffect !== "off"}
+    <div class="flex flex-row gap-1 mb-3 ml-3">
+        {#each FALLING_EFFECT_OPTIONS as opt (opt.value)}
+        <button aria-label={opt.label} title={opt.label}
+            class="w-10 h-7 rounded-md transition flex items-center justify-center active:scale-90
+            {fallingEffect === opt.value ? 'bg-[var(--primary)] text-white' : 'bg-[var(--btn-regular-bg)] text-[var(--btn-content)] hover:bg-[var(--btn-regular-bg-hover)]'}"
+            on:click={() => selectFallingEffect(opt.value)}
+        >
+            <Icon icon={opt.icon} class="text-[1.1rem]"></Icon>
+        </button>
+        {/each}
+    </div>
+    {/if}
 
     <div class="flex flex-row gap-2 mb-3 mt-3 items-center justify-between">
         <div class="flex gap-2 font-bold text-lg text-neutral-900 dark:text-neutral-100 transition relative ml-3

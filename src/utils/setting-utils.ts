@@ -94,6 +94,40 @@ export function setHideBg(hide: boolean): void {
 	}
 }
 
+export type FallingEffectType =
+	| "off"
+	| "sakura"
+	| "rain"
+	| "snow"
+	| "maple"
+	| "bubbles";
+
+export const FALLING_EFFECT_OPTIONS: {
+	value: Exclude<FallingEffectType, "off">;
+	label: string;
+	icon: string;
+}[] = [
+	{ value: "sakura", label: "樱花", icon: "material-symbols:local-florist" },
+	{ value: "rain", label: "雨", icon: "material-symbols:rainy" },
+	{ value: "snow", label: "雪", icon: "material-symbols:ac-unit" },
+	{ value: "maple", label: "枫叶", icon: "material-symbols:eco" },
+	{ value: "bubbles", label: "泡泡", icon: "material-symbols:bubble-chart" },
+];
+
+export function getFallingEffect(): FallingEffectType {
+	const stored = localStorage.getItem("falling-effect");
+	return FALLING_EFFECT_OPTIONS.some((opt) => opt.value === stored)
+		? (stored as Exclude<FallingEffectType, "off">)
+		: "off";
+}
+
+export function setFallingEffect(effect: FallingEffectType): void {
+	localStorage.setItem("falling-effect", effect);
+	window.dispatchEvent(
+		new CustomEvent("falling-effect-change", { detail: effect })
+	);
+}
+
 export function getDevMode(): boolean {
 	const stored = localStorage.getItem("dev-mode");
 	return stored === "true";
