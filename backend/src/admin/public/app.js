@@ -183,6 +183,45 @@ async function apiRequest(endpoint, options = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Animations — Motion (CDN) where available, CSS fallback otherwise.
+// Every path is cosmetic: a missing library, a thrown error or a
+// prefers-reduced-motion user all degrade to "appear instantly".
+// ---------------------------------------------------------------------------
+
+const motion = window.Motion && typeof window.Motion.animate === 'function' ? window.Motion : null;
+const prefersReducedMotion = window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    : false;
+
+const EASE_OUT = [0.22, 1, 0.36, 1];
+const LIST_CONTAINER_IDS = new Set(['article-list', 'category-list', 'tag-list']);
+
+function animateIn(elements, { y = 10, duration = 0.32, step = 0.04, maxDelay = 0.45 } = {}) {
+    if (prefersReducedMotion) return;
+    const nodes = Array.from(elements || []).filter((node) => node instanceof Element);
+    nodes.forEach((node, index) => {
+        const delay = Math.min(index * step, maxDelay);
+        try {
+            if (motion) {
+                motion.animate(node, {
+                    opacity: [0, 1],
+                    transform: [`translateY(${y}px)`, 'translateY(0px)'],
+                }, { duration, delay, ease: EASE_OUT });
+            } else {
+                node.style.animation =
+                    `anim-rise ${duration}s cubic-bezier(0.22,1,0.36,1) ${delay}s both`;
+            }
+        } catch { /* never let a failed animation break rendering */ }
+    });
+}
+
+function animateViewIn(view) {
+    if (!view) return;
+    // list containers animate their own items once data arrives
+    animateIn([...view.children].filter((el) => !LIST_CONTAINER_IDS.has(el.id)), { y: 14, step: 0.06 });
+}
+
+// ---------------------------------------------------------------------------
 // Markdown rendering (preview is sanitized: article content is user-authored)
 // ---------------------------------------------------------------------------
 
@@ -599,6 +638,7 @@ function initEditor() {
         });
         editor.usesCodeMirror = true;
         editor.cm.on('change', debounce(() => { renderPreview(); markDirtyState(); }, 150));
+        editor.cm.on('scroll', syncPreviewScroll);
     } catch {
         editor.cm = null;
         degradeToPlainTextarea('Markdown 编辑器初始化失败，已切换为纯文本模式');
@@ -611,6 +651,7 @@ function degradeToPlainTextarea(message) {
     textarea.classList.add('plain-textarea');
     textarea.rows = 18;
     textarea.addEventListener('input', debounce(renderPreview, 150));
+    textarea.addEventListener('scroll', syncPreviewScroll);
     showToast(message, { type: 'info', duration: 4000 });
 }
 
@@ -668,6 +709,25 @@ function refreshEditorLayout() {
 function renderPreview() {
     if (!dom.mdPreview || !previewVisible) return;
     renderMarkdownInto(dom.mdPreview, getContent());
+}
+
+function syncPreviewScroll() {
+    if (!dom.mdPreview || !previewVisible) return;
+    let top = 0;
+    let range = 0;
+    if (editor.cm) {
+        const info = editor.cm.getScrollInfo();
+        top = info.top;
+        range = info.height - info.clientHeight;
+    } else {
+        const textarea = dom.articleContent;
+        top = textarea.scrollTop;
+        range = textarea.scrollHeight - textarea.clientHeight;
+    }
+    const previewRange = dom.mdPreview.scrollHeight - dom.mdPreview.clientHeight;
+    if (range > 0 && previewRange > 0) {
+        dom.mdPreview.scrollTop = (top / range) * previewRange;
+    }
 }
 
 function fillEditor(article, path) {
@@ -751,9 +811,11 @@ function updateImagePreview() {
         dom.imagePreviewImg.removeAttribute('src');
         return;
     }
+    const wasHidden = dom.imagePreview.hidden;
     dom.imagePreview.hidden = false;
     dom.imagePreviewError.hidden = true;
     dom.imagePreviewImg.src = url;
+    if (wasHidden) animateIn([dom.imagePreview], { y: 4, duration: 0.2, step: 0 });
 }
 
 async function saveArticle() {
@@ -961,6 +1023,7 @@ function bindEditorChrome() {
         if (previewVisible) {
             renderPreview();
             editor.cm?.refresh();
+            syncPreviewScroll();
         }
     });
 
@@ -1086,6 +1149,46 @@ function renderSkeletons(count) {
     `).join('');
 }
 
+function renderCategorySkeletons(count = 8) {
+    dom.categoryList.innerHTML = Array.from({ length: count }, () => `
+        <div class="category-card skeleton-card" aria-hidden="true">
+            <div class="sk sk-title"></div>
+            <div class="sk sk-meta"></div>
+            <div class="sk sk-tags"></div>
+        </div>
+    `).join('');
+}
+
+function renderTagSkeletons(count = 12) {
+    dom.tagList.innerHTML = Array.from({ length: count }, () => `
+        <div class="tag-card skeleton-card" aria-hidden="true">
+            <div class="sk sk-title"></div>
+            <div class="sk sk-meta"></div>
+        </div>
+    `).join('');
+}
+
+function renderBackupSkeletons(count = 6) {
+    dom.backupTableWrap.innerHTML = `
+        <table class="table table-sm backup-table" aria-hidden="true">
+            <thead>
+                <tr><th>时间</th><th>源文件</th><th>操作</th><th>大小</th><th></th></tr>
+            </thead>
+            <tbody>
+                ${Array.from({ length: count }, () => `
+                    <tr>
+                        <td><div class="sk sk-cell" style="width:5.5rem"></div></td>
+                        <td><div class="sk sk-cell" style="width:70%"></div></td>
+                        <td><div class="sk sk-cell" style="width:4rem"></div></td>
+                        <td><div class="sk sk-cell" style="width:3.5rem"></div></td>
+                        <td></td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
 function renderListError(message) {
     dom.articleList.innerHTML = `
         <div class="state-block error-state">
@@ -1129,12 +1232,14 @@ async function loadArticles({ silent = false } = {}) {
         } else {
             renderArticles(state.pageArticles);
         }
+        animateIn(dom.articleList?.children);
         renderPagination(dom.pagination, state.page, state.totalPages, goToPage);
         renderSummary(data.limit || PAGE_SIZE);
         syncBatchUI();
         writeHash();
     } catch (error) {
         renderListError(error.message);
+        animateIn(dom.articleList?.children, { y: 8, step: 0 });
         if (dom.articlesSummary) dom.articlesSummary.textContent = '';
     }
 }
@@ -1242,7 +1347,13 @@ function goToPage(page) {
 // ---------------------------------------------------------------------------
 
 function syncBatchUI() {
-    if (dom.batchToolbar) dom.batchToolbar.hidden = !state.batchMode;
+    if (dom.batchToolbar) {
+        const wasHidden = dom.batchToolbar.hidden;
+        dom.batchToolbar.hidden = !state.batchMode;
+        if (wasHidden && !dom.batchToolbar.hidden) {
+            animateIn([dom.batchToolbar], { y: -8, duration: 0.25, step: 0 });
+        }
+    }
     if (dom.batchModeBtn) {
         dom.batchModeBtn.textContent = state.batchMode ? '退出批量' : '批量管理';
         dom.batchModeBtn.classList.toggle('btn-primary', state.batchMode);
@@ -1578,12 +1689,13 @@ function setFilter(key, value) {
 
 async function loadCategories() {
     if (!dom.categoryList) return;
-    dom.categoryList.innerHTML = '<div class="state-block"><p class="state-desc">加载中…</p></div>';
+    renderCategorySkeletons();
     try {
         renderCategories(await apiRequest('/categories'));
     } catch (error) {
         dom.categoryList.innerHTML = `<div class="state-block error-state"><p class="state-title">加载失败</p><p class="state-desc">${escapeHtml(error.message)}</p></div>`;
     }
+    animateIn(dom.categoryList.children);
 }
 
 function renderCategories(categories) {
@@ -1726,13 +1838,14 @@ let loadedTags = [];
 
 async function loadTags() {
     if (!dom.tagList) return;
-    dom.tagList.innerHTML = '<div class="state-block"><p class="state-desc">加载中…</p></div>';
+    renderTagSkeletons();
     try {
         loadedTags = await apiRequest(`/tags?sortBy=${dom.tagSort?.value === 'name' ? 'name' : 'count'}`);
         renderTags(loadedTags);
     } catch (error) {
         dom.tagList.innerHTML = `<div class="state-block error-state"><p class="state-title">加载失败</p><p class="state-desc">${escapeHtml(error.message)}</p></div>`;
     }
+    animateIn(dom.tagList.children);
 }
 
 function renderTags(tags) {
@@ -1827,7 +1940,7 @@ function bindTagDelegation() {
 
 async function loadBackups() {
     if (!dom.backupTableWrap) return;
-    dom.backupTableWrap.innerHTML = '<div class="state-block"><p class="state-desc">加载中…</p></div>';
+    renderBackupSkeletons();
 
     const params = new URLSearchParams({ page: state.backupPage, limit: BACKUP_PAGE_SIZE });
     try {
@@ -1845,6 +1958,7 @@ async function loadBackups() {
     } catch (error) {
         dom.backupTableWrap.innerHTML = `<div class="state-block error-state"><p class="state-title">加载失败</p><p class="state-desc">${escapeHtml(error.message)}</p></div>`;
     }
+    animateIn(dom.backupTableWrap.querySelectorAll('tbody tr, .state-block'));
 }
 
 function renderBackups(data) {
@@ -2084,9 +2198,15 @@ function bindFilters() {
     $('new-article-btn')?.addEventListener('click', openEditorForNew);
 
     $('refresh-btn')?.addEventListener('click', async () => {
-        await refreshMeta();
-        await loadCurrentView();
-        showToast('已刷新', { type: 'info', duration: 1500 });
+        const refreshBtn = $('refresh-btn');
+        refreshBtn?.classList.add('is-refreshing');
+        try {
+            await refreshMeta();
+            await loadCurrentView();
+            showToast('已刷新', { type: 'info', duration: 1500 });
+        } finally {
+            refreshBtn?.classList.remove('is-refreshing');
+        }
     });
 
     $('prune-backups-btn')?.addEventListener('click', pruneBackups);
@@ -2137,6 +2257,7 @@ function switchView(view, { updateHistory = true } = {}) {
     document.querySelectorAll('.view').forEach((element) => {
         element.classList.toggle('active', element.id === `${view}-view`);
     });
+    animateViewIn(document.getElementById(`${view}-view`));
 
     if (updateHistory) writeHash();
     loadCurrentView();
