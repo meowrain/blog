@@ -546,6 +546,7 @@ body {
     display: flex;
     flex: 1;
     min-height: 0;
+    position: relative; /* 图片拖拽提示的定位基准 */
 }
 
 .md-editor-body > * { min-width: 0; }
@@ -579,6 +580,38 @@ body {
 }
 
 .md-editor-body.preview-hidden .md-preview { display: none; }
+
+/* 图片上传：拖拽落点提示 + 上传中的占位文本 */
+.md-editor.drop-target {
+    border-color: var(--color-primary);
+}
+
+.md-editor.drop-target .md-editor-body::after {
+    content: '松开鼠标上传图片';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in oklab, var(--color-base-100) 78%, transparent);
+    color: var(--color-primary);
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    pointer-events: none;
+    z-index: 6;
+}
+
+.cm-image-uploading {
+    background: color-mix(in oklab, var(--color-primary) 22%, transparent);
+    border-radius: 0.25rem;
+    animation: upload-pulse 1.3s ease-in-out infinite;
+}
+
+@keyframes upload-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+}
 
 .md-tool-preview, .md-tool-zen { opacity: 1; color: var(--color-primary); }
 
@@ -816,7 +849,9 @@ body {
     position: fixed;
     right: 1.25rem;
     bottom: 1.25rem;
-    z-index: 200;
+    /* 必须高于 daisyUI .modal 的 z-index: 999 —— 编辑器弹窗遮罩带 backdrop-filter
+       blur，提示若排在其下方会被模糊并压暗（上传是在弹窗里发生的） */
+    z-index: 1000;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;

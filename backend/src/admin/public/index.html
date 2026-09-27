@@ -7,7 +7,7 @@
     <script>try { document.documentElement.dataset.theme = localStorage.getItem('admin:theme') || 'light'; } catch { /* storage may be unavailable */ }</script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5/daisyui.css">
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <link rel="stylesheet" href="styles.css?v=20260927-3">
+    <link rel="stylesheet" href="styles.css?v=20260927-6">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
@@ -120,7 +120,13 @@
                 <div class="view-header">
                     <div>
                         <h2>分类管理</h2>
-                        <p class="view-summary">分类由文章的分类字段自动聚合</p>
+                        <p class="view-summary">分类对应文章目录，可以提前创建空分类</p>
+                    </div>
+                    <div class="actions">
+                        <button id="new-category-btn" class="btn btn-primary btn-sm">
+                            <svg class="size-4 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                            新建分类
+                        </button>
                     </div>
                 </div>
                 <div class="filters card bg-base-100">
@@ -141,7 +147,13 @@
                 <div class="view-header">
                     <div>
                         <h2>标签管理</h2>
-                        <p class="view-summary">标签由文章的 tags 字段自动聚合</p>
+                        <p class="view-summary">标签来自文章的 tags 字段，也可以提前创建备用</p>
+                    </div>
+                    <div class="actions">
+                        <button id="new-tag-btn" class="btn btn-primary btn-sm">
+                            <svg class="size-4 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                            新建标签
+                        </button>
                     </div>
                 </div>
                 <div class="filters card bg-base-100">
@@ -251,7 +263,8 @@
                             <button type="button" class="md-tool-btn" data-action="quote" title="引用">&ldquo;&rdquo;</button>
                             <button type="button" class="md-tool-btn" data-action="code" title="代码">&lt;/&gt;</button>
                             <button type="button" class="md-tool-btn" data-action="link" title="链接 (Ctrl+K)">Link</button>
-                            <button type="button" class="md-tool-btn" data-action="image" title="图片">Img</button>
+                            <button type="button" class="md-tool-btn" data-action="image" title="插入图片链接">Img</button>
+                            <button type="button" class="md-tool-btn" data-action="upload" title="上传图片（也可直接粘贴或拖入编辑器）">上传</button>
                             <span class="md-tool-sep"></span>
                             <button type="button" class="md-tool-btn" data-action="ul" title="无序列表">UL</button>
                             <button type="button" class="md-tool-btn" data-action="ol" title="有序列表">OL</button>
@@ -262,6 +275,7 @@
                             <span class="md-tool-sep"></span>
                             <button type="button" class="md-tool-btn md-tool-zen" id="zen-toggle" title="沉浸模式">沉浸模式</button>
                         </div>
+                        <input type="file" id="md-image-input" accept="image/*" multiple hidden>
                         <div class="md-editor-body">
                             <textarea id="article-content"></textarea>
                             <div id="md-preview" class="md-preview"></div>
@@ -325,6 +339,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
     <!-- Motion (animation library); app.js degrades gracefully if this fails to load -->
     <script src="https://cdn.jsdelivr.net/npm/motion@12/dist/motion.js" defer></script>
-    <script src="app.js?v=20260927-3" defer></script>
+    <script src="app.js?v=20260927-9" defer></script>
 </body>
 </html>

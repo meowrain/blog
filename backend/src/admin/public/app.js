@@ -6,6 +6,17 @@ const API_BASE = '/api';
 const PAGE_SIZE = 20;
 const BACKUP_PAGE_SIZE = 25;
 
+/**
+ * 图床：编辑器里粘贴 / 拖拽 / 选取的图片由浏览器直接上传（图床允许跨域），
+ * 响应里的 url 再插入 Markdown 正文或封面图字段。
+ */
+const IMAGE_UPLOAD = {
+    endpoint: 'https://img-edgeone.acetaffy.mom/api/index.php',
+    token: '4ab8829b49738fc562b40e66991b4504',
+    field: 'image',
+    maxBytes: 10 * 1024 * 1024,
+};
+
 const state = {
     view: 'articles',
     page: 1,
@@ -62,7 +73,9 @@ const dom = {
     mdToolbar: $('md-toolbar'),
     mdPreview: $('md-preview'),
     mdPreviewToggle: $('md-preview-toggle'),
+    mdEditor: document.querySelector('.md-editor'),
     mdEditorBody: document.querySelector('.md-editor-body'),
+    uploadInput: $('md-image-input'),
     categorySearch: $('category-search'),
     tagSearch: $('tag-search'),
     tagSort: $('tag-sort'),
@@ -313,11 +326,43 @@ function highlightCodeBlocks(container) {
 function renderMarkdownInto(container, markdown) {
     const raw = markdown ?? '';
     if (window.marked?.parse) {
-        container.innerHTML = sanitizeHtml(window.marked.parse(raw));
+        const { html, blockStartLines } = renderMarkdownWithLineMap(raw);
+        container.innerHTML = sanitizeHtml(html);
+        annotateSourceLines(container, blockStartLines);
         highlightCodeBlocks(container);
         return;
     }
     container.innerHTML = `<pre>${escapeHtml(raw)}</pre>`;
+}
+
+// 按顶层块包裹渲染，并记录每个块对应的源码起始行号，供编辑器↔预览滚动对位。
+// lexer 的 token.raw 依次拼接等于原文，据此累计行号。
+function renderMarkdownWithLineMap(raw) {
+    try {
+        const tokens = window.marked.lexer(raw);
+        const blockStartLines = [];
+        let html = '';
+        let line = 0;
+        for (const token of tokens) {
+            const startLine = line;
+            line += (token.raw.match(/\n/g) || []).length;
+            if (token.type === 'space') continue;
+            html += `<div class="md-block">${window.marked.parse(token.raw)}</div>`;
+            blockStartLines.push(startLine);
+        }
+        if (!html && raw.trim()) throw new Error('lexer produced no blocks');
+        return { html, blockStartLines };
+    } catch {
+        return { html: window.marked.parse(raw), blockStartLines: [] };
+    }
+}
+
+// sanitizeHtml 会剥掉未知 data-* 属性，因此行号在净化后再标注到块容器上。
+function annotateSourceLines(container, blockStartLines) {
+    if (!blockStartLines.length) return;
+    const blocks = container.children;
+    if (blocks.length !== blockStartLines.length) return;
+    [...blocks].forEach((el, i) => el.setAttribute('data-line', String(blockStartLines[i])));
 }
 
 // ---------------------------------------------------------------------------
@@ -709,25 +754,92 @@ function refreshEditorLayout() {
 function renderPreview() {
     if (!dom.mdPreview || !previewVisible) return;
     renderMarkdownInto(dom.mdPreview, getContent());
+    buildPreviewAnchors();
+}
+
+// 预览块锚点缓存：[{ line, el }]，随预览重渲染重建；块顶位置每次同步时实时读取，
+// 因此图片等资源加载导致的布局变化无需额外失效处理。
+let previewAnchors = [];
+
+function buildPreviewAnchors() {
+    previewAnchors = [];
+    if (!dom.mdPreview) return;
+    dom.mdPreview.querySelectorAll('.md-block[data-line]').forEach((el) => {
+        previewAnchors.push({ line: Number(el.getAttribute('data-line')), el });
+    });
 }
 
 function syncPreviewScroll() {
     if (!dom.mdPreview || !previewVisible) return;
-    let top = 0;
-    let range = 0;
+    const preview = dom.mdPreview;
+    const previewRange = preview.scrollHeight - preview.clientHeight;
     if (editor.cm) {
         const info = editor.cm.getScrollInfo();
-        top = info.top;
-        range = info.height - info.clientHeight;
-    } else {
-        const textarea = dom.articleContent;
-        top = textarea.scrollTop;
-        range = textarea.scrollHeight - textarea.clientHeight;
+        const range = info.height - info.clientHeight;
+        if (range <= 0 || previewRange <= 0) return;
+        const top = previewTopForScroll(info.top, range, previewRange);
+        preview.scrollTop = top ?? (info.top / range) * previewRange;
+        return;
     }
-    const previewRange = dom.mdPreview.scrollHeight - dom.mdPreview.clientHeight;
+    const textarea = dom.articleContent;
+    const range = textarea.scrollHeight - textarea.clientHeight;
     if (range > 0 && previewRange > 0) {
-        dom.mdPreview.scrollTop = (top / range) * previewRange;
+        preview.scrollTop = (textarea.scrollTop / range) * previewRange;
     }
+}
+
+// 编辑器文档坐标（'local'，不随滚动变化）中某行顶部的像素位置
+function editorLineTop(line) {
+    return editor.cm.charCoords({ line, ch: 0 }, 'local').top;
+}
+
+function previewContentTop(el) {
+    const preview = dom.mdPreview;
+    return el.getBoundingClientRect().top - (preview.getBoundingClientRect().top - preview.scrollTop);
+}
+
+// 把编辑器滚动位置换算为预览滚动位置：以锚点块为界分段，
+// 段内按两侧的像素跨度线性插值。分段映射修正了图片/代码块等造成的
+// 两侧高度分布不均；末段一直铺到两侧底部，保证滚到底时同时对齐。
+function previewTopForScroll(scrollTop, editorRange, previewRange) {
+    if (!previewAnchors.length) return null;
+    let lo = 0;
+    let hi = previewAnchors.length - 1;
+    let idx = -1;
+    while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (editorLineTop(previewAnchors[mid].line) <= scrollTop + 0.5) {
+            idx = mid;
+            lo = mid + 1;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    if (idx < 0) return 0;
+
+    const anchor = previewAnchors[idx];
+    const segStartEditor = Math.min(editorLineTop(anchor.line), editorRange);
+    const segStartPreview = previewContentTop(anchor.el);
+    let segEndEditor;
+    let segEndPreview;
+    if (idx === previewAnchors.length - 1) {
+        segEndEditor = editorRange;
+        segEndPreview = previewRange;
+    } else {
+        const nextEditorY = editorLineTop(previewAnchors[idx + 1].line);
+        if (nextEditorY >= editorRange) {
+            // 下一个锚点的行在编辑器里滚不到顶（已处于最后一屏），并入尾段直通底部
+            segEndEditor = editorRange;
+            segEndPreview = previewRange;
+        } else {
+            segEndEditor = nextEditorY;
+            segEndPreview = previewContentTop(previewAnchors[idx + 1].el);
+        }
+    }
+    const progress = segEndEditor > segStartEditor
+        ? Math.min(Math.max((scrollTop - segStartEditor) / (segEndEditor - segStartEditor), 0), 1)
+        : 1;
+    return segStartPreview + progress * (segEndPreview - segStartPreview);
 }
 
 function fillEditor(article, path) {
@@ -963,6 +1075,9 @@ function applyMarkdownAction(action) {
         case 'image':
             insertImage();
             break;
+        case 'upload':
+            pickImageFiles();
+            break;
         case 'ul':
             transformLines((line) => `- ${line.replace(/^[-*+]\s*/, '').replace(/^\d+\.\s*/, '')}`);
             break;
@@ -1000,7 +1115,210 @@ async function insertImage() {
     replaceSelection(`![${selection || '图片说明'}](${url})`);
 }
 
+// --- 图片上传 ---------------------------------------------------------------
+// 上传期间先在光标处写入占位文本，拿到 url 后原地替换：CodeMirror 用 markText
+// 跟踪占位范围（用户继续打字也不会错位），纯文本模式按占位 token 查找。
+
+let uploadSeq = 0;
+
+function pickImageFiles() {
+    dom.uploadInput?.click();
+}
+
+/** 取出剪贴板 / 拖拽数据里的图片文件；从网页复制的图片有时只出现在 items 里。 */
+function imageFilesFromDataTransfer(dataTransfer) {
+    if (!dataTransfer) return [];
+    const files = [...(dataTransfer.files ?? [])].filter((file) => file.type.startsWith('image/'));
+    if (files.length > 0) return files;
+    return [...(dataTransfer.items ?? [])]
+        .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+        .map((item) => item.getAsFile())
+        .filter((file) => file instanceof File);
+}
+
+async function uploadImageFile(file) {
+    if (file.size > IMAGE_UPLOAD.maxBytes) {
+        throw new Error(`图片超过 ${formatBytes(IMAGE_UPLOAD.maxBytes)}`);
+    }
+
+    const form = new FormData();
+    form.append(IMAGE_UPLOAD.field, file, file.name || 'pasted-image.png');
+    form.append('token', IMAGE_UPLOAD.token);
+
+    let response;
+    try {
+        response = await fetch(IMAGE_UPLOAD.endpoint, { method: 'POST', body: form });
+    } catch {
+        throw new Error('无法连接图床，请检查网络');
+    }
+
+    // 图床失败时同样返回 HTTP 200，只能看响应体里有没有 url
+    const data = await response.json().catch(() => null);
+    if (!data || typeof data.url !== 'string' || data.url.length === 0) {
+        throw new Error(data?.message || `图床返回异常（HTTP ${response.status}）`);
+    }
+    return { url: data.url, name: typeof data.srcName === 'string' ? data.srcName : '' };
+}
+
+function imageAltFromName(name = '') {
+    const base = name.replace(/\.[^.]+$/, '').trim();
+    return (base || '图片').replace(/[[\]()]/g, '');
+}
+
+/** 插入占位文本，返回 { settle(text) }：把占位内容换成最终文本（空串即删除）。 */
+function insertUploadPlaceholder() {
+    const token = `图片上传中… #${++uploadSeq}`;
+
+    if (editor.usesCodeMirror && editor.cm) {
+        const cm = editor.cm;
+        let marker = null;
+        cm.operation(() => {
+            const from = cm.getCursor();
+            cm.replaceSelection(token, 'end');
+            marker = cm.markText(from, cm.getCursor(), { className: 'cm-image-uploading' });
+        });
+        cm.focus();
+        return {
+            settle(text) {
+                if (!marker) return;
+                const range = marker.find();
+                marker.clear();
+                marker = null;
+                cm.operation(() => {
+                    // 占位符被手工删掉时（range 为 null）退回当前光标插入
+                    if (range) cm.replaceRange(text, range.from, range.to);
+                    else if (text) cm.replaceSelection(text, 'end');
+                });
+            },
+        };
+    }
+
+    const ta = dom.articleContent;
+    const start = ta.selectionStart ?? ta.value.length;
+    const end = Math.max(ta.selectionEnd ?? start, start);
+    ta.value = ta.value.slice(0, start) + token + ta.value.slice(end);
+    ta.selectionStart = ta.selectionEnd = start + token.length;
+    renderPreview();
+    markDirtyState();
+
+    return {
+        settle(text) {
+            const value = ta.value;
+            const index = value.indexOf(token);
+            if (index === -1) {
+                if (text) replaceSelection(text);
+                return;
+            }
+            const caret = ta.selectionStart ?? index;
+            ta.value = value.slice(0, index) + text + value.slice(index + token.length);
+            ta.selectionStart = ta.selectionEnd = Math.min(
+                caret > index ? index + text.length : caret,
+                ta.value.length,
+            );
+            ta.focus();
+            renderPreview();
+            markDirtyState();
+        },
+    };
+}
+
+// 多图连续上传时同一条文案会被 showToast 去重，只留一个提示
+const UPLOAD_DONE_MESSAGE = '图片已上传并插入正文';
+
+async function uploadAndInsertImage(file) {
+    const placeholder = insertUploadPlaceholder();
+    try {
+        const { url, name } = await uploadImageFile(file);
+        placeholder.settle(`![${imageAltFromName(name || file.name)}](${url})`);
+        showToast(UPLOAD_DONE_MESSAGE, { duration: 2000 });
+    } catch (error) {
+        placeholder.settle('');
+        showToast(`图片上传失败：${error.message}`, {
+            type: 'error',
+            duration: 6000,
+            action: { label: '重试', onClick: () => uploadAndInsertImage(file) },
+        });
+    }
+}
+
+async function uploadCoverImage(file) {
+    showToast('封面图上传中…', { type: 'info', duration: 3000 });
+    try {
+        const { url } = await uploadImageFile(file);
+        formFields.image.value = url;
+        // 合成 input 事件，让已有的脏标记与封面预览逻辑照常触发
+        formFields.image.dispatchEvent(new Event('input', { bubbles: true }));
+        showToast('封面图已填入 URL');
+    } catch (error) {
+        showToast(`封面图上传失败：${error.message}`, { type: 'error', duration: 6000 });
+    }
+}
+
+function bindImageUpload() {
+    const zone = dom.mdEditorBody;
+    if (!zone) return;
+
+    // 捕获阶段先处理：CodeMirror 的隐藏 textarea 也在监听 paste，命中图片后要拦住它
+    zone.addEventListener('paste', (event) => {
+        if (!dom.editorModal?.classList.contains('active')) return;
+        const files = imageFilesFromDataTransfer(event.clipboardData);
+        if (files.length === 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        files.forEach(uploadAndInsertImage);
+    }, true);
+
+    const hasFiles = (event) => [...(event.dataTransfer?.types ?? [])].includes('Files');
+
+    zone.addEventListener('dragover', (event) => {
+        if (!hasFiles(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+        dom.mdEditor?.classList.add('drop-target');
+    });
+
+    zone.addEventListener('dragleave', (event) => {
+        if (zone.contains(event.relatedTarget)) return;
+        dom.mdEditor?.classList.remove('drop-target');
+    });
+
+    zone.addEventListener('drop', (event) => {
+        dom.mdEditor?.classList.remove('drop-target');
+        if (!hasFiles(event)) return;
+        event.preventDefault(); // 否则浏览器会直接打开被拖入的文件
+        const files = imageFilesFromDataTransfer(event.dataTransfer);
+        if (files.length === 0) {
+            showToast('只支持拖入图片文件', { type: 'info' });
+            return;
+        }
+        const cm = editor.cm;
+        // 落在源码区时定位到落点，落在预览区则沿用当前光标
+        if (cm && cm.getWrapperElement().contains(event.target)) {
+            cm.setCursor(cm.coordsChar({ left: event.clientX, top: event.clientY }, 'window'));
+            cm.focus();
+        }
+        files.forEach(uploadAndInsertImage);
+    });
+
+    dom.uploadInput?.addEventListener('change', () => {
+        const files = [...(dom.uploadInput.files ?? [])].filter((file) => file.type.startsWith('image/'));
+        dom.uploadInput.value = ''; // 清空后才能再次选择同一个文件
+        files.forEach(uploadAndInsertImage);
+    });
+
+    // 封面图输入框：粘贴图片即上传并填入 URL
+    formFields.image?.addEventListener('paste', (event) => {
+        const files = imageFilesFromDataTransfer(event.clipboardData);
+        if (files.length === 0) return;
+        event.preventDefault();
+        uploadCoverImage(files[0]);
+    });
+}
+
 function bindEditorChrome() {
+    // 图片异步加载完成后预览布局会变化，捕获阶段的 load 事件让两侧重新对齐
+    dom.mdPreview?.addEventListener('load', () => syncPreviewScroll(), true);
+
     // #image-preview-error is otherwise never shown: updateImagePreview only hides it.
     dom.imagePreviewImg?.addEventListener('error', () => {
         if (dom.imagePreview?.hidden || !formFields.image.value.trim()) return;
@@ -1706,12 +2024,12 @@ function renderCategories(categories) {
         : categories;
 
     if (!list.length) {
-        dom.categoryList.innerHTML = `<div class="state-block"><p class="state-title">${term ? '没有匹配的分类' : '暂无分类'}</p><p class="state-desc">${term ? '换个关键词试试。' : '分类由文章的分类字段自动聚合。'}</p></div>`;
+        dom.categoryList.innerHTML = `<div class="state-block"><p class="state-title">${term ? '没有匹配的分类' : '暂无分类'}</p><p class="state-desc">${term ? '换个关键词试试。' : '点击右上角“新建分类”创建，或把文章归类到新目录。'}</p></div>`;
         return;
     }
 
     dom.categoryList.innerHTML = list.map((cat) => `
-        <div class="category-card" data-path="${escapeHtml(cat.path)}" data-name="${escapeHtml(cat.name)}">
+        <div class="category-card" data-path="${escapeHtml(cat.path)}" data-name="${escapeHtml(cat.name)}" data-count="${cat.articleCount ?? 0}">
             <div class="category-name">${escapeHtml(cat.name)}</div>
             <div class="category-path">${escapeHtml(formatCategoryDisplay(cat.path))}</div>
             <div class="tag-count">${cat.articleCount ?? 0} 篇文章</div>
@@ -1722,6 +2040,29 @@ function renderCategories(categories) {
             </div>
         </div>
     `).join('');
+}
+
+async function createCategory() {
+    const name = await askText('新建分类', '分类路径', {
+        placeholder: '例如：Java > JUC',
+        datalistId: 'category-list-datalist',
+        hint: '用 > 分隔多级分类；空分类会先显示 0 篇文章，新文章可直接归入',
+    });
+    if (!name) return;
+
+    const normalized = normalizeCategoryPath(name);
+    if (!normalized) return;
+
+    try {
+        await apiRequest('/categories', {
+            method: 'POST',
+            body: JSON.stringify({ path: normalized }),
+        });
+        showToast(`分类「${formatCategoryDisplay(normalized)}」已创建`);
+        await Promise.all([loadCategories(), refreshMeta({ silent: true })]);
+    } catch (error) {
+        showToast(`创建分类失败：${error.message}`, { type: 'error', duration: 5000 });
+    }
 }
 
 async function renameCategory(oldPath) {
@@ -1748,7 +2089,28 @@ async function renameCategory(oldPath) {
     }
 }
 
-async function deleteCategory(catPath, catName) {
+async function deleteCategory(catPath, catName, articleCount = 0) {
+    if (Number(articleCount) === 0) {
+        const { ok } = await openDialog({
+            title: `删除空分类「${catName}」`,
+            message: '该分类下没有文章，只会移除这个空目录。',
+            confirmText: '删除分类',
+            danger: true,
+        });
+        if (!ok) return;
+
+        try {
+            await apiRequest(`/categories/${encodeURIComponent(catPath)}`, { method: 'DELETE' });
+            showToast('空分类已删除');
+            if (state.filters.category === catPath) setFilter('category', '');
+            await Promise.all([loadCategories(), loadArticles({ silent: true })]);
+            refreshMeta({ silent: true });
+        } catch (error) {
+            showToast(`删除分类失败：${error.message}`, { type: 'error', duration: 5000 });
+        }
+        return;
+    }
+
     const { ok, values } = await openDialog({
         title: `删除分类「${catName}」`,
         message: '分类是文章所在的目录，请选择分类下文章的处理方式。',
@@ -1817,7 +2179,7 @@ function bindCategoryDelegation() {
                 renameCategory(path);
                 break;
             case 'delete':
-                deleteCategory(path, card.dataset.name);
+                deleteCategory(path, card.dataset.name, card.dataset.count);
                 break;
             default:
                 break;
@@ -1853,7 +2215,7 @@ function renderTags(tags) {
     const list = term ? tags.filter((t) => t.name.toLowerCase().includes(term)) : tags;
 
     if (!list.length) {
-        dom.tagList.innerHTML = `<div class="state-block"><p class="state-title">${term ? '没有匹配的标签' : '暂无标签'}</p><p class="state-desc">${term ? '换个关键词试试。' : '标签由文章的 tags 字段自动聚合。'}</p></div>`;
+        dom.tagList.innerHTML = `<div class="state-block"><p class="state-title">${term ? '没有匹配的标签' : '暂无标签'}</p><p class="state-desc">${term ? '换个关键词试试。' : '点击右上角“新建标签”创建，或直接在文章里使用新标签。'}</p></div>`;
         return;
     }
 
@@ -1868,6 +2230,29 @@ function renderTags(tags) {
             </div>
         </div>
     `).join('');
+}
+
+async function createTag() {
+    const name = await askText('新建标签', '标签名', {
+        placeholder: '例如：Rust',
+        datalistId: 'tag-list-datalist',
+        hint: '标签会先进入候选列表（0 篇文章），被文章使用后开始计数',
+    });
+    if (!name) return;
+
+    const tag = name.trim();
+    if (!tag) return;
+
+    try {
+        await apiRequest('/tags', {
+            method: 'POST',
+            body: JSON.stringify({ name: tag }),
+        });
+        showToast(`标签「${tag}」已创建`);
+        await Promise.all([loadTags(), refreshMeta({ silent: true })]);
+    } catch (error) {
+        showToast(`创建标签失败：${error.message}`, { type: 'error', duration: 5000 });
+    }
 }
 
 async function renameTag(oldName) {
@@ -2196,6 +2581,8 @@ function bindFilters() {
     dom.tagSort?.addEventListener('change', () => loadTags());
 
     $('new-article-btn')?.addEventListener('click', openEditorForNew);
+    $('new-category-btn')?.addEventListener('click', createCategory);
+    $('new-tag-btn')?.addEventListener('click', createTag);
 
     $('refresh-btn')?.addEventListener('click', async () => {
         const refreshBtn = $('refresh-btn');
@@ -2266,6 +2653,7 @@ function switchView(view, { updateHistory = true } = {}) {
 function init() {
     initEditor();
     bindEditorChrome();
+    bindImageUpload();
     bindCategoryPicker();
     bindFilters();
     bindBatchActions();
