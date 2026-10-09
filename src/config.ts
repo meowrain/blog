@@ -92,6 +92,11 @@ export const navBarConfig: NavBarConfig = {
       url: "/sponsors/", // Internal links should not include the base path, as it is automatically added
       external: false, // Show an external link icon and will open in a new tab
     },
+    {
+      name: "监控",
+      url: "/monitor/",
+      external: false,
+    },
     // {
     //   name: "统计",
     //   url: "https://umami.acofork.com/share/CdkXbGgZr6ECKOyK", // Internal links should not include the base path, as it is automatically added
@@ -123,7 +128,7 @@ export const profileConfig: ProfileConfig = {
     {
       name: "服务器状态监控",
       icon: "fa6-solid:server",
-      url: "https://status.meowrain.cn",
+      url: "https://status.acetaffy.mom",
     },
     {
       name: "bilibili",
