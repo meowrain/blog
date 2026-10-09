@@ -6,10 +6,20 @@ import { Icon } from "astro-icon/components";
 // api.bgm.tv 与 lain.bgm.tv 在部分网络环境下会被 DNS 污染，浏览器直连基本拿不到数据。
 // 想退回浏览器直连，把 PUBLIC_BANGUMI_API_BASE 设成 https://api.bgm.tv/v0 即可。
 const bangumiApiBase = import.meta.env.PUBLIC_BANGUMI_API_BASE || "/api/bangumi/v0";
+
+// 这一页只展示这一个账号。Bangumi 上这个号的用户名就是 uid 本身
+// （/v0/users/1288878 返回 username: "1288878"，nickname 才是 meowrain），
+// 所以这里填 "1288878" 而不是 "meowrain"——后者接口会 404。
+const bangumiUsername = import.meta.env.PUBLIC_BANGUMI_USERNAME || "1288878";
 ---
 
-<MainGridLayout title="追番" description="通过 Bangumi API 查看追番收藏与观看进度">
-  <div id="bangumi-page" data-api-base={bangumiApiBase} class="space-y-4">
+<MainGridLayout title="追番" description="同步 Bangumi 上的动画收藏与观看进度">
+  <div
+    id="bangumi-page"
+    data-api-base={bangumiApiBase}
+    data-username={bangumiUsername}
+    class="space-y-4"
+  >
     <section class="card-base bangumi-panel p-5 md:p-7">
       <header class="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
         <div class="flex items-start gap-3">
@@ -30,7 +40,7 @@ const bangumiApiBase = import.meta.env.PUBLIC_BANGUMI_API_BASE || "/api/bangumi/
         </div>
 
         <a
-          href="https://bangumi.tv/"
+          href={`https://bgm.tv/anime/list/${bangumiUsername}`}
           target="_blank"
           rel="noopener"
           class="btn-regular bangumi-source-link self-start rounded-lg px-3 py-2 text-sm font-medium"
@@ -39,41 +49,22 @@ const bangumiApiBase = import.meta.env.PUBLIC_BANGUMI_API_BASE || "/api/bangumi/
             name="material-symbols:open-in-new-rounded"
             class="mr-1.5 text-[1rem]"
           />
-          Bangumi
+          在 Bangumi 查看
         </a>
       </header>
 
-      <form id="bangumi-form" class="mt-6 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-        <label class="sr-only" for="bangumi-username">Bangumi 用户名</label>
-        <div class="relative">
-          <Icon
-            name="material-symbols:person-outline-rounded"
-            class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[1.1rem] text-50"
-          />
-          <input
-            id="bangumi-username"
-            name="username"
-            type="text"
-            inputmode="text"
-            autocomplete="username"
-            placeholder="输入 Bangumi 用户名"
-            class="h-11 w-full rounded-lg border border-black/10 bg-black/[0.025] pl-10 pr-3 text-sm text-90 outline-none transition placeholder:text-black/30 focus:border-[var(--primary)] focus:bg-[var(--card-bg)] focus:ring-2 focus:ring-[var(--primary)]/20 dark:border-white/10 dark:bg-white/[0.045] dark:placeholder:text-white/30"
-          />
-        </div>
-        <button
-          type="submit"
-          class="btn-regular h-11 rounded-lg px-5 text-sm font-bold"
-        >
-          载入追番
-        </button>
-      </form>
-
       <div
         id="bangumi-hint"
-        class="mt-3 flex items-center gap-1.5 text-xs text-50"
+        class="mt-4 flex items-start gap-1.5 text-xs leading-5 text-50"
       >
-        <Icon name="material-symbols:info-outline-rounded" class="text-[1rem]" />
-        <span>仅读取公开收藏；私有收藏需要为对应收藏开启公开权限。</span>
+        <Icon
+          name="material-symbols:info-outline-rounded"
+          class="mt-0.5 shrink-0 text-[1rem]"
+        />
+        <span>
+          这一页固定读取上面这个账号的公开收藏。看不到条目通常只有一个原因：Bangumi
+          的收藏被设成了私密（整体或单条），接口读不到。
+        </span>
       </div>
     </section>
 
@@ -112,9 +103,9 @@ const bangumiApiBase = import.meta.env.PUBLIC_BANGUMI_API_BASE || "/api/bangumi/
           class="text-[2rem]"
         />
       </div>
-      <h2 class="text-lg font-bold text-90">等待载入追番列表</h2>
+      <h2 class="text-lg font-bold text-90">正在读取 Bangumi 收藏</h2>
       <p class="mt-2 max-w-md text-sm leading-6 text-50">
-        输入 Bangumi 用户名后，会显示动画收藏、观看进度和评分。
+        页面打开就会自动载入这个账号的动画收藏、观看进度和评分。
       </p>
     </section>
 
@@ -457,7 +448,6 @@ const bangumiApiBase = import.meta.env.PUBLIC_BANGUMI_API_BASE || "/api/bangumi/
 
   const statusOrder: CollectionType[] = [3, 1, 2, 4, 5];
   const pageSize = 24;
-  const usernameStorageKey = "bangumi-username";
   const fallbackApiBase = "/api/bangumi/v0";
   const requestTimeoutMs = 12000;
 
@@ -488,42 +478,6 @@ const bangumiApiBase = import.meta.env.PUBLIC_BANGUMI_API_BASE || "/api/bangumi/
 
   function escapeAttr(value: unknown): string {
     return escapeHtml(value).replaceAll("`", "&#096;");
-  }
-
-  function parseUsername(value: string): string {
-    const trimmed = value.trim().replace(/^@/, "");
-    if (!trimmed) return "";
-
-    try {
-      const url = new URL(trimmed);
-      if (url.hostname.endsWith("bgm.tv")) {
-        return url.pathname.split("/").filter(Boolean).at(-1) || "";
-      }
-    } catch {
-      // A plain username is expected in most cases.
-    }
-
-    return trimmed.split("/").filter(Boolean).at(-1) || "";
-  }
-
-  function getStoredUsername(): string {
-    const params = new URLSearchParams(window.location.search);
-    return parseUsername(params.get("user") || localStorage.getItem(usernameStorageKey) || "");
-  }
-
-  function setUsernameInUrl(username: string) {
-    const url = new URL(window.location.href);
-    if (username) {
-      url.searchParams.set("user", username);
-    } else {
-      url.searchParams.delete("user");
-    }
-    window.history.replaceState({}, "", url);
-  }
-
-  function updateUsernameUrl(username: string) {
-    setUsernameInUrl(username);
-    localStorage.setItem(usernameStorageKey, username);
   }
 
   function apiBase(): string {
@@ -1024,6 +978,15 @@ const bangumiApiBase = import.meta.env.PUBLIC_BANGUMI_API_BASE || "/api/bangumi/
       setLoading(false);
       setElementHidden(getElement("bangumi-content"), false);
       setElementHidden(getElement("bangumi-empty"), true);
+
+      // 「在看」可能是空的或设成了私密：落到第一个有公开条目的档位，
+      // 免得页面打开就是一片空列表。
+      if (currentTotal === 0) {
+        const fallback = statusOrder.find((type) => (counts[type] ?? 0) > 0);
+        if (fallback && fallback !== activeType) {
+          await loadList(fallback, 0);
+        }
+      }
     } catch (error) {
       if ((error as Error).name === "AbortError") return;
       renderRequestError(error);
@@ -1103,8 +1066,6 @@ const bangumiApiBase = import.meta.env.PUBLIC_BANGUMI_API_BASE || "/api/bangumi/
     activeRoot = root;
     root.dataset.ready = "true";
 
-    const form = getElement<HTMLFormElement>("bangumi-form");
-    const input = getElement<HTMLInputElement>("bangumi-username");
     const retry = getElement<HTMLButtonElement>("bangumi-retry");
     const refresh = getElement<HTMLButtonElement>("bangumi-refresh");
     const prev = getElement<HTMLButtonElement>("bangumi-prev");
@@ -1112,24 +1073,6 @@ const bangumiApiBase = import.meta.env.PUBLIC_BANGUMI_API_BASE || "/api/bangumi/
     const statusTabs = Array.from(
       root.querySelectorAll<HTMLButtonElement>(".bangumi-status-tab"),
     );
-
-    const onSubmit = (event: SubmitEvent) => {
-      event.preventDefault();
-      const username = parseUsername(input?.value || "");
-      if (!username) {
-        setError("请输入用户名", "例如输入 Bangumi 用户名，或粘贴个人主页链接。");
-        return;
-      }
-      currentUsername = username;
-      activeType = 3;
-      currentOffset = 0;
-      currentPage = 1;
-      counts = {};
-      currentItems = [];
-      if (input) input.value = username;
-      updateUsernameUrl(username);
-      loadDashboard();
-    };
 
     const onStatusClick = (event: Event) => {
       const target = event.target as HTMLElement;
@@ -1152,44 +1095,38 @@ const bangumiApiBase = import.meta.env.PUBLIC_BANGUMI_API_BASE || "/api/bangumi/
       }
     };
 
-    const onRefresh = () => {
-      if (currentUsername) loadDashboard();
+    const onReload = () => {
+      loadDashboard();
     };
 
-    const onRetry = () => {
-      if (currentUsername) loadDashboard();
-    };
-
-    form?.addEventListener("submit", onSubmit);
     statusTabs.forEach((button) => button.addEventListener("click", onStatusClick));
     prev?.addEventListener("click", onPrev);
     next?.addEventListener("click", onNext);
-    refresh?.addEventListener("click", onRefresh);
-    retry?.addEventListener("click", onRetry);
-
-    const storedUsername = getStoredUsername();
-    if (storedUsername) {
-      currentUsername = storedUsername;
-      if (input) input.value = storedUsername;
-      updateActiveLabel();
-      loadDashboard();
-    } else {
-      setLoading(false);
-      setElementHidden(getElement("bangumi-empty"), false);
-      setElementHidden(getElement("bangumi-content"), true);
-      setElementHidden(getElement("bangumi-error"), true);
-    }
+    refresh?.addEventListener("click", onReload);
+    retry?.addEventListener("click", onReload);
 
     cleanupPage = () => {
       requestController?.abort();
-      form?.removeEventListener("submit", onSubmit);
       statusTabs.forEach((button) => button.removeEventListener("click", onStatusClick));
       prev?.removeEventListener("click", onPrev);
       next?.removeEventListener("click", onNext);
-      refresh?.removeEventListener("click", onRefresh);
-      retry?.removeEventListener("click", onRetry);
+      refresh?.removeEventListener("click", onReload);
+      retry?.removeEventListener("click", onReload);
       activeRoot = null;
     };
+
+    // 账号在构建期就固定下来，页面打开即自动载入，不再提供输入框。
+    currentUsername = (root.dataset.username || "").trim();
+    if (!currentUsername) {
+      setError(
+        "没有配置 Bangumi 账号",
+        "构建时通过 PUBLIC_BANGUMI_USERNAME 指定用户名或 uid（默认 1288878）。",
+      );
+      return;
+    }
+
+    updateActiveLabel();
+    loadDashboard();
   }
 
   function bindSwupEvents() {
