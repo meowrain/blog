@@ -60,5 +60,8 @@
     "nodejs": {
       "includeFiles": []
     }
+  },
+  "agents": {
+    "framework": "langgraph"
   }
 }

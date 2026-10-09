@@ -8,6 +8,7 @@ import { getSortedPosts } from "@utils/content-utils";
 import { getDir, getPostUrlBySlug } from "@utils/url-utils";
 import { Icon } from "astro-icon/components";
 import { gitHubEditConfig, licenseConfig, ogImageBase } from "src/config";
+import PostLearnPanel from "../../components/PostLearnPanel.svelte";
 import PostMetadata from "../../components/PostMeta.astro";
 import ImageWrapper from "../../components/misc/ImageWrapper.astro";
 import { profileConfig, siteConfig } from "../../config";
@@ -193,6 +194,17 @@ const ogImage =
                     async>
             </script> -->
     <br>
+
+    <!-- AI 学习面板 — Svelte island, client-only; AI 端点跑在 Makers agents/ 下 -->
+    <div class="mb-4 rounded-[var(--radius-large)] overflow-hidden card-base border border-black/10 dark:border-white/10">
+        <div class="flex items-center gap-2 px-6 pt-4 text-black/75 dark:text-white/75 font-bold">
+            <Icon name="material-symbols:smart-toy-outline-rounded" class="text-[1.25rem] text-[var(--primary)]" />
+            <span>AI 学习助手</span>
+        </div>
+        <div class="h-[26rem] p-4">
+            <PostLearnPanel client:only="svelte" />
+        </div>
+    </div>
 
     <div class="flex flex-col md:flex-row justify-between mb-4 gap-4 overflow-hidden w-full">
         <a href={entry.data.nextSlug ? getPostUrlBySlug(entry.data.nextSlug) : "#"}
