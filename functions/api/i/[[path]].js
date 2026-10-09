@@ -42,6 +42,29 @@ const PASSTHROUGH_HEADERS = [
 // 内容可能随 push 变化，所以只敢缓存一小时。
 const FALLBACK_CACHE_CONTROL = "public, max-age=3600";
 
+// 线上运行时拿不到上游响应的 content-type（本地 Node fetch 有、EO 没有），
+// 按文件扩展名兜底推断，避免图片被当 text/plain 返回。
+const EXT_CONTENT_TYPES = {
+	webp: "image/webp",
+	png: "image/png",
+	jpg: "image/jpeg",
+	jpeg: "image/jpeg",
+	gif: "image/gif",
+	avif: "image/avif",
+	bmp: "image/bmp",
+	svg: "image/svg+xml",
+	ico: "image/x-icon",
+	mp4: "video/mp4",
+	webm: "video/webm",
+	mp3: "audio/mpeg",
+};
+const FALLBACK_CONTENT_TYPE = "application/octet-stream";
+
+function contentTypeFor(path) {
+	const ext = path.split(".").pop()?.toLowerCase();
+	return (ext && EXT_CONTENT_TYPES[ext]) || FALLBACK_CONTENT_TYPE;
+}
+
 export async function onRequest(context) {
 	const { request } = context;
 
@@ -81,6 +104,9 @@ export async function onRequest(context) {
 			if (value) {
 				headers.set(name, value);
 			}
+		}
+		if (!headers.has("content-type")) {
+			headers.set("Content-Type", contentTypeFor(rest));
 		}
 		if (!headers.has("cache-control")) {
 			headers.set("Cache-Control", FALLBACK_CACHE_CONTROL);
