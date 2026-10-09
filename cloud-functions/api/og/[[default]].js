@@ -9,12 +9,15 @@
  * 不带 title 时渲染站点默认卡片。
  *
  * 依赖：satori（JSX 风格树 -> SVG）+ @resvg/resvg-wasm（SVG -> PNG）。
- * 中文字体与 resvg 的 wasm 放在站点静态资源 /og/ 下，首次请求时
- * fetch 回来缓存在模块作用域，之后同实例的请求零开销。
+ * 中文字体与 resvg 的 wasm 以 base64 内嵌在 _font.js / _resvg.js 辅助模块里
+ * ——不要改成 fetch 站内静态资源，EO 函数运行时禁止回环请求自身站点。
  *
  * og:image 由 Astro 构建时生成（src/pages/posts/[...slug].astro），
  * URL 指向本函数所在的 Pages 域名。
  */
+
+import fontB64 from "./_font.js";
+import resvgB64 from "./_resvg.js";
 
 const CARD_W = 1200;
 const CARD_H = 630;
@@ -31,39 +34,24 @@ const THEME = {
 	muted: "rgba(253,242,248,0.55)",
 };
 
-const FONT_URL = "/og/noto-sans-sc-700.woff";
-const WASM_URL = "/og/resvg.wasm";
-
 // ---------- 模块级缓存（同实例复用） ----------
 
-let fontPromise = null;
-function loadFont(origin) {
-	if (!fontPromise) {
-		fontPromise = fetch(new URL(FONT_URL, origin)).then((r) => {
-			if (!r.ok) throw new Error(`font fetch ${r.status}`);
-			return r.arrayBuffer();
-		});
-		fontPromise.catch(() => {
-			fontPromise = null; // 失败允许下次重试
-		});
-	}
-	return fontPromise;
-}
+const FONT_DATA = Buffer.from(fontB64, "base64");
+const WASM_BYTES = Buffer.from(resvgB64, "base64");
 
-let wasmPromise = null;
-function loadWasm(origin) {
-	if (!wasmPromise) {
-		// @resvg/resvg-wasm 的 initWasm 接受 Response/Buffer 等 fetch 输入
-		wasmPromise = import("@resvg/resvg-wasm").then(({ initWasm }) =>
-			initWasm(fetch(new URL(WASM_URL, origin))).then(() => {
-				return import("@resvg/resvg-wasm").then((m) => m.Resvg);
-			}),
+let wasmReady = null;
+function loadWasm() {
+	if (!wasmReady) {
+		wasmReady = import("@resvg/resvg-wasm").then(({ initWasm }) =>
+			initWasm(WASM_BYTES).then(() =>
+				import("@resvg/resvg-wasm").then((m) => m.Resvg),
+			),
 		);
-		wasmPromise.catch(() => {
-			wasmPromise = null;
+		wasmReady.catch(() => {
+			wasmReady = null; // 失败允许下次重试
 		});
 	}
-	return wasmPromise;
+	return wasmReady;
 }
 
 // ---------- 文本处理 ----------
@@ -73,7 +61,7 @@ function loadWasm(origin) {
 function stripEmoji(s) {
 	return s
 		.replace(
-			/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}\u{20E3}\u{2B00}-\u{2BFF}]/gu,
+			/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]|\u{FE0F}|\u{200D}|\u{20E3}/gu,
 			"",
 		)
 		.trim();
@@ -195,34 +183,31 @@ function buildTree({ title, tags, date }) {
 
 // ---------- 渲染 ----------
 
-async function renderPng(origin, params) {
-	const [{ default: satori }, Resvg, fontData] = await Promise.all([
+async function renderPng(params) {
+	const [{ default: satori }, Resvg] = await Promise.all([
 		import("satori"),
-		loadWasm(origin),
-		loadFont(origin),
+		loadWasm(),
 	]);
 
 	const svg = await satori(buildTree(params), {
 		width: CARD_W,
 		height: CARD_H,
 		fonts: [
-			{ name: "Noto Sans SC", data: fontData, weight: 700, style: "normal" },
+			{ name: "Noto Sans SC", data: FONT_DATA, weight: 700, style: "normal" },
 		],
 	});
 
-	const png = new Resvg(svg, { fitTo: { mode: "original" } })
-		.render()
-		.asPng();
+	const png = new Resvg(svg, { fitTo: { mode: "original" } }).render().asPng();
 	return Buffer.from(png);
 }
 
 // ---------- 入口 ----------
 
 function fallbackCard() {
-	return new Response(
-		JSON.stringify({ error: "og card generation failed" }),
-		{ status: 500, headers: { "Content-Type": "application/json" } },
-	);
+	return new Response(JSON.stringify({ error: "og card generation failed" }), {
+		status: 500,
+		headers: { "Content-Type": "application/json" },
+	});
 }
 
 export async function onRequestGet(context) {
@@ -253,13 +238,13 @@ export async function onRequestGet(context) {
 			};
 
 	try {
-		const png = await renderPng(url.origin, card);
+		const png = await renderPng(card);
 		return new Response(png, {
 			status: 200,
 			headers: {
 				"Content-Type": "image/png",
 				"Cache-Control": "public, max-age=86400", // 同 URL 内容不变（slug 相同则卡片相同），可以放心长缓存
-				"Etag": `"og-${slug.length ? slug : "home"}-${title.length}"`,
+				Etag: `"og-${slug.length ? slug : "home"}-${title.length}"`,
 			},
 		});
 	} catch (err) {
