@@ -7,7 +7,7 @@ import MainGridLayout from "@layouts/MainGridLayout.astro";
 import { getSortedPosts } from "@utils/content-utils";
 import { getDir, getPostUrlBySlug } from "@utils/url-utils";
 import { Icon } from "astro-icon/components";
-import { gitHubEditConfig, licenseConfig } from "src/config";
+import { gitHubEditConfig, licenseConfig, ogImageBase } from "src/config";
 import PostMetadata from "../../components/PostMeta.astro";
 import ImageWrapper from "../../components/misc/ImageWrapper.astro";
 import { profileConfig, siteConfig } from "../../config";
@@ -42,8 +42,17 @@ const jsonLd = {
 		: siteConfig.lang.replace("_", "-"),
 	// TODO include cover image here
 };
+
+// 动态 OG 分享图：由 EdgeOne Makers Cloud Function（cloud-functions/api/og/[[default]].js）
+// 实时渲染 1200x630 PNG。标题/标签/日期编码在 query 里，函数无状态。
+// 注意：og:image 必须是绝对 URL；函数部署在 Pages 域名上，Astro.site 即可。
+const ogImage =
+	`${ogImageBase}/api/og/${entry.slug}` +
+	`?title=${encodeURIComponent(entry.data.title)}` +
+	`&tags=${encodeURIComponent((entry.data.tags || []).join(","))}` +
+	`&date=${formatDateToYYYYMMDD(entry.data.published)}`;
 ---
-<MainGridLayout banner={entry.data.image} title={entry.data.title} description={entry.data.description} lang={entry.data.lang} setOGTypeArticle={true} headings={headings}>
+<MainGridLayout banner={entry.data.image} title={entry.data.title} description={entry.data.description} lang={entry.data.lang} setOGTypeArticle={true} ogImage={ogImage} headings={headings}>
     <script is:inline slot="head" type="application/ld+json" set:html={JSON.stringify(jsonLd)}></script>
     <div class="flex w-full rounded-[var(--radius-large)] overflow-hidden relative mb-4">
         <div id="post-container" class:list={["card-base z-10 px-6 md:px-9 pt-6 pb-4 relative w-full border border-black/10 dark:border-white/10 ",

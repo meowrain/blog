@@ -165,4 +165,9 @@ export const gitHubEditConfig: GitHubEditConfig = {
   baseUrl: "https://github.com/afoim/fuwari/blob/main/src/content/posts",
 };
 
+// 动态 OG 分享图（cloud-functions/api/og/[[default]].js）所在的 EdgeOne Pages 域名。
+// og:image 必须是绝对 URL 且指向部署了 Cloud Function 的域名；
+// 注意不要用 astro.config 的 site（主域名是纯静态站，函数不部署在那）。
+export const ogImageBase = "https://blog-edgeone.meowrain.cn";
+
 // todoConfig removed from here
