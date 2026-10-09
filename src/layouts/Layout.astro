@@ -861,22 +861,39 @@ function disableAnimation() {
 
 <script>
   // Astro 把页面级 <script> 提升到 swup 容器之外，客户端跳转时永不执行，故从布局层按需挂载
-  const mountGallery = () => {
-    if (!document.getElementById("gallery-grid")) return;
-    void import("../scripts/gallery").then((module) =>
-      module.mountGalleryPage()
-    );
+  const pages = [
+    {
+      marker: "gallery-grid",
+      load: () =>
+        import("../scripts/gallery").then((module) => module.mountGalleryPage()),
+    },
+    {
+      marker: "monitor-page",
+      load: () =>
+        import("../scripts/monitor").then((module) => module.initMonitorPage()),
+    },
+    {
+      marker: "bangumi-page",
+      load: () =>
+        import("../scripts/bangumi").then((module) => module.initBangumiPage()),
+    },
+  ];
+
+  const mountPages = () => {
+    for (const page of pages) {
+      if (document.getElementById(page.marker)) void page.load();
+    }
   };
 
-  mountGallery();
+  mountPages();
 
-  const bindGallery = () => {
-    window.swup?.hooks?.on("page:view", mountGallery);
+  const bindPages = () => {
+    window.swup?.hooks?.on("page:view", mountPages);
   };
 
   if (window.swup) {
-    bindGallery();
+    bindPages();
   } else {
-    document.addEventListener("swup:enable", bindGallery, { once: true });
+    document.addEventListener("swup:enable", bindPages, { once: true });
   }
 </script>
