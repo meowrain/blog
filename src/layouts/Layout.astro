@@ -858,3 +858,25 @@ function disableAnimation() {
     document.addEventListener("swup:enable", setup);
   }
 </script>
+
+<script>
+  // Astro 把页面级 <script> 提升到 swup 容器之外，客户端跳转时永不执行，故从布局层按需挂载
+  const mountGallery = () => {
+    if (!document.getElementById("gallery-grid")) return;
+    void import("../scripts/gallery").then((module) =>
+      module.mountGalleryPage()
+    );
+  };
+
+  mountGallery();
+
+  const bindGallery = () => {
+    window.swup?.hooks?.on("page:view", mountGallery);
+  };
+
+  if (window.swup) {
+    bindGallery();
+  } else {
+    document.addEventListener("swup:enable", bindGallery, { once: true });
+  }
+</script>
