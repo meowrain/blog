@@ -1,0 +1,1215 @@
+---
+import MainGridLayout from "@layouts/MainGridLayout.astro";
+import { Icon } from "astro-icon/components";
+
+// 默认走同源的 EdgeOne Pages Function（functions/api/bangumi/[[path]].js）。
+// api.bgm.tv 与 lain.bgm.tv 在部分网络环境下会被 DNS 污染，浏览器直连基本拿不到数据。
+// 想退回浏览器直连，把 PUBLIC_BANGUMI_API_BASE 设成 https://api.bgm.tv/v0 即可。
+const bangumiApiBase = import.meta.env.PUBLIC_BANGUMI_API_BASE || "/api/bangumi/v0";
+---
+
+<MainGridLayout title="追番" description="通过 Bangumi API 查看追番收藏与观看进度">
+  <div id="bangumi-page" data-api-base={bangumiApiBase} class="space-y-4">
+    <section class="card-base bangumi-panel p-5 md:p-7">
+      <header class="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+        <div class="flex items-start gap-3">
+          <div
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--primary)] text-white dark:text-black/70"
+          >
+            <Icon
+              name="material-symbols:live-tv-outline-rounded"
+              class="text-[1.6rem]"
+            />
+          </div>
+          <div>
+            <h1 class="text-2xl font-bold text-90">追番</h1>
+            <p class="mt-1 text-sm text-50">
+              从 Bangumi 公开收藏读取动画进度
+            </p>
+          </div>
+        </div>
+
+        <a
+          href="https://bangumi.tv/"
+          target="_blank"
+          rel="noopener"
+          class="btn-regular bangumi-source-link self-start rounded-lg px-3 py-2 text-sm font-medium"
+        >
+          <Icon
+            name="material-symbols:open-in-new-rounded"
+            class="mr-1.5 text-[1rem]"
+          />
+          Bangumi
+        </a>
+      </header>
+
+      <form id="bangumi-form" class="mt-6 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <label class="sr-only" for="bangumi-username">Bangumi 用户名</label>
+        <div class="relative">
+          <Icon
+            name="material-symbols:person-outline-rounded"
+            class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[1.1rem] text-50"
+          />
+          <input
+            id="bangumi-username"
+            name="username"
+            type="text"
+            inputmode="text"
+            autocomplete="username"
+            placeholder="输入 Bangumi 用户名"
+            class="h-11 w-full rounded-lg border border-black/10 bg-black/[0.025] pl-10 pr-3 text-sm text-90 outline-none transition placeholder:text-black/30 focus:border-[var(--primary)] focus:bg-[var(--card-bg)] focus:ring-2 focus:ring-[var(--primary)]/20 dark:border-white/10 dark:bg-white/[0.045] dark:placeholder:text-white/30"
+          />
+        </div>
+        <button
+          type="submit"
+          class="btn-regular h-11 rounded-lg px-5 text-sm font-bold"
+        >
+          载入追番
+        </button>
+      </form>
+
+      <div
+        id="bangumi-hint"
+        class="mt-3 flex items-center gap-1.5 text-xs text-50"
+      >
+        <Icon name="material-symbols:info-outline-rounded" class="text-[1rem]" />
+        <span>仅读取公开收藏；私有收藏需要为对应收藏开启公开权限。</span>
+      </div>
+    </section>
+
+    <section id="bangumi-loading" class="card-base bangumi-panel p-5 md:p-7">
+      <div class="mb-5 flex items-center gap-3">
+        <div class="bangumi-skeleton h-9 w-9 rounded-lg"></div>
+        <div class="space-y-2">
+          <div class="bangumi-skeleton h-4 w-28 rounded"></div>
+          <div class="bangumi-skeleton h-3 w-40 rounded"></div>
+        </div>
+      </div>
+      <div class="grid gap-3 sm:grid-cols-2">
+        {Array.from({ length: 4 }).map(() => (
+          <div class="bangumi-skeleton-card">
+            <div class="bangumi-skeleton aspect-[3/4] w-24 rounded-lg"></div>
+            <div class="flex-1 space-y-3 py-1">
+              <div class="bangumi-skeleton h-4 w-4/5 rounded"></div>
+              <div class="bangumi-skeleton h-3 w-3/5 rounded"></div>
+              <div class="bangumi-skeleton h-2 w-full rounded-full"></div>
+              <div class="bangumi-skeleton h-3 w-2/5 rounded"></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <section
+      id="bangumi-empty"
+      class="card-base bangumi-panel flex min-h-[18rem] flex-col items-center justify-center p-8 text-center"
+    >
+      <div
+        class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-black/5 text-30 dark:bg-white/5"
+      >
+        <Icon
+          name="material-symbols:live-tv-outline-rounded"
+          class="text-[2rem]"
+        />
+      </div>
+      <h2 class="text-lg font-bold text-90">等待载入追番列表</h2>
+      <p class="mt-2 max-w-md text-sm leading-6 text-50">
+        输入 Bangumi 用户名后，会显示动画收藏、观看进度和评分。
+      </p>
+    </section>
+
+    <section
+      id="bangumi-error"
+      class="card-base bangumi-panel hidden p-6 md:p-8"
+      role="alert"
+    >
+      <div class="flex items-start gap-3">
+        <div
+          class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-500/10 text-red-500 dark:text-red-400"
+        >
+          <Icon name="material-symbols:error-outline-rounded" class="text-[1.5rem]" />
+        </div>
+        <div class="min-w-0">
+          <h2 id="bangumi-error-title" class="font-bold text-90">载入失败</h2>
+          <p id="bangumi-error-message" class="mt-1 text-sm leading-6 text-50"></p>
+          <button
+            id="bangumi-retry"
+            type="button"
+            class="btn-regular mt-4 rounded-lg px-4 py-2 text-sm font-medium"
+          >
+            重试
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <div id="bangumi-content" class="hidden space-y-4">
+      <section id="bangumi-profile" class="card-base bangumi-panel p-5 md:p-6">
+        <div class="flex items-center gap-4">
+          <div
+            id="bangumi-avatar"
+            class="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-black/5 text-lg font-bold text-50 dark:bg-white/5"
+          >
+            B
+          </div>
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <h2 id="bangumi-nickname" class="truncate text-lg font-bold text-90">
+                Bangumi 用户
+              </h2>
+              <span
+                id="bangumi-username-label"
+                class="rounded-full bg-black/5 px-2 py-0.5 text-xs text-50 dark:bg-white/5"
+              >
+              </span>
+            </div>
+            <p id="bangumi-sign" class="mt-1 line-clamp-2 text-sm leading-6 text-50">
+            </p>
+          </div>
+          <a
+            id="bangumi-profile-link"
+            href="https://bangumi.tv/"
+            target="_blank"
+            rel="noopener"
+            class="btn-plain ml-auto hidden h-10 w-10 shrink-0 rounded-lg sm:flex"
+            aria-label="打开 Bangumi 用户主页"
+          >
+            <Icon name="material-symbols:arrow-outward-rounded" class="text-[1.25rem]" />
+          </a>
+        </div>
+
+        <div id="bangumi-stats" class="mt-5 grid grid-cols-3 gap-2 sm:grid-cols-5">
+          {
+            [
+              [3, "在看"],
+              [1, "想看"],
+              [2, "看过"],
+              [4, "搁置"],
+              [5, "抛弃"],
+            ].map(([type, label]) => (
+              <button
+                type="button"
+                data-status={type}
+                class="bangumi-status-tab rounded-xl border border-black/10 bg-black/[0.025] px-3 py-3 text-left transition hover:border-[var(--primary)] hover:bg-[var(--btn-regular-bg-hover)] active:scale-[0.98] dark:border-white/10 dark:bg-white/[0.045]"
+              >
+                <span class="block text-xs text-50">{label}</span>
+                <span
+                  data-count={type}
+                  class="mt-1 block text-lg font-bold text-90"
+                >
+                  --
+                </span>
+              </button>
+            ))
+          }
+        </div>
+      </section>
+
+      <section class="card-base bangumi-panel p-5 md:p-6">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 id="bangumi-list-title" class="text-lg font-bold text-90">
+                在看
+              </h2>
+              <span
+                id="bangumi-list-count"
+                class="rounded-full bg-[var(--btn-regular-bg)] px-2 py-0.5 text-xs font-medium text-[var(--btn-content)]"
+              >
+                0
+              </span>
+            </div>
+            <p id="bangumi-list-subtitle" class="mt-1 text-sm text-50">
+              加载中
+            </p>
+          </div>
+          <button
+            id="bangumi-refresh"
+            type="button"
+            class="btn-plain h-10 w-10 shrink-0 rounded-lg"
+            aria-label="刷新追番数据"
+          >
+            <Icon name="material-symbols:refresh-rounded" class="text-[1.25rem]" />
+          </button>
+        </div>
+
+        <div
+          id="bangumi-card-grid"
+          class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2"
+        >
+        </div>
+
+        <div
+          id="bangumi-list-empty"
+          class="hidden flex-col items-center justify-center py-14 text-center"
+        >
+          <Icon
+            name="material-symbols:movie-outline-rounded"
+            class="mb-3 text-[2.5rem] text-25"
+          />
+          <p class="text-sm text-50">这个状态下还没有动画条目。</p>
+        </div>
+
+        <div
+          id="bangumi-pagination"
+          class="mt-5 hidden items-center justify-between border-t border-black/5 pt-4 dark:border-white/5"
+        >
+          <button
+            id="bangumi-prev"
+            type="button"
+            class="btn-regular rounded-lg px-3 py-2 text-sm font-medium disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Icon
+              name="material-symbols:chevron-left-rounded"
+              class="mr-1 text-[1.1rem]"
+            />
+            上一页
+          </button>
+          <span id="bangumi-page-label" class="text-xs text-50">1 / 1</span>
+          <button
+            id="bangumi-next"
+            type="button"
+            class="btn-regular rounded-lg px-3 py-2 text-sm font-medium disabled:pointer-events-none disabled:opacity-40"
+          >
+            下一页
+            <Icon
+              name="material-symbols:chevron-right-rounded"
+              class="ml-1 text-[1.1rem]"
+            />
+          </button>
+        </div>
+      </section>
+    </div>
+  </div>
+</MainGridLayout>
+
+<!-- 卡片列表由 <script> 用 innerHTML 注入，拿不到 Astro 的 data-astro-cid 作用域属性，
+     所以这段样式必须全局，否则 .bangumi-card / .bangumi-cover / .bangumi-progress-* 全部失效。
+     选择器已经统一限定在 #bangumi-page 与 .bangumi-* 命名空间内，不会污染其它页面。 -->
+<style is:global>
+  #bangumi-page {
+    min-width: 0;
+  }
+
+  #bangumi-page :where(p, h1, h2, h3, span) {
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 639px) {
+    #bangumi-page {
+      width: calc(100vw - 2rem);
+      max-width: calc(100vw - 2rem);
+    }
+  }
+
+  .bangumi-panel:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .bangumi-status-tab.is-active {
+    border-color: var(--primary);
+    background: var(--btn-regular-bg-hover);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 55%, transparent);
+  }
+
+  .bangumi-card {
+    @apply flex min-w-0 gap-3 overflow-hidden rounded-xl border border-black/10 bg-[var(--card-bg)] p-3 transition duration-200 dark:border-white/10;
+  }
+
+  .bangumi-card:hover {
+    border-color: var(--primary);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+  }
+
+  .bangumi-cover {
+    @apply relative aspect-[3/4] w-[5.75rem] shrink-0 overflow-hidden rounded-lg bg-black/5 dark:bg-white/5;
+  }
+
+  .bangumi-cover img {
+    @apply relative z-[1] h-full w-full object-cover transition duration-300;
+  }
+
+  .bangumi-card:hover .bangumi-cover img {
+    transform: scale(1.04);
+  }
+
+  .bangumi-cover img.is-missing {
+    display: none;
+  }
+
+  .bangumi-cover-placeholder {
+    @apply absolute inset-0 z-0 flex flex-col items-center justify-center gap-1 text-black/25 dark:text-white/25;
+  }
+
+  .bangumi-status-chip {
+    @apply absolute left-2 top-2 z-[2] rounded-full bg-black/65 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm;
+  }
+
+  .bangumi-progress-track {
+    @apply h-1.5 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/10;
+  }
+
+  .bangumi-progress-bar {
+    @apply h-full rounded-full bg-[var(--primary)] transition-[width] duration-500;
+  }
+
+  .bangumi-tag {
+    @apply rounded-md bg-black/5 px-1.5 py-0.5 text-[10px] text-black/50 dark:bg-white/5 dark:text-white/50;
+  }
+
+  .bangumi-skeleton-card {
+    @apply flex min-w-0 gap-3 rounded-xl border border-black/5 bg-black/[0.015] p-3 dark:border-white/5 dark:bg-white/[0.025];
+  }
+
+  .bangumi-skeleton {
+    background: linear-gradient(
+      90deg,
+      rgba(127, 127, 127, 0.08) 25%,
+      rgba(127, 127, 127, 0.16) 50%,
+      rgba(127, 127, 127, 0.08) 75%
+    );
+    background-size: 200% 100%;
+    animation: bangumi-shimmer 1.35s ease-in-out infinite;
+  }
+
+  @keyframes bangumi-shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bangumi-skeleton {
+      animation: none;
+    }
+
+    .bangumi-card,
+    .bangumi-cover img,
+    .bangumi-progress-bar {
+      transition: none;
+    }
+  }
+</style>
+
+<script>
+  type CollectionType = 1 | 2 | 3 | 4 | 5;
+
+  type BangumiUser = {
+    id?: number;
+    username?: string;
+    nickname?: string;
+    sign?: string;
+    avatar?: {
+      large?: string;
+      medium?: string;
+      small?: string;
+    } | null;
+  };
+
+  type BangumiSubject = {
+    id: number;
+    name: string;
+    name_cn?: string;
+    date?: string;
+    eps?: number;
+    score?: number;
+    rank?: number;
+    images?: {
+      large?: string;
+      common?: string;
+      medium?: string;
+      small?: string;
+      grid?: string;
+    } | null;
+    tags?: Array<string | { name?: string }>;
+  };
+
+  type CollectionItem = {
+    subject_id: number;
+    type: CollectionType;
+    rate?: number;
+    comment?: string;
+    tags?: string[];
+    ep_status?: number;
+    updated_at?: string;
+    subject?: BangumiSubject;
+  };
+
+  type PageResult = {
+    total: number;
+    limit: number;
+    offset: number;
+    data: CollectionItem[];
+  };
+
+  const statusLabels: Record<CollectionType, string> = {
+    3: "在看",
+    1: "想看",
+    2: "看过",
+    4: "搁置",
+    5: "抛弃",
+  };
+
+  const statusOrder: CollectionType[] = [3, 1, 2, 4, 5];
+  const pageSize = 24;
+  const usernameStorageKey = "bangumi-username";
+  const fallbackApiBase = "/api/bangumi/v0";
+  const requestTimeoutMs = 12000;
+
+  let activeRoot: HTMLElement | null = null;
+  let cleanupPage: (() => void) | null = null;
+  let requestController: AbortController | null = null;
+  let currentUsername = "";
+  let activeType: CollectionType = 3;
+  let currentOffset = 0;
+  let currentTotal = 0;
+  let currentPage = 1;
+  let currentItems: CollectionItem[] = [];
+  let counts: Partial<Record<CollectionType, number>> = {};
+  let currentProfile: BangumiUser | null = null;
+
+  function getElement<T extends HTMLElement>(id: string): T | null {
+    return document.getElementById(id) as T | null;
+  }
+
+  function escapeHtml(value: unknown): string {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function escapeAttr(value: unknown): string {
+    return escapeHtml(value).replaceAll("`", "&#096;");
+  }
+
+  function parseUsername(value: string): string {
+    const trimmed = value.trim().replace(/^@/, "");
+    if (!trimmed) return "";
+
+    try {
+      const url = new URL(trimmed);
+      if (url.hostname.endsWith("bgm.tv")) {
+        return url.pathname.split("/").filter(Boolean).at(-1) || "";
+      }
+    } catch {
+      // A plain username is expected in most cases.
+    }
+
+    return trimmed.split("/").filter(Boolean).at(-1) || "";
+  }
+
+  function getStoredUsername(): string {
+    const params = new URLSearchParams(window.location.search);
+    return parseUsername(params.get("user") || localStorage.getItem(usernameStorageKey) || "");
+  }
+
+  function setUsernameInUrl(username: string) {
+    const url = new URL(window.location.href);
+    if (username) {
+      url.searchParams.set("user", username);
+    } else {
+      url.searchParams.delete("user");
+    }
+    window.history.replaceState({}, "", url);
+  }
+
+  function updateUsernameUrl(username: string) {
+    setUsernameInUrl(username);
+    localStorage.setItem(usernameStorageKey, username);
+  }
+
+  function apiBase(): string {
+    return activeRoot?.dataset.apiBase || fallbackApiBase;
+  }
+
+  // API 根：允许配置成 "/api/bangumi" 或 "/api/bangumi/v0"，统一补上版本段。
+  function apiRoot(): string {
+    const base = apiBase().replace(/\/+$/, "");
+    return base.endsWith("/v0") ? base : `${base}/v0`;
+  }
+
+  // 静态资源根：去掉尾部的 /v0，代理侧用 <root>/img/<host>/<path>。
+  function assetRoot(): string {
+    return apiBase().replace(/\/+$/, "").replace(/\/v0$/, "");
+  }
+
+  function joinUrl(base: string, subPath: string): string {
+    const url = new URL(base, window.location.origin);
+    url.pathname = `${url.pathname.replace(/\/$/, "")}/${subPath.replace(/^\/+/, "")}`;
+    url.search = "";
+    return url.toString();
+  }
+
+  function joinApi(subPath: string): string {
+    return joinUrl(apiRoot(), subPath);
+  }
+
+  function apiUrl(path: string, params: Record<string, string | number> = {}): string {
+    const url = new URL(joinApi(path));
+    Object.entries(params).forEach(([key, value]) => {
+      url.searchParams.set(key, String(value));
+    });
+    return url.toString();
+  }
+
+  // 封面和头像挂在 bgm.tv 系域名上，国内同样连不通；
+  // 走同源代理时改写成 <root>/img/<host>/<path>，与 functions 里的白名单保持一致。
+  const proxyImageHosts = new Set(["lain.bgm.tv", "other.bgm.tv", "bgm.tv"]);
+
+  function resolveAssetUrl(rawUrl: string): string {
+    if (!rawUrl) return "";
+    if (!apiBase().startsWith("/")) return rawUrl;
+
+    try {
+      const parsed = new URL(rawUrl, window.location.origin);
+      const host = parsed.hostname.toLowerCase();
+      if (proxyImageHosts.has(host)) {
+        const proxied = joinUrl(
+          assetRoot(),
+          `img/${host}/${parsed.pathname.replace(/^\/+/, "")}`,
+        );
+        // 保留 ?r= / &hd= 这类参数：代理会把查询串原样转给上游，头像缓存才不会串。
+        return parsed.search ? `${proxied}${parsed.search}` : proxied;
+      }
+    } catch {
+      // 解析失败就退回原始地址。
+    }
+
+    return rawUrl;
+  }
+
+  function withTimeout(
+    signal: AbortSignal,
+    timeoutMs: number,
+  ): { signal: AbortSignal; dispose: () => void } {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort(new DOMException("请求超时", "TimeoutError"));
+    }, timeoutMs);
+
+    const onAbort = () => {
+      clearTimeout(timer);
+      controller.abort(signal.reason);
+    };
+
+    if (signal.aborted) {
+      onAbort();
+    } else {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    return {
+      signal: controller.signal,
+      dispose: () => {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", onAbort);
+      },
+    };
+  }
+
+  type RequestError = Error & { status?: number; kind?: "timeout" | "network" };
+
+  function taggedError(message: string, kind: RequestError["kind"], status?: number): RequestError {
+    const error = new Error(message) as RequestError;
+    error.kind = kind;
+    error.status = status;
+    return error;
+  }
+
+  async function fetchJson<T>(url: string, signal: AbortSignal): Promise<T> {
+    const linked = withTimeout(signal, requestTimeoutMs);
+    let response: Response;
+
+    try {
+      response = await fetch(url, {
+        signal: linked.signal,
+        headers: {
+          Accept: "application/json",
+        },
+      });
+    } catch (error) {
+      const name = (error as Error)?.name;
+      if (name === "AbortError") throw error;
+      if (name === "TimeoutError") {
+        throw taggedError(`请求超过 ${Math.round(requestTimeoutMs / 1000)} 秒`, "timeout");
+      }
+      throw taggedError("无法连接 Bangumi 接口", "network");
+    } finally {
+      linked.dispose();
+    }
+
+    if (!response.ok) {
+      let message = `Bangumi API 返回 ${response.status}`;
+      try {
+        const body = (await response.json()) as {
+          title?: string;
+          description?: string;
+          message?: string;
+        };
+        message = body.title || body.description || body.message || message;
+      } catch {
+        // Keep the status message when the response is not JSON.
+      }
+      throw taggedError(message, undefined, response.status);
+    }
+
+    return (await response.json()) as T;
+  }
+
+  // 分页接口的返回结构以 { total, limit, offset, data } 为准，但接口调整过几次，
+  // 这里对裸数组和缺字段都做兼容，避免整页因为一次取值失败而崩掉。
+  function normalizePage(raw: unknown): PageResult {
+    if (Array.isArray(raw)) {
+      return {
+        total: raw.length,
+        limit: raw.length || pageSize,
+        offset: 0,
+        data: raw as CollectionItem[],
+      };
+    }
+
+    const page = (raw ?? {}) as Partial<PageResult>;
+    const data = Array.isArray(page.data) ? (page.data as CollectionItem[]) : [];
+    const total = Number(page.total);
+    const offset = Number(page.offset);
+
+    return {
+      total: Number.isFinite(total) && total >= 0 ? total : data.length,
+      limit: Number(page.limit) || pageSize,
+      offset: Number.isFinite(offset) && offset >= 0 ? offset : 0,
+      data,
+    };
+  }
+
+  function normalizeUser(raw: unknown): BangumiUser {
+    const value = (raw ?? {}) as BangumiUser & { user?: BangumiUser };
+    return (value.user ?? value) as BangumiUser;
+  }
+
+  function setElementHidden(element: HTMLElement | null, hidden: boolean) {
+    if (!element) return;
+    element.classList.toggle("hidden", hidden);
+  }
+
+  function setError(title: string, message: string) {
+    const titleElement = getElement<HTMLElement>("bangumi-error-title");
+    const messageElement = getElement<HTMLElement>("bangumi-error-message");
+    if (titleElement) titleElement.textContent = title;
+    if (messageElement) messageElement.textContent = message;
+    setElementHidden(getElement("bangumi-empty"), true);
+    setElementHidden(getElement("bangumi-content"), true);
+    setElementHidden(getElement("bangumi-loading"), true);
+    setElementHidden(getElement("bangumi-error"), false);
+  }
+
+  function clearError() {
+    setElementHidden(getElement("bangumi-error"), true);
+  }
+
+  function setLoading(loading: boolean) {
+    setElementHidden(getElement("bangumi-loading"), !loading);
+    if (loading) {
+      clearError();
+      setElementHidden(getElement("bangumi-empty"), true);
+    }
+  }
+
+  function renderLoadingCards(count = 4) {
+    const grid = getElement<HTMLElement>("bangumi-card-grid");
+    if (!grid) return;
+
+    grid.innerHTML = Array.from({ length: count })
+      .map(
+        () => `
+          <div class="bangumi-skeleton-card">
+            <div class="bangumi-skeleton aspect-[3/4] w-[5.75rem] rounded-lg"></div>
+            <div class="flex-1 space-y-3 py-1">
+              <div class="bangumi-skeleton h-4 w-4/5 rounded"></div>
+              <div class="bangumi-skeleton h-3 w-3/5 rounded"></div>
+              <div class="bangumi-skeleton h-2 w-full rounded-full"></div>
+              <div class="bangumi-skeleton h-3 w-2/5 rounded"></div>
+            </div>
+          </div>
+        `,
+      )
+      .join("");
+  }
+
+  function renderProfile(profile: BangumiUser) {
+    const avatar = getElement<HTMLElement>("bangumi-avatar");
+    const nickname = getElement<HTMLElement>("bangumi-nickname");
+    const usernameLabel = getElement<HTMLElement>("bangumi-username-label");
+    const sign = getElement<HTMLElement>("bangumi-sign");
+    const profileLink = getElement<HTMLAnchorElement>("bangumi-profile-link");
+    const rawAvatarUrl = profile.avatar?.large || profile.avatar?.medium || profile.avatar?.small;
+    // 头像同样挂在 lain.bgm.tv，必须和封面一样走代理。
+    const avatarUrl = resolveAssetUrl(rawAvatarUrl || "");
+    const displayName = profile.nickname || profile.username || currentUsername;
+    const profileHref = `https://bgm.tv/user/${encodeURIComponent(profile.username || currentUsername)}`;
+
+    if (avatar) {
+      const initial = displayName.slice(0, 1).toUpperCase() || "B";
+      if (avatarUrl) {
+        // 首字母垫在底下：头像加载失败时 this.remove() 就露出字母，不会留下破图 alt。
+        avatar.innerHTML =
+          `<span class="absolute inset-0 flex items-center justify-center">${escapeHtml(initial)}</span>` +
+          `<img src="${escapeAttr(avatarUrl)}" alt="${escapeAttr(displayName)} 的头像" class="relative z-[1] h-full w-full object-cover" onerror="this.remove()" />`;
+      } else {
+        avatar.textContent = initial;
+      }
+    }
+    if (nickname) nickname.textContent = displayName;
+    if (usernameLabel) usernameLabel.textContent = `@${profile.username || currentUsername}`;
+    if (sign) sign.textContent = profile.sign || "这个用户还没有写签名。";
+    if (profileLink) profileLink.href = profileHref;
+  }
+
+  function renderCounts() {
+    statusOrder.forEach((type) => {
+      const element = document.querySelector<HTMLElement>(`[data-count="${type}"]`);
+      const total = counts[type];
+      if (element) element.textContent = typeof total === "number" ? String(total) : "--";
+    });
+
+    document.querySelectorAll<HTMLButtonElement>(".bangumi-status-tab").forEach((button) => {
+      const type = Number(button.dataset.status) as CollectionType;
+      button.classList.toggle("is-active", type === activeType);
+      button.setAttribute("aria-pressed", String(type === activeType));
+    });
+  }
+
+  function pickImage(subject?: BangumiSubject): string {
+    const images = subject?.images;
+    return (
+      images?.large ||
+      images?.common ||
+      images?.medium ||
+      images?.small ||
+      images?.grid ||
+      ""
+    );
+  }
+
+  function formatDate(date?: string): string {
+    if (!date) return "日期未知";
+    const parsed = new Date(`${date}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return date;
+    return new Intl.DateTimeFormat("zh-CN", {
+      year: "numeric",
+      month: "short",
+    }).format(parsed);
+  }
+
+  function getSubjectTags(item: CollectionItem): string[] {
+    const subjectTags = item.subject?.tags;
+    if (Array.isArray(subjectTags) && subjectTags.length > 0) {
+      return subjectTags
+        .map((tag) => (typeof tag === "string" ? tag : tag.name || ""))
+        .filter(Boolean)
+        .slice(0, 3);
+    }
+    return (item.tags || []).slice(0, 3);
+  }
+
+  function makeCard(item: CollectionItem): string {
+    const subject = item.subject;
+    const title = subject?.name_cn || subject?.name || `动画 #${item.subject_id}`;
+    const originalTitle = subject?.name && subject.name !== title ? subject.name : "";
+    const cover = resolveAssetUrl(pickImage(subject));
+    const eps = Number(subject?.eps || 0);
+    const progress = Math.max(0, Number(item.ep_status || 0));
+    const progressPercent = eps > 0 ? Math.min(100, Math.round((progress / eps) * 100)) : 0;
+    const score = Number(subject?.score || 0);
+    const myScore = Number(item.rate || 0);
+    const tags = getSubjectTags(item);
+    const comment = item.comment?.trim() || "";
+    const subjectUrl = `https://bgm.tv/subject/${item.subject_id}`;
+    const progressText = eps > 0 ? `${progress} / ${eps} 话` : progress > 0 ? `${progress} 话` : "进度未记录";
+
+    return `
+      <a href="${subjectUrl}" target="_blank" rel="noopener" class="bangumi-card group">
+        <div class="bangumi-cover">
+          <div class="bangumi-cover-placeholder">
+            ${IconGlyph({ name: "movie" })}
+            <span class="text-[10px]">暂无封面</span>
+          </div>
+          ${
+            cover
+              ? `<img src="${escapeAttr(cover)}" alt="${escapeAttr(title)} 封面" loading="lazy" onerror="this.classList.add('is-missing')" />`
+              : ""
+          }
+          <span class="bangumi-status-chip">${statusLabels[item.type] || "动画"}</span>
+        </div>
+        <div class="flex min-w-0 flex-1 flex-col">
+          <h3 class="line-clamp-2 text-sm font-bold leading-5 text-90 transition group-hover:text-[var(--primary)]">
+            ${escapeHtml(title)}
+          </h3>
+          ${
+            originalTitle
+              ? `<p class="mt-1 line-clamp-1 text-xs text-30">${escapeHtml(originalTitle)}</p>`
+              : ""
+          }
+
+          <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-50">
+            <span class="inline-flex items-center gap-1">
+              <IconGlyph name="star" />
+              ${score > 0 ? score.toFixed(1) : "暂无评分"}
+            </span>
+            ${
+              myScore > 0
+                ? `<span class="rounded-md bg-[var(--btn-regular-bg)] px-1.5 py-0.5 font-medium text-[var(--btn-content)]">我的 ${myScore} 分</span>`
+                : ""
+            }
+            <span>${escapeHtml(formatDate(subject?.date))}</span>
+          </div>
+
+          <div class="mt-3">
+            <div class="mb-1.5 flex items-center justify-between text-[11px] text-50">
+              <span>${escapeHtml(progressText)}</span>
+              <span>${progressPercent}%</span>
+            </div>
+            <div class="bangumi-progress-track">
+              <div class="bangumi-progress-bar" style="width: ${progressPercent}%"></div>
+            </div>
+          </div>
+
+          ${
+            tags.length > 0
+              ? `<div class="mt-3 flex flex-wrap gap-1">${tags
+                  .map((tag) => `<span class="bangumi-tag">${escapeHtml(tag)}</span>`)
+                  .join("")}</div>`
+              : ""
+          }
+
+          ${
+            comment
+              ? `<p class="mt-3 line-clamp-2 text-xs leading-5 text-50">${escapeHtml(comment)}</p>`
+              : ""
+          }
+        </div>
+      </a>
+    `;
+  }
+
+  function IconGlyph({ name }: { name: string }): string {
+    const glyphs: Record<string, string> = {
+      star: `<svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="m12 17.27 6.18 3.73-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"></path></svg>`,
+      movie: `<svg aria-hidden="true" viewBox="0 0 24 24" class="h-6 w-6 fill-current"><path d="m4 4l1.625 3.25q.175.35.5.55t.7.2q.75 0 1.15-.638t.05-1.312L7 4h2l1.625 3.25q.175.35.5.55t.7.2q.75 0 1.15-.638t.05-1.312L12 4h2l1.625 3.25q.175.35.5.55t.7.2q.75 0 1.15-.638t.05-1.312L17 4h3q.825 0 1.413.587T22 6v12q0 .825-.587 1.413T20 20H4q-.825 0-1.412-.587T2 18V6q0-.825.588-1.412T4 4m0 6v8h16v-8z"></path></svg>`,
+    };
+    return glyphs[name] || "";
+  }
+
+  function renderList() {
+    const grid = getElement<HTMLElement>("bangumi-card-grid");
+    const listEmpty = getElement<HTMLElement>("bangumi-list-empty");
+    const pagination = getElement<HTMLElement>("bangumi-pagination");
+    const listTitle = getElement<HTMLElement>("bangumi-list-title");
+    const listCount = getElement<HTMLElement>("bangumi-list-count");
+    const listSubtitle = getElement<HTMLElement>("bangumi-list-subtitle");
+    const pageLabel = getElement<HTMLElement>("bangumi-page-label");
+    const prev = getElement<HTMLButtonElement>("bangumi-prev");
+    const next = getElement<HTMLButtonElement>("bangumi-next");
+    const totalPages = Math.max(1, Math.ceil(currentTotal / pageSize));
+
+    if (listTitle) listTitle.textContent = statusLabels[activeType];
+    if (listCount) listCount.textContent = String(currentTotal);
+    if (listSubtitle) {
+      listSubtitle.textContent =
+        currentTotal > 0
+          ? `共 ${currentTotal} 部，按 Bangumi 收藏顺序展示`
+          : "这个状态下还没有动画条目";
+    }
+    if (pageLabel) pageLabel.textContent = `${currentPage} / ${totalPages}`;
+    if (prev) prev.disabled = currentPage <= 1;
+    if (next) next.disabled = currentPage >= totalPages;
+
+    if (!grid) return;
+
+    if (currentItems.length === 0) {
+      grid.innerHTML = "";
+      setElementHidden(listEmpty, false);
+      setElementHidden(pagination, true);
+      return;
+    }
+
+    grid.innerHTML = currentItems.map(makeCard).join("");
+    setElementHidden(listEmpty, true);
+    setElementHidden(pagination, currentTotal <= pageSize);
+  }
+
+  async function fetchCounts(signal: AbortSignal) {
+    const results = await Promise.allSettled(
+      statusOrder.map((type) =>
+        fetchJson<unknown>(
+          apiUrl(`/users/${encodeURIComponent(currentUsername)}/collections`, {
+            subject_type: 2,
+            type,
+            limit: 1,
+            offset: 0,
+          }),
+          signal,
+        ),
+      ),
+    );
+
+    const nextCounts: Partial<Record<CollectionType, number>> = {};
+    results.forEach((result, index) => {
+      const type = statusOrder[index];
+      if (result.status !== "fulfilled") return;
+      // 只数得出一条记录时无法推断总数，留给列表接口回填。
+      if (Array.isArray(result.value)) return;
+      const total = (result.value as Partial<PageResult>).total;
+      if (typeof total === "number") nextCounts[type] = total;
+    });
+    counts = nextCounts;
+    renderCounts();
+  }
+
+  async function fetchCollectionPage(
+    type: CollectionType,
+    offset: number,
+    signal: AbortSignal,
+  ): Promise<PageResult> {
+    const raw = await fetchJson<unknown>(
+      apiUrl(`/users/${encodeURIComponent(currentUsername)}/collections`, {
+        subject_type: 2,
+        type,
+        limit: pageSize,
+        offset,
+      }),
+      signal,
+    );
+    return normalizePage(raw);
+  }
+
+  async function loadDashboard() {
+    if (!currentUsername || !activeRoot) return;
+
+    requestController?.abort();
+    requestController = new AbortController();
+    const signal = requestController.signal;
+
+    setLoading(true);
+    clearError();
+
+    try {
+      const rawProfile = await fetchJson<unknown>(
+        apiUrl(`/users/${encodeURIComponent(currentUsername)}`),
+        signal,
+      );
+      const profile = normalizeUser(rawProfile);
+      currentProfile = profile;
+
+      const [page] = await Promise.all([
+        fetchCollectionPage(activeType, 0, signal),
+        fetchCounts(signal),
+      ]);
+
+      currentTotal = page.total;
+      currentOffset = page.offset;
+      currentPage = 1;
+      currentItems = page.data;
+
+      renderProfile(profile);
+      renderCounts();
+      renderList();
+      setLoading(false);
+      setElementHidden(getElement("bangumi-content"), false);
+      setElementHidden(getElement("bangumi-empty"), true);
+    } catch (error) {
+      if ((error as Error).name === "AbortError") return;
+      renderRequestError(error);
+    }
+  }
+
+  async function loadList(type: CollectionType, offset: number) {
+    if (!currentUsername) return;
+
+    requestController?.abort();
+    requestController = new AbortController();
+    const signal = requestController.signal;
+
+    activeType = type;
+    currentOffset = offset;
+    renderCounts();
+    renderLoadingCards(4);
+    setElementHidden(getElement("bangumi-content"), false);
+    setElementHidden(getElement("bangumi-empty"), true);
+    setElementHidden(getElement("bangumi-error"), true);
+
+    try {
+      const page = await fetchCollectionPage(type, offset, signal);
+      currentTotal = page.total;
+      currentOffset = page.offset;
+      currentPage = Math.floor(page.offset / pageSize) + 1;
+      currentItems = page.data;
+      renderList();
+    } catch (error) {
+      if ((error as Error).name === "AbortError") return;
+      renderRequestError(error);
+    }
+  }
+
+  function renderRequestError(error: unknown) {
+    const requestError = error as RequestError;
+    const status = requestError.status;
+    const message = requestError.message || "请求 Bangumi API 时发生未知错误。";
+
+    if (status === 404) {
+      setError("没有找到这个用户", "请检查 Bangumi 用户名是否正确，以及收藏是否公开。");
+      return;
+    }
+
+    if (status === 429) {
+      setError("请求太频繁", "Bangumi API 暂时限流，请稍等一会儿再重试。");
+      return;
+    }
+
+    if (!status) {
+      const reason =
+        requestError.kind === "timeout"
+          ? `请求超过 ${Math.round(requestTimeoutMs / 1000)} 秒仍未响应。`
+          : "请求没能到达接口。";
+      setError(
+        "无法载入追番",
+        `${reason}本页默认通过同源的 /api/bangumi 代理访问 Bangumi，` +
+          "如果看到的是这句话，通常说明站点还没有部署 functions/api/bangumi 这个 Pages Function。",
+      );
+      return;
+    }
+
+    setError("无法载入追番", `${message}（HTTP ${status}），稍后可以点重试。`);
+  }
+
+  function updateActiveLabel() {
+    const listTitle = getElement<HTMLElement>("bangumi-list-title");
+    if (listTitle) listTitle.textContent = statusLabels[activeType];
+  }
+
+  function initBangumiPage() {
+    const root = getElement<HTMLElement>("bangumi-page");
+    if (!root) return;
+    if (activeRoot === root && root.dataset.ready === "true") return;
+
+    cleanupPage?.();
+    activeRoot = root;
+    root.dataset.ready = "true";
+
+    const form = getElement<HTMLFormElement>("bangumi-form");
+    const input = getElement<HTMLInputElement>("bangumi-username");
+    const retry = getElement<HTMLButtonElement>("bangumi-retry");
+    const refresh = getElement<HTMLButtonElement>("bangumi-refresh");
+    const prev = getElement<HTMLButtonElement>("bangumi-prev");
+    const next = getElement<HTMLButtonElement>("bangumi-next");
+    const statusTabs = Array.from(
+      root.querySelectorAll<HTMLButtonElement>(".bangumi-status-tab"),
+    );
+
+    const onSubmit = (event: SubmitEvent) => {
+      event.preventDefault();
+      const username = parseUsername(input?.value || "");
+      if (!username) {
+        setError("请输入用户名", "例如输入 Bangumi 用户名，或粘贴个人主页链接。");
+        return;
+      }
+      currentUsername = username;
+      activeType = 3;
+      currentOffset = 0;
+      currentPage = 1;
+      counts = {};
+      currentItems = [];
+      if (input) input.value = username;
+      updateUsernameUrl(username);
+      loadDashboard();
+    };
+
+    const onStatusClick = (event: Event) => {
+      const target = event.target as HTMLElement;
+      const button = target.closest<HTMLButtonElement>("[data-status]");
+      if (!button) return;
+      const type = Number(button.dataset.status) as CollectionType;
+      if (!statusOrder.includes(type)) return;
+      currentOffset = 0;
+      currentPage = 1;
+      loadList(type, 0);
+    };
+
+    const onPrev = () => {
+      if (currentPage > 1) loadList(activeType, Math.max(0, currentOffset - pageSize));
+    };
+
+    const onNext = () => {
+      if (currentPage * pageSize < currentTotal) {
+        loadList(activeType, currentOffset + pageSize);
+      }
+    };
+
+    const onRefresh = () => {
+      if (currentUsername) loadDashboard();
+    };
+
+    const onRetry = () => {
+      if (currentUsername) loadDashboard();
+    };
+
+    form?.addEventListener("submit", onSubmit);
+    statusTabs.forEach((button) => button.addEventListener("click", onStatusClick));
+    prev?.addEventListener("click", onPrev);
+    next?.addEventListener("click", onNext);
+    refresh?.addEventListener("click", onRefresh);
+    retry?.addEventListener("click", onRetry);
+
+    const storedUsername = getStoredUsername();
+    if (storedUsername) {
+      currentUsername = storedUsername;
+      if (input) input.value = storedUsername;
+      updateActiveLabel();
+      loadDashboard();
+    } else {
+      setLoading(false);
+      setElementHidden(getElement("bangumi-empty"), false);
+      setElementHidden(getElement("bangumi-content"), true);
+      setElementHidden(getElement("bangumi-error"), true);
+    }
+
+    cleanupPage = () => {
+      requestController?.abort();
+      form?.removeEventListener("submit", onSubmit);
+      statusTabs.forEach((button) => button.removeEventListener("click", onStatusClick));
+      prev?.removeEventListener("click", onPrev);
+      next?.removeEventListener("click", onNext);
+      refresh?.removeEventListener("click", onRefresh);
+      retry?.removeEventListener("click", onRetry);
+      activeRoot = null;
+    };
+  }
+
+  function bindSwupEvents() {
+    document.addEventListener("swup:contentReplaced", initBangumiPage);
+
+    const bind = () => {
+      const swup = (window as unknown as {
+        swup?: { hooks?: { on: (event: string, callback: () => void) => void } };
+      }).swup;
+      swup?.hooks?.on("page:view", initBangumiPage);
+    };
+
+    bind();
+    document.addEventListener("swup:enable", bind, { once: true });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initBangumiPage, { once: true });
+  } else {
+    initBangumiPage();
+  }
+  bindSwupEvents();
+</script>

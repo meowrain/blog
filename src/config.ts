@@ -68,6 +68,11 @@ export const navBarConfig: NavBarConfig = {
     LinkPreset.Home,
     LinkPreset.Archive,
     {
+      name: "追番",
+      url: "/bangumi/",
+      external: false,
+    },
+    {
       name: "分类",
       url: "/category/",
       external: false,
