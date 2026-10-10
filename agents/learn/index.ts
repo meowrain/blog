@@ -1,16 +1,26 @@
 import { createLogger, sseEvent, createSSEResponse, createDsmlFilter, stripDsml } from '../_shared';
 import { getAgentEnv, modelName, chatCompletionsUrl } from '../_model';
+import { clampArticleBody, estimateTokens, wrapArticleBody } from '../_article';
 
 const logger = createLogger('learn');
 
 type Mode = 'tutor' | 'quiz' | 'eval';
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
+// 上下文预算：网关模型窗口足够，但要给正文、历史对话、回复留出比例，
+// 否则长文一塞进去就会把回复挤没（表现为"只吐半句就断"）。
+const MODEL_CONTEXT_TOKENS = 64_000;
+const MAX_HISTORY_TOKENS = 8_000;
+const MAX_ARTICLE_TOKENS = 24_000;
+const MAX_USER_TURN_CHARS = 4_000; // 单轮用户输入上限（含前端传上来的整篇正文的兜底）
+
 interface LearnRequestBody {
 	messages?: ChatMessage[];
 	slug?: string;
 	title?: string;
 	mode?: Mode;
+	/** 文章正文的纯文本，由文章页在客户端抽取后传入（Markdown 原文或已剥离标记的文本均可） */
+	article?: string;
 }
 
 interface Usage {
@@ -33,9 +43,10 @@ const MODE_PROMPTS: Record<Mode, string> = {
 function buildSystemPrompt(mode: Mode): string {
 	const base =
 		'你是博文学习助手，运行在用户的个人技术博客（Fuwari 静态博客，技术类文章为主）内，' +
-		'帮助访客通过对话深入理解博客文章。回复使用简体中文，使用 Markdown，篇幅克制（默认 300 字以内，出题和批改除外）。' +
-		'只针对知识点展开，不要复述整篇文章。你没有任何文件与浏览器工具，也不要把文章正文当成你读过：' +
-		'正文你同样看不到，只能基于用户给的标题、以及你自己的知识来讲解，涉及文章具体细节时如实说明这是推断。';
+		'帮助访客通过对话深入理解当前这篇文章。回复使用简体中文，使用 Markdown，篇幅克制（默认 300 字以内，出题和批改除外）。' +
+		'下面会给出这篇文章的正文，请基于正文回答，讲知识点时点明它出现在文章的哪个部分（如某小节、某段）。' +
+		'正文之外的知识可以补充，但要和正文区分开说。如果正文被截断（结尾有省略标记），涉及后面内容时如实说明你看不到。' +
+		'不要复述整篇文章。你没有任何文件与浏览器工具。';
 	return `${base}\n\n当前任务模式：${MODE_PROMPTS[mode]}`;
 }
 
@@ -45,6 +56,23 @@ function articleLine(slug: string, title: string, mode: Mode): string {
 		: '用户当前没有指定文章，先问清楚想读哪一篇，再开始讲解。';
 	const modeNote = mode === 'quiz' ? '本轮请出题。' : mode === 'eval' ? '本轮请批改用户刚才的答案。' : '';
 	return `${where}\n${modeNote}`.trim();
+}
+
+/**
+ * 组装首轮要注入的上下文块：文章信息 + 正文（按预算裁剪）。
+ * 返回 null 表示没拿到正文 —— 这时要如实告诉模型"看不到正文"，
+ * 不能让模型自己编（之前正是这个 bug：模型说"我看不到正文"，用户以为功能坏了）。
+ */
+function buildContextBlock(slug: string, title: string, mode: Mode, article: string) {
+	const head = articleLine(slug, title, mode);
+	const body = clampArticleBody(article, MAX_ARTICLE_TOKENS);
+	if (!body) {
+		return `${head}\n\n[未能获取文章正文：可能是文章页未传、或正文为空。请基于标题和通用知识作答，并明确说明你没有正文。]`;
+	}
+	const truncated = estimateTokens(article) > MAX_ARTICLE_TOKENS;
+	const note = truncated ? '\n\n（正文过长已截断，末尾标有省略标记，后半部分你看不到。）' : '';
+	const tail = truncated ? `${body}\n\n<<<省略，正文在此截断>>>` : body;
+	return `${head}\n\n${wrapArticleBody(tail, title)}${note}`;
 }
 
 interface GatewayChunk {
@@ -156,6 +184,7 @@ export async function onRequest(context: any) {
 	const body = (request?.body ?? {}) as LearnRequestBody;
 	const slug = (typeof body.slug === 'string' ? body.slug : '').trim().replace(/^\/+|\/+$/g, '').slice(0, 200);
 	const title = (typeof body.title === 'string' ? body.title : '').trim().slice(0, 120);
+	const article = typeof body.article === 'string' ? body.article : '';
 	const mode: Mode = MODES.includes(body.mode as Mode) ? (body.mode as Mode) : 'tutor';
 
 	const clean = (Array.isArray(body.messages) ? body.messages : []).filter(
@@ -175,14 +204,37 @@ export async function onRequest(context: any) {
 		});
 	}
 
-	// 没有 checkpointer 了，历史由客户端带上来的 messages 承担：
-	// 首轮把文章上下文塞进 system，后续轮次原样转发多轮对话。
 	const isFirstTurn = clean.filter((m) => m.role === 'user').length <= 1;
-	const systemContent = isFirstTurn ? `${buildSystemPrompt(mode)}\n\n${articleLine(slug, title, mode)}` : buildSystemPrompt(mode);
-	const modelMessages = [
-		{ role: 'system', content: systemContent },
-		...clean.map((m) => ({ role: m.role, content: m.content })),
-	];
+	const prompt = buildSystemPrompt(mode);
+	// 首轮把文章上下文塞进 system，之后沿用同一段 system（模型从历史里已能看到它）
+	const systemContent = isFirstTurn ? `${prompt}\n\n${buildContextBlock(slug, title, mode, article)}` : prompt;
+
+	// 历史按预算从最新往回保留，单轮超长的用户输入也要截断
+	const capped = clean.map((m) => ({
+		role: m.role,
+		content: m.content.length > MAX_USER_TURN_CHARS ? m.content.slice(0, MAX_USER_TURN_CHARS) : m.content,
+	}));
+	const kept: { role: string; content: string }[] = [];
+	let used = estimateTokens(systemContent);
+	for (let i = capped.length - 1; i >= 0; i--) {
+		const turn = capped[i];
+		const cost = estimateTokens(turn.content) + 8;
+		if (kept.length && used + cost > MODEL_CONTEXT_TOKENS - MAX_HISTORY_TOKENS) break;
+		used += cost;
+		kept.unshift(turn);
+	}
+	const modelMessages = [{ role: 'system', content: systemContent }, ...kept];
+
+	logger.log(
+		'POST /learn slug=%s mode=%s conv=%s turns=%d(kept %d) article=%d chars/%d tokens',
+		slug || '-',
+		mode,
+		conversationId,
+		clean.length,
+		kept.length,
+		article.length,
+		estimateTokens(article),
+	);
 
 	// 界面历史（/history 恢复用）写在 message API 上，写失败不阻塞回答
 	await store

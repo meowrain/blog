@@ -43,6 +43,27 @@
 		return md.render(content);
 	}
 
+	// 文章正文由页面上的正文容器现取：面板只负责把纯文本递过去，
+	// 具体怎么裁剪/注入由 agents/learn 决定（后端才是唯一的预算权威）。
+	// 上限只是防超长文的请求体失控，给足余量（约 6 万字）。
+	const MAX_ARTICLE_CHARS = 60_000;
+
+	function readArticleText(): string {
+		if (typeof document === 'undefined') return '';
+		const el =
+			document.querySelector('.markdown-content') ??
+			document.querySelector('#post-container .prose') ??
+			document.querySelector('article');
+		if (!el) return '';
+		// 去掉代码块复制按钮、脚注回链之类的界面噪声，只留可读正文
+		const clone = el.cloneNode(true) as HTMLElement;
+		for (const junk of clone.querySelectorAll('button, svg, .not-prose, [data-expressive-code-copy], .copy-btn')) {
+			junk.remove();
+		}
+		const text = (clone.innerText || clone.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
+		return text.length > MAX_ARTICLE_CHARS ? text.slice(0, MAX_ARTICLE_CHARS) : text;
+	}
+
 	const MODES: { id: Mode; label: string; hint: string }[] = [
 		{ id: 'tutor', label: '讲解', hint: '让我讲透这篇的知识点' },
 		{ id: 'quiz', label: '出题', hint: '让我出 5 道题考你' },
@@ -76,6 +97,8 @@
 					slug,
 					title,
 					mode,
+					// 正文每次现取：astro dev / swup 换页后 DOM 都是新的，缓存反而会串文章
+					article: readArticleText(),
 				}),
 				signal: sawAbort.signal,
 			});
