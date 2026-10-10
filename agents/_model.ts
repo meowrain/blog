@@ -1,5 +1,6 @@
-import { ChatOpenAI } from '@langchain/openai';
-
+// 本文件只做 env → 网关参数映射，刻意不引任何第三方包：
+// 线上的 agent 运行时对外部依赖做过裁剪（构建日志里 "Dependency sync ... missing=15"），
+// 一旦这里有 import 解析不到，整个 agent bundle 会在加载期崩掉、所有 agents/ 路由一起 500。
 const DEFAULT_MODEL_NAME = '@makers/deepseek-v4-flash';
 
 export interface AgentEnv {
@@ -17,7 +18,6 @@ export function getAgentEnv(contextEnv: Record<string, string | undefined> | und
 	return {
 		AI_GATEWAY_API_KEY: source.AI_GATEWAY_API_KEY!,
 		AI_GATEWAY_BASE_URL: source.AI_GATEWAY_BASE_URL!,
-		// 平台约定：AI_GATEWAY_MODEL 可选，不填就用默认网关模型
 		...(model ? { AI_GATEWAY_MODEL: model } : {}),
 	};
 }
@@ -26,20 +26,7 @@ export function modelName(env: AgentEnv): string {
 	return env.AI_GATEWAY_MODEL?.trim() || DEFAULT_MODEL_NAME;
 }
 
-// Cache the model instance per baseURL
-const modelCache = new Map<string, ChatOpenAI>();
-
-export function createModel(env: AgentEnv, options?: { timeout?: number }): ChatOpenAI {
-	const cacheKey = `${modelName(env)}:${env.AI_GATEWAY_BASE_URL}`;
-	if (modelCache.has(cacheKey)) return modelCache.get(cacheKey)!;
-
-	const model = new ChatOpenAI({
-		model: modelName(env),
-		apiKey: env.AI_GATEWAY_API_KEY,
-		configuration: { baseURL: env.AI_GATEWAY_BASE_URL },
-		temperature: 0,
-		timeout: options?.timeout ?? 300_000,
-	});
-	modelCache.set(cacheKey, model);
-	return model;
+// baseURL 通常已经带 /v1，但两种写法都容错
+export function chatCompletionsUrl(env: AgentEnv): string {
+	return `${env.AI_GATEWAY_BASE_URL.replace(/\/+$/, '')}/chat/completions`;
 }
