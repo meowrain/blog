@@ -7,13 +7,22 @@ interface Props {
 	alt?: string;
 	position?: string;
 	basePath?: string;
+	/** 默认懒加载：列表页/相册一次排几十张时，只有滚到附近才下载解码。首屏关键图可显式传 eager。 */
+	loading?: "lazy" | "eager";
 }
 import { Image } from "astro:assets";
 import { url } from "../../utils/url-utils";
 import { imageFallbackConfig, siteConfig } from "../../config";
 
-const { id, src, alt, position = "center", basePath = "/" } = Astro.props;
+const { id, src, alt, position = "center", basePath = "/", loading = "lazy" } = Astro.props;
 const className = Astro.props.class;
+
+// 加载完就把进度条从渲染树上摘掉（display:none 才会终止那条 infinite 动画；
+// 之前只设 opacity:0，动画一直在跑，滚动时白白合成几十层）。
+const stopBar =
+  "var b=this.parentElement&&this.parentElement.querySelector('.loading-bar');if(b)b.style.display='none';";
+const onloadAttr = `this.style.opacity='1';${stopBar}`;
+const onerrorAttr = stopBar;
 
 const isLocal = !(
 	src.startsWith("/") ||
@@ -53,11 +62,11 @@ const imageStyle = `object-position: ${position}`;
     </div>
     
     <!-- 图片内容 -->
-    {isLocal && img && <Image src={img} alt={alt || ""} class={`${imageClass} image-content opacity-0 transition-opacity duration-500`} style={imageStyle} onload="this.style.opacity='1'; this.parentElement.querySelector('.loading-bar').style.opacity='0';"/>}
+    {isLocal && img && <Image src={img} alt={alt || ""} class={`${imageClass} image-content opacity-0 transition-opacity duration-500`} style={imageStyle} loading={loading} decoding="async" onload={onloadAttr} onerror={onerrorAttr}/>}
     {!isLocal && (
         imageFallbackConfig.enable && src.includes(imageFallbackConfig.originalDomain) ? 
-            <img src={isPublic ? url(src) : src} alt={alt || ""} class={`${imageClass} image-content opacity-0 transition-opacity duration-500`} style={imageStyle} onload="this.style.opacity='1'; this.parentElement.querySelector('.loading-bar').style.opacity='0';" onerror={`this.onerror=null; this.src='${(isPublic ? url(src) : src).replace(imageFallbackConfig.originalDomain, imageFallbackConfig.fallbackDomain)}';`}/> :
-            <img src={isPublic ? url(src) : src} alt={alt || ""} class={`${imageClass} image-content opacity-0 transition-opacity duration-500`} style={imageStyle} onload="this.style.opacity='1'; this.parentElement.querySelector('.loading-bar').style.opacity='0';"/>
+            <img src={isPublic ? url(src) : src} alt={alt || ""} class={`${imageClass} image-content opacity-0 transition-opacity duration-500`} style={imageStyle} loading={loading} decoding="async" onload={onloadAttr} onerror={`this.onerror=null; this.src='${(isPublic ? url(src) : src).replace(imageFallbackConfig.originalDomain, imageFallbackConfig.fallbackDomain)}';`}/> :
+            <img src={isPublic ? url(src) : src} alt={alt || ""} class={`${imageClass} image-content opacity-0 transition-opacity duration-500`} style={imageStyle} loading={loading} decoding="async" onload={onloadAttr} onerror={onerrorAttr}/>
     )}
 </div>
 
@@ -83,8 +92,12 @@ const imageStyle = `object-position: ${position}`;
         transition: transform 0.3s ease-out, opacity 0.5s ease-out;
     }
     
-    .image-wrapper:hover .image-content {
-        transform: scale(1.05);
+    /* 触屏没有真 hover：点一下就把 :hover 粘住，大图会长期停在 scale 合成层上，滚动更卡。
+       缩放只在能悬停的设备上生效。 */
+    @media (hover: hover) and (pointer: fine) {
+        .image-wrapper:hover .image-content {
+            transform: scale(1.05);
+        }
     }
 </style>
 
