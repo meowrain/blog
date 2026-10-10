@@ -8,6 +8,7 @@ import { ogImageBase, profileConfig, siteConfig } from "@/config";
 import ConfigCarrier from "@components/ConfigCarrier.astro";
 import FallingEffect from "@components/widget/FallingEffect.astro";
 import EmojiCursor from "@components/widget/EmojiCursor.astro";
+import FindAgent from "@components/widget/FindAgent.svelte";
 import {
   AUTO_MODE,
   BANNER_HEIGHT,
@@ -373,6 +374,8 @@ const bannerOffset =
     <FallingEffect />
     <EmojiCursor />
     <ConfigCarrier />
+    <!-- 全站「找文章」入口：放在 Swup 容器之外，换页时面板和对话不会被替换 -->
+    <FindAgent client:only="svelte" />
     <slot />
 
     <!-- increase the page height during page transition to prevent the scrolling animation from jumping -->
