@@ -20,6 +20,12 @@ import { Icon } from "astro-icon/components";
         <!-- 由JS动态生成 -->
         <div class="text-sm text-50">加载筛选器中...</div>
       </div>
+
+      <!-- 分页控件（顶部）：一屏 60 张，不想到底部也能翻页 -->
+      <div
+        id="gallery-pagination-top"
+        class="hidden mt-4 flex flex-row gap-3 justify-center"
+      ></div>
     </div>
 
     <!-- 空状态提示 -->
@@ -34,13 +40,11 @@ import { Icon } from "astro-icon/components";
       <!-- Columns injected by JS -->
     </div>
 
-    <div id="loading-sentinel" class="hidden w-full py-10 flex justify-center">
-      <div class="loading-spinner w-8 h-8 border-4 border-[var(--primary)] border-t-transparent rounded-full animate-spin"></div>
-    </div>
-
-    <div id="end-message" class="hidden w-full py-10 text-center text-50">
-      已经到底啦 ~
-    </div>
+    <!-- 分页控件（由 JS 按当前筛选结果渲染） -->
+    <div
+      id="gallery-pagination"
+      class="hidden mt-8 flex flex-row gap-3 justify-center"
+    ></div>
 
     <!-- 初始加载提示 -->
     <div id="initial-loading" class="flex flex-col items-center justify-center py-20">
