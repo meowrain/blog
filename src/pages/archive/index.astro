@@ -1,10 +1,14 @@
 ---
 import ArchivePanel from "@components/ArchivePanel.astro";
+import WritingHeatmap from "@components/WritingHeatmap.astro";
 
 import MainGridLayout from "@layouts/MainGridLayout.astro";
 ---
 
 <MainGridLayout title="归档">
-    <ArchivePanel></ArchivePanel>
+    <div class="flex flex-col gap-4">
+        <WritingHeatmap></WritingHeatmap>
+        <ArchivePanel></ArchivePanel>
+    </div>
 </MainGridLayout>
 

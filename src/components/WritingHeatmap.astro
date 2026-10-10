@@ -1,0 +1,189 @@
+---
+import { Icon } from "astro-icon/components";
+import { getSortedPosts } from "@utils/content-utils";
+
+interface HeatCell {
+	date: Date;
+	count: number;
+}
+
+const posts = await getSortedPosts();
+const today = new Date();
+
+// 和 ArchivePanel 一样按本地时区取年月日，避免 UTC 换算把文章挪到前一天
+function dayKey(date: Date) {
+	return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+const countByDay = new Map<string, number>();
+for (const post of posts) {
+	const key = dayKey(new Date(post.data.published));
+	countByDay.set(key, (countByDay.get(key) ?? 0) + 1);
+}
+
+const activeDays = countByDay.size;
+const maxDailyCount = Math.max(1, ...countByDay.values());
+
+// 多数日子只发 1~2 篇，按单日最大值等分会把几乎全部格子压成同一档，
+// 所以用发文天计数量的分位数当档位边界
+const dailyCounts = [...countByDay.values()].sort((a, b) => a - b);
+const thresholds = [
+	...new Set(
+		[0.25, 0.5, 0.75].map(
+			(quantile) => dailyCounts[Math.floor((dailyCounts.length - 1) * quantile)],
+		),
+	),
+];
+
+function levelOf(count: number) {
+	if (count === 0) return 0;
+	return 1 + thresholds.filter((threshold) => count > threshold).length;
+}
+
+function cellTitle(cell: HeatCell) {
+	const { date } = cell;
+	const month = String(date.getMonth() + 1).padStart(2, "0");
+	const day = String(date.getDate()).padStart(2, "0");
+	const label = `${date.getFullYear()}-${month}-${day}`;
+	return cell.count > 0 ? `${label} 发了 ${cell.count} 篇` : `${label} 没发文`;
+}
+
+const years = [...new Set([...countByDay.keys()].map((key) => key.split("-")[0]))]
+	.map(Number)
+	.sort((a, b) => b - a);
+
+// 每列一周、每行一天，周一为一周的第一天
+const blocks = years.map((year) => {
+	const start = new Date(year, 0, 1);
+	const end = year === today.getFullYear() ? today : new Date(year, 11, 31);
+	const cells: (HeatCell | null)[] = [];
+	for (let pad = (start.getDay() + 6) % 7; pad > 0; pad--) {
+		cells.push(null);
+	}
+
+	const months: { label: string; week: number }[] = [];
+	for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+		if (cursor.getDate() === 1) {
+			months.push({ label: `${cursor.getMonth() + 1}月`, week: Math.floor(cells.length / 7) });
+		}
+		cells.push({ date: new Date(cursor), count: countByDay.get(dayKey(cursor)) ?? 0 });
+	}
+
+	return { year, months, cells, weeks: Math.ceil(cells.length / 7) };
+});
+---
+
+<div class="card-base heatmap-card px-8 py-6">
+	<div class="flex items-center gap-2 mb-1">
+		<Icon name="material-symbols:grid-view-outline-rounded" class="text-[var(--primary)]" />
+		<h2 class="text-lg font-bold text-90">写作热力图</h2>
+	</div>
+	<p class="text-sm text-50 mb-5">
+		{posts.length} 篇文章分布在 {activeDays} 天里，单日最多 {maxDailyCount} 篇。每格一天，横向按周排列，纵向从周一到周日。
+	</p>
+
+	<div class="flex flex-col gap-4">
+		{blocks.map((block) => (
+			<div class="flex items-center gap-3">
+				<div class="w-[15%] md:w-[10%] shrink-0 text-right text-base font-bold text-75">
+					{block.year}
+				</div>
+				<div class="hide-scrollbar min-w-0 flex-1 overflow-x-auto">
+					<div class="heatmap-months" style={`--heatmap-weeks: ${block.weeks}`}>
+						{block.months.map((month) => (
+							<span style={`grid-column: ${month.week + 1}`}>{month.label}</span>
+						))}
+					</div>
+					<div class="heatmap-grid">
+						{block.cells.map((cell) =>
+							cell === null ? (
+								<span class="heatmap-pad"></span>
+							) : (
+								<span
+									class:list={`heatmap-cell heatmap-level-${levelOf(cell.count)}`}
+									title={cellTitle(cell)}
+								>
+								</span>
+							),
+						)}
+					</div>
+				</div>
+			</div>
+		))}
+	</div>
+
+	<div class="flex items-center justify-end gap-1.5 mt-4 text-xs text-50">
+		<span class="mr-0.5">少</span>
+		{[0, 1, 2, 3, 4].map((level) => (
+			<span class:list={`heatmap-cell heatmap-level-${level}`}></span>
+		))}
+		<span class="ml-0.5">多</span>
+	</div>
+</div>
+
+<style>
+	.heatmap-card {
+		--heatmap-cell: 0.625rem;
+		--heatmap-gap: 0.1875rem;
+	}
+
+	.heatmap-months {
+		display: grid;
+		grid-template-columns: repeat(var(--heatmap-weeks), var(--heatmap-cell));
+		column-gap: var(--heatmap-gap);
+		height: 1rem;
+		font-size: 0.6875rem;
+		line-height: 1rem;
+		color: var(--btn-content);
+	}
+
+	.heatmap-months span {
+		justify-self: start;
+		white-space: nowrap;
+	}
+
+	.heatmap-grid {
+		display: grid;
+		grid-template-rows: repeat(7, var(--heatmap-cell));
+		grid-auto-columns: var(--heatmap-cell);
+		grid-auto-flow: column;
+		gap: var(--heatmap-gap);
+	}
+
+	.heatmap-cell {
+		width: var(--heatmap-cell);
+		height: var(--heatmap-cell);
+		border-radius: 2px;
+		transition: transform 0.15s ease;
+	}
+
+	.heatmap-cell:hover {
+		transform: scale(1.4);
+		box-shadow: 0 0 0 1.5px var(--card-bg);
+	}
+
+	.heatmap-pad {
+		width: var(--heatmap-cell);
+		height: var(--heatmap-cell);
+	}
+
+	.heatmap-level-0 {
+		background-color: var(--heatmap-level-0);
+	}
+
+	.heatmap-level-1 {
+		background-color: var(--heatmap-level-1);
+	}
+
+	.heatmap-level-2 {
+		background-color: var(--heatmap-level-2);
+	}
+
+	.heatmap-level-3 {
+		background-color: var(--heatmap-level-3);
+	}
+
+	.heatmap-level-4 {
+		background-color: var(--heatmap-level-4);
+	}
+</style>
