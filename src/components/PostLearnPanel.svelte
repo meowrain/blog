@@ -1,24 +1,37 @@
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { tick } from 'svelte';
 	import MarkdownIt from 'markdown-it';
 
-	// ⭐ Conversation ID pattern — verbatim from makers-agents conversation-id.md
-	const KEY = 'eo_conversation_id';
+	type Mode = 'tutor' | 'quiz' | 'eval';
+
+	// slug / title 由文章页传入：后端靠它们判断「用户在读哪一篇」
+	let { slug = '', title = '' }: { slug?: string; title?: string } = $props();
+
+	// ⭐ 每篇文章一个 conversation_id —— 它同时是 langgraph 的 thread_id，
+	// 所以对话记忆天然按文章隔离，读 A 文章的历史不会串到 B 文章。
+	const convKey = () => `eo_conversation_id:${slug || '_'}`;
 
 	function getOrCreateConversationId(): string {
-		const cached = localStorage.getItem(KEY);
+		const cached = localStorage.getItem(convKey());
 		if (cached) return cached;
 		const fresh = crypto.randomUUID();
-		localStorage.setItem(KEY, fresh);
+		localStorage.setItem(convKey(), fresh);
+		return fresh;
+	}
+
+	function rotateConversationId(): string {
+		const fresh = crypto.randomUUID();
+		localStorage.setItem(convKey(), fresh);
 		return fresh;
 	}
 
 	// POST history must never leave two consecutive user messages (sse-protocol.md)
 	type Msg = { role: 'user' | 'assistant'; content: string; failed?: boolean };
-	let msgs: Msg[] = [];
-	let streaming = false;
-	let error = '';
-	let input = '';
+	let msgs = $state<Msg[]>([]);
+	let streaming = $state(false);
+	let error = $state('');
+	let input = $state('');
+	let mode = $state<Mode>('tutor');
 	let sawAbort: AbortController | null = null;
 
 	// keep a non-reactive mirror for building the posted-history array
@@ -29,6 +42,16 @@
 	function renderMarkdown(content: string): string {
 		return md.render(content);
 	}
+
+	const MODES: { id: Mode; label: string; hint: string }[] = [
+		{ id: 'tutor', label: '讲解', hint: '让我讲透这篇的知识点' },
+		{ id: 'quiz', label: '出题', hint: '让我出 5 道题考你' },
+		{ id: 'eval', label: '批改', hint: '把你刚才的答案发过来' },
+	];
+
+	const placeholder = $derived(
+		streaming ? '生成中…' : MODES.find((m) => m.id === mode)?.hint ?? '输入问题…',
+	);
 
 	// ⭐ Frontend SSE reader — verbatim from makers-agents sse-protocol.md (sawDone contract)
 	async function post(question: string) {
@@ -50,6 +73,9 @@
 				body: JSON.stringify({
 					// ⛔ only non-failed assistant turns + the single trailing user message go in
 					messages: [...msgsMirror],
+					slug,
+					title,
+					mode,
 				}),
 				signal: sawAbort.signal,
 			});
@@ -79,7 +105,9 @@
 						msgs = [...msgs.slice(0, -1), { role: 'assistant', content: assistantText }];
 						scrollToBottom();
 					} else if (ev.type === 'error_message') {
-						throw new Error(ev.content ?? '未知错误');
+						const e = new Error(ev.content ?? '未知错误') as Error & { code?: string };
+						e.code = ev.code;
+						throw e;
 					}
 					// ping / tool_call / tool_result / usage — ignore silently
 				}
@@ -91,13 +119,14 @@
 			// turn finished — commit it to the posted-history mirror
 			msgsMirror.push({ role: 'assistant', content: assistantText });
 		} catch (e) {
-			const err = e as Error;
+			const err = e as Error & { code?: string };
 			if (err.name === 'AbortError') {
 				// user pressed stop — keep whatever content streamed, commit partial turn
 				msgsMirror.push({ role: 'assistant', content: assistantText });
 				return;
 			}
 			error = err.message;
+			if (err.code === 'AGENT_STATE_CORRUPT') error += '（点「新对话」即可继续）';
 			// ⛔ A failed turn must not leave its user message in the posted history —
 			// mark both on screen as failed; the mirror drops them from the next posted array.
 			msgs = msgs.map((x) => ({ ...x, failed: true }));
@@ -120,6 +149,26 @@
 		sawAbort?.abort();
 	}
 
+	function newChat() {
+		stopQuietly();
+		rotateConversationId();
+		msgs = [];
+		msgsMirror.length = 0;
+		error = '';
+	}
+
+	async function stopQuietly() {
+		if (!streaming) return;
+		try {
+			await fetch('/stop', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ conversation_id: getOrCreateConversationId() }),
+			});
+		} catch { /* 尽力而为 */ }
+		sawAbort?.abort();
+	}
+
 	function submit() {
 		const q = input.trim();
 		if (!q || streaming) return;
@@ -132,12 +181,66 @@
 		await tick();
 		listEl?.scrollTo({ top: listEl.scrollHeight, behavior: 'smooth' });
 	}
+
+	// 换文章 = 换 thread：清掉界面状态，再按新的 conversation_id 恢复历史
+	$effect(() => {
+		slug;
+		msgs = [];
+		msgsMirror.length = 0;
+		error = '';
+		void restore();
+	});
+
+	async function restore() {
+		const conversationId = getOrCreateConversationId();
+		try {
+			// /history 是 cloud-function：header 或 body 都行，这里两个都给
+			const resp = await fetch('/history', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'makers-conversation-id': conversationId },
+				body: JSON.stringify({ conversation_id: conversationId, limit: 100 }),
+			});
+			if (!resp.ok) return; // 恢复失败不影响新对话，静默
+			const data = await resp.json();
+			const restored: Msg[] = (Array.isArray(data?.messages) ? data.messages : [])
+				.filter((m: any) => (m?.role === 'user' || m?.role === 'assistant') && typeof m?.content === 'string' && m.content.trim())
+				.map((m: any) => ({ role: m.role, content: m.content }));
+			if (!restored.length) return;
+			// 期间用户已经开口了就不要覆盖
+			if (msgs.length || streaming) return;
+			msgs = restored;
+			msgsMirror.push(...restored);
+			scrollToBottom();
+		} catch { /* /history 还没上线时也走这里 */ }
+	}
 </script>
 
 <div class="flex h-full flex-col rounded-lg border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+	<div class="flex flex-wrap items-center gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-700">
+		<div class="flex gap-1 rounded-md bg-neutral-100 p-0.5 dark:bg-neutral-800">
+			{#each MODES as m}
+				<button
+					class="rounded px-2.5 py-1 text-xs transition {mode === m.id
+						? 'bg-white text-[var(--primary)] shadow dark:bg-neutral-700 dark:text-white'
+						: 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-100'}"
+					onclick={() => { mode = m.id; }}
+					title={m.hint}
+				>{m.label}</button>
+			{/each}
+		</div>
+		<span class="min-w-0 flex-1 truncate text-xs text-neutral-400" title={title}>{title}</span>
+		<button
+			class="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 transition hover:text-neutral-800 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-100"
+			onclick={newChat}
+		>新对话</button>
+	</div>
+
 	<div bind:this={listEl} class="eo-learn-list flex-1 space-y-3 overflow-y-auto p-4">
 		{#if msgs.length === 0}
-			<p class="text-sm text-neutral-400">我是博文学习助手，把想深入理解的内容问我吧～</p>
+			<p class="text-sm text-neutral-400">
+				我是这篇{title ? `《${title}》` : ''}的学习助手，把想深入理解的内容问我吧～
+				<span class="block text-xs text-neutral-400/80">「讲解」逐个知识点讲透 · 「出题」来一套小测验 · 「批改」给你打分和解析</span>
+			</p>
 		{/if}
 		{#each msgs as m, i}
 			<div class={m.role === 'user' ? 'text-right' : 'text-left'}>
@@ -154,11 +257,12 @@
 		{/each}
 		{#if error}<p class="text-center text-xs text-red-500">{error}</p>{/if}
 	</div>
+
 	<div class="flex gap-2 border-t border-neutral-200 p-3 dark:border-neutral-700">
 		<input
 			class="flex-1 rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800"
 			bind:value={input}
-			placeholder={streaming ? '生成中…' : '输入问题…'}
+			placeholder={placeholder}
 			disabled={streaming}
 			onkeydown={(e) => { if (e.key === 'Enter' && !e.isComposing) submit(); }}
 		/>
