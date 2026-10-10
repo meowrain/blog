@@ -26,6 +26,7 @@ import { pluginLineNumbers } from "@expressive-code/plugin-line-numbers";
 import { expressiveCodeConfig } from "./src/config.ts";
 // import { pluginLanguageBadge } from "./src/plugins/expressive-code/language-badge.ts";
 import { pluginCustomCopyButton } from "./src/plugins/expressive-code/custom-copy-button.js";
+import { devImageBed } from "./src/plugins/dev-image-bed.mjs";
 import { defineConfig, passthroughImageService } from "astro/config";
 
 // https://astro.build/config
@@ -194,6 +195,8 @@ export default defineConfig({
   },
   vite: {
     assetsInclude: ["**/*.awebp"],
+    // astro dev 不跑 EdgeOne Pages Function，本地图床中间件顶上 /api/i/*
+    plugins: [devImageBed()],
     build: {
       rollupOptions: {
         onwarn(warning, warn) {
