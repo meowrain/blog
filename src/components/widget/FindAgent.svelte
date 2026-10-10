@@ -358,7 +358,7 @@ $effect(() => {
 		<div class="flex items-center gap-2 border-b border-black/5 px-3 py-2 dark:border-white/10">
 			<Icon icon="material-symbols:smart-toy-outline-rounded" class="text-[1.125rem] text-[var(--primary)]" />
 			<div class="min-w-0 flex-1">
-				<div class="text-sm font-bold">找文章</div>
+				<div class="text-sm font-bold text-90">找文章</div>
 				<div class="truncate text-[0.7rem] text-black/40 dark:text-white/40">描述你想看的，它在站内自己搜</div>
 			</div>
 			<button
@@ -452,7 +452,7 @@ $effect(() => {
 				bind:this={inputEl}
 				id="find-agent-input"
 				name="find-query"
-				class="min-w-0 flex-1 rounded-md border border-black/10 bg-black/[0.03] px-3 py-2 text-sm outline-none dark:border-white/15 dark:bg-white/5"
+				class="min-w-0 flex-1 rounded-md border border-black/10 bg-black/[0.03] px-3 py-2 text-sm text-90 outline-none dark:border-white/15 dark:bg-white/5"
 				bind:value={input}
 				placeholder={streaming ? '生成中…' : '想看什么？'}
 				disabled={streaming}
