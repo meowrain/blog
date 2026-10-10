@@ -30,17 +30,41 @@ const OVERRIDDEN_HEADERS = {
 
 // 从上游响应中透传的头。默认带上 Etag / Last-Modified，
 // 浏览器与边缘节点能据此做缓存协商。
+// cache-control 不在其中：上游 git raw 对索引回 no-cache，会把图片的缓存打掉，
+// 统一由下面按类型自己决定。
 const PASSTHROUGH_HEADERS = [
 	"content-type",
 	"content-disposition",
-	"cache-control",
 	"etag",
 	"last-modified",
 ];
 
-// 上游不带 Cache-Control 时给一个兜底值，git raw 按 main 分支取图，
-// 内容可能随 push 变化，所以只敢缓存一小时。
-const FALLBACK_CACHE_CONTROL = "public, max-age=3600";
+// 缓存时间统一由这里决定（不再透传上游的 Cache-Control）。
+// 图片文件名是上传时随机生成的（pernyy-1.webp 这种），同名覆盖几乎不可能发生，
+// 所以图片可以放心挂久一点，相册回访就不用重新拉一遍；索引要跟着上传变，保持短。
+const IMAGE_CACHE_CONTROL = "public, max-age=604800, immutable";
+const INDEX_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=86400";
+const CACHEABLE_EXTENSIONS = new Set([
+	"webp",
+	"png",
+	"jpg",
+	"jpeg",
+	"gif",
+	"avif",
+	"bmp",
+	"svg",
+	"ico",
+	"mp4",
+	"webm",
+	"mp3",
+]);
+
+function cacheControlFor(path) {
+	const ext = path.split(".").pop()?.toLowerCase();
+	return ext && CACHEABLE_EXTENSIONS.has(ext)
+		? IMAGE_CACHE_CONTROL
+		: INDEX_CACHE_CONTROL;
+}
 
 // 线上运行时拿不到上游响应的 content-type（本地 Node fetch 有、EO 没有），
 // 按文件扩展名兜底推断，避免图片被当 text/plain 返回。
@@ -108,9 +132,7 @@ export async function onRequest(context) {
 		if (!headers.has("content-type")) {
 			headers.set("Content-Type", contentTypeFor(rest));
 		}
-		if (!headers.has("cache-control")) {
-			headers.set("Cache-Control", FALLBACK_CACHE_CONTROL);
-		}
+		headers.set("Cache-Control", cacheControlFor(rest));
 		for (const [name, value] of Object.entries(OVERRIDDEN_HEADERS)) {
 			headers.set(name, value);
 		}
