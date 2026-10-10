@@ -16,14 +16,16 @@
  * base64 字体与 wasm，bundle 体积直接翻倍（实测 7.7MB -> 15.2MB）。
  *
  * 依赖：satori（JSX 风格树 -> SVG）+ @resvg/resvg-wasm（SVG -> PNG）。
- * 中文字体与 resvg 的 wasm 以 base64 内嵌在 _font.js / _resvg.js 辅助模块里
+ * 中文字体（700 粗体 + 400 常规体）与 resvg 的 wasm 以 base64 内嵌在
+ * _font.js / _font400.js / _resvg.js 辅助模块里
  * ——不要改成 fetch 站内静态资源，EO 函数运行时禁止回环请求自身站点。
  *
  * og:image 由 Astro 构建时生成（src/pages/posts/[...slug].astro、src/layouts/Layout.astro），
  * URL 指向本函数所在的 Pages 域名。
  */
 
-import fontB64 from "./_font.js";
+import fontBoldB64 from "./_font.js";
+import fontRegularB64 from "./_font400.js";
 import resvgB64 from "./_resvg.js";
 
 const CARD_W = 1200;
@@ -32,18 +34,26 @@ const CARD_H = 630;
 // 站点信息（与 src/config.ts 保持一致）
 const SITE_TITLE = "MeowRain 的技术博客";
 const SITE_DESC = "技术分享与实践";
+const SITE_HOST = "blog.meowrain.cn";
 const THEME = {
-	// hue 340 对应的粉紫色系，与博客主题一致
-	gradient: "linear-gradient(135deg, #1a1025 0%, #2d0a1f 55%, #4a0e2e 100%)",
+	// hue 340 粉紫系，与博客主题一致；卡片是「光晕 + 玻璃面板」构图
+	bg: "linear-gradient(160deg, #1b0a18 0%, #2d0a1f 55%, #4c1030 100%)",
 	text: "#fdf2f8",
-	accent: "#f9a8d4",
-	dot: "#ec4899",
-	muted: "rgba(253,242,248,0.55)",
+	accent: "#ec4899",
+	soft: "#f9a8d4",
+	chipText: "#fbcfe8",
+	panel: "rgba(255,255,255,0.055)",
+	panelBorder: "rgba(249,168,212,0.24)",
+	chipBg: "rgba(255,255,255,0.08)",
+	chipBorder: "rgba(249,168,212,0.30)",
+	dim: "rgba(253,242,248,0.5)",
+	dimmer: "rgba(253,242,248,0.36)",
 };
 
 // ---------- 模块级缓存（同实例复用） ----------
 
-const FONT_DATA = Buffer.from(fontB64, "base64");
+const FONT_BOLD = Buffer.from(fontBoldB64, "base64");
+const FONT_REGULAR = Buffer.from(fontRegularB64, "base64");
 const WASM_BYTES = Buffer.from(resvgB64, "base64");
 
 let wasmReady = null;
@@ -74,12 +84,12 @@ function stripEmoji(s) {
 		.trim();
 }
 
-// 标题越长字号越小，保证最多 3 行能放下
+// 标题越长字号越小；配合玻璃面板的内边距，最长标题控制在 3~4 行
 function titleFontSize(len) {
-	if (len <= 14) return 72;
-	if (len <= 24) return 58;
-	if (len <= 40) return 46;
-	return 38;
+	if (len <= 12) return 78;
+	if (len <= 20) return 62;
+	if (len <= 34) return 50;
+	return 42;
 }
 
 function el(type, props = {}, children = undefined) {
@@ -88,33 +98,39 @@ function el(type, props = {}, children = undefined) {
 
 // ---------- 卡片构建 ----------
 
-function buildTree({ title, tags, date }) {
-	const titleStyle = {
-		display: "flex",
-		width: "100%",
-		fontSize: `${titleFontSize(title.length)}px`,
-		fontWeight: 700,
-		lineHeight: 1.35,
-		color: THEME.text,
-	};
+function glow(size, offset, inner) {
+	return el("div", {
+		style: {
+			position: "absolute",
+			width: `${size}px`,
+			height: `${size}px`,
+			borderRadius: `${size / 2}px`,
+			background: `radial-gradient(circle, ${inner} 0%, rgba(0,0,0,0) 70%)`,
+			...offset,
+		},
+	});
+}
 
-	const tagPills = tags.slice(0, 4).map((t) =>
-		el(
-			"div",
-			{
-				style: {
-					display: "flex",
-					padding: "8px 22px",
-					borderRadius: "999px",
-					border: `2px solid ${THEME.accent}80`,
-					fontSize: "26px",
-					color: THEME.accent,
-				},
+function tagChip(tag) {
+	return el(
+		"div",
+		{
+			style: {
+				display: "flex",
+				padding: "7px 22px",
+				borderRadius: "999px",
+				background: THEME.chipBg,
+				border: `1px solid ${THEME.chipBorder}`,
+				fontSize: "23px",
+				fontWeight: 400,
+				color: THEME.chipText,
 			},
-			t,
-		),
+		},
+		tag,
 	);
+}
 
+function buildTree({ title, tags, date }) {
 	return el(
 		"div",
 		{
@@ -125,63 +141,143 @@ function buildTree({ title, tags, date }) {
 				display: "flex",
 				flexDirection: "column",
 				justifyContent: "space-between",
-				padding: "72px",
-				background: THEME.gradient,
+				position: "relative",
+				overflow: "hidden",
+				padding: "60px 72px",
+				background: THEME.bg,
 				color: THEME.text,
 				fontFamily: "Noto Sans SC",
 			},
 		},
 		[
-			// 顶栏：圆点 + 站点名
-			el(
-				"div",
-				{
-					style: {
-						display: "flex",
-						alignItems: "center",
-						gap: "16px",
-						color: THEME.accent,
-						fontSize: "30px",
-					},
+			// 装饰层：两团渐变光晕 + 一道细圆环（satori 不支持 blur/box-shadow，只能用 radial-gradient 假糊）
+			glow(620, { left: "-200px", bottom: "-260px" }, "rgba(168,85,247,0.34)"),
+			glow(520, { right: "-140px", top: "-200px" }, "rgba(236,72,153,0.32)"),
+			el("div", {
+				style: {
+					position: "absolute",
+					width: "360px",
+					height: "360px",
+					borderRadius: "180px",
+					border: "1px solid rgba(249,168,212,0.16)",
+					right: "120px",
+					top: "-140px",
 				},
-				[
-					el("div", {
-						style: {
-							width: "14px",
-							height: "14px",
-							borderRadius: "7px",
-							background: THEME.dot,
-						},
-					}),
-					el("div", {}, SITE_TITLE),
-				],
-			),
-			// 标题
-			el("div", { style: { display: "flex", width: "100%" } }, [
-				el("div", { style: titleStyle }, title),
-			]),
-			// 底栏：标签 + 日期
+			}),
+			// 顶栏：站点名 + 日期
 			el(
 				"div",
 				{
 					style: {
 						display: "flex",
 						justifyContent: "space-between",
-						alignItems: "flex-end",
-						width: "100%",
+						alignItems: "center",
+						position: "relative",
 					},
 				},
 				[
-					el("div", { style: { display: "flex", gap: "12px" } }, tagPills),
+					el(
+						"div",
+						{ style: { display: "flex", alignItems: "center", gap: "14px" } },
+						[
+							el("div", {
+								style: {
+									width: "16px",
+									height: "16px",
+									borderRadius: "8px",
+									background: THEME.accent,
+								},
+							}),
+							el(
+								"div",
+								{
+									style: {
+										fontSize: "26px",
+										fontWeight: 400,
+										color: THEME.soft,
+										letterSpacing: "1px",
+									},
+								},
+								SITE_TITLE,
+							),
+						],
+					),
 					...(date
 						? [
 								el(
 									"div",
-									{ style: { color: THEME.muted, fontSize: "26px" } },
+									{
+										style: {
+											fontSize: "23px",
+											fontWeight: 400,
+											color: THEME.dim,
+											letterSpacing: "2px",
+										},
+									},
 									date,
 								),
 							]
 						: []),
+				],
+			),
+			// 标题：装进半透明玻璃面板
+			el(
+				"div",
+				{
+					style: {
+						display: "flex",
+						position: "relative",
+						background: THEME.panel,
+						border: `1px solid ${THEME.panelBorder}`,
+						borderRadius: "30px",
+						padding: "46px 52px",
+					},
+				},
+				[
+					el(
+						"div",
+						{
+							style: {
+								display: "flex",
+								fontSize: `${titleFontSize(title.length)}px`,
+								fontWeight: 700,
+								lineHeight: 1.3,
+								color: THEME.text,
+							},
+						},
+						title,
+					),
+				],
+			),
+			// 底栏：标签 + 域名
+			el(
+				"div",
+				{
+					style: {
+						display: "flex",
+						justifyContent: "space-between",
+						alignItems: "center",
+						position: "relative",
+					},
+				},
+				[
+					el(
+						"div",
+						{ style: { display: "flex", gap: "12px" } },
+						tags.slice(0, 4).map(tagChip),
+					),
+					el(
+						"div",
+						{
+							style: {
+								fontSize: "22px",
+								fontWeight: 400,
+								color: THEME.dimmer,
+								letterSpacing: "1px",
+							},
+						},
+						SITE_HOST,
+					),
 				],
 			),
 		],
@@ -200,7 +296,13 @@ async function renderPng(params) {
 		width: CARD_W,
 		height: CARD_H,
 		fonts: [
-			{ name: "Noto Sans SC", data: FONT_DATA, weight: 700, style: "normal" },
+			{ name: "Noto Sans SC", data: FONT_BOLD, weight: 700, style: "normal" },
+			{
+				name: "Noto Sans SC",
+				data: FONT_REGULAR,
+				weight: 400,
+				style: "normal",
+			},
 		],
 	});
 
