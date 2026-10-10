@@ -272,7 +272,7 @@
 						{m.content}
 					</div>
 				{:else}
-					<div class="eo-learn-msg prose prose-sm max-w-[85%] rounded-lg bg-neutral-100 px-3 py-2 text-sm text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100 {m.failed ? 'opacity-60' : ''}">
+					<div class="eo-learn-msg prose dark:prose-invert prose-sm custom-md !max-w-[85%] rounded-lg bg-neutral-100 px-3 py-2 text-sm text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100 {m.failed ? 'opacity-60' : ''}">
 						{#if streaming && i === msgs.length - 1 && !m.content}…{:else}{@html renderMarkdown(m.content)}{/if}
 					</div>
 				{/if}
@@ -300,4 +300,30 @@
 <style>
 	.eo-learn-list::-webkit-scrollbar { width: 6px; }
 	.eo-learn-list::-webkit-scrollbar-thumb { background: rgba(128, 128, 128, 0.35); border-radius: 3px; }
+
+	/* 气泡里复用站点正文排版（custom-md），但它按整篇文章设计：
+	   首尾外边距、代码块宽度都要按聊天气泡的尺寸收一收 */
+	.eo-learn-msg :global(> :first-child) { margin-top: 0; }
+	.eo-learn-msg :global(> :last-child) { margin-bottom: 0; }
+	.eo-learn-msg :global(p) { margin-top: 0.5em; margin-bottom: 0.5em; line-height: 1.7; }
+	.eo-learn-msg :global(h1),
+	.eo-learn-msg :global(h2),
+	.eo-learn-msg :global(h3),
+	.eo-learn-msg :global(h4) { margin-top: 0.9em; margin-bottom: 0.4em; font-size: 1.05em; font-weight: 600; }
+	.eo-learn-msg :global(ul),
+	.eo-learn-msg :global(ol) { margin-top: 0.4em; margin-bottom: 0.6em; padding-left: 1.3em; }
+	.eo-learn-msg :global(li) { margin-top: 0.15em; margin-bottom: 0.15em; }
+	.eo-learn-msg :global(pre) {
+		max-width: 100%;
+		overflow-x: auto;
+		margin: 0.6em 0;
+		padding: 0.6em 0.8em;
+		border-radius: 0.375rem;
+		font-size: 0.8em;
+	}
+	.eo-learn-msg :global(code) { word-break: break-word; }
+	/* 站点给正文 a 加了 p-1 -m-1 的点击热区，气泡里会把行距顶开 */
+	.eo-learn-msg :global(a) { padding: 0; margin: 0; }
+	.eo-learn-msg :global(blockquote) { margin: 0.6em 0; padding-left: 0.8em; }
+	.eo-learn-msg :global(table) { display: block; max-width: 100%; overflow-x: auto; }
 </style>
