@@ -649,6 +649,17 @@ export function mountGalleryPage() {
 	void initGallery(mountId);
 }
 
+// 查看器写在 Layout 里（不受 Swup 换页替换），离开相册时自己收起来，免得盖住新页面
+function bindSwupCleanup() {
+	window.swup?.hooks?.on("visit:start", () => closeLightbox());
+}
+
+if (window.swup) {
+	bindSwupCleanup();
+} else {
+	document.addEventListener("swup:enable", bindSwupCleanup, { once: true });
+}
+
 let resizeTimer: ReturnType<typeof setTimeout> | undefined;
 window.addEventListener("resize", () => {
 	if (!ready || !document.getElementById("gallery-grid")) return;

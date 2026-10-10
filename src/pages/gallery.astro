@@ -52,51 +52,6 @@ import { Icon } from "astro-icon/components";
       <p class="text-50">加载图片数据中...</p>
     </div>
   </div>
-
-  <!-- 图片放大查看器 -->
-  <div
-    id="lightbox"
-    class="fixed inset-0 z-[9999] bg-black/95 backdrop-blur-md hidden items-center justify-center transition-opacity duration-300"
-  >
-    <!-- 顶部工具栏 -->
-    <div class="absolute top-0 left-0 right-0 flex items-center justify-between p-4 bg-gradient-to-b from-black/50 to-transparent z-20">
-      <div id="lightbox-info" class="text-white/90 text-sm font-mono"></div>
-      <button
-        id="lightbox-close"
-        class="text-white/80 hover:text-white transition-colors p-2 rounded-lg hover:bg-white/10"
-      >
-        <Icon name="material-symbols:close-rounded" class="text-[2rem]"></Icon>
-      </button>
-    </div>
-
-    <!-- 导航按钮 -->
-    <button
-      id="lightbox-prev"
-      class="absolute left-4 z-20 text-white/80 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed p-2 rounded-lg hover:bg-white/10"
-    >
-      <Icon name="material-symbols:chevron-left-rounded" class="text-[3rem]"></Icon>
-    </button>
-    <button
-      id="lightbox-next"
-      class="absolute right-4 z-20 text-white/80 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed p-2 rounded-lg hover:bg-white/10"
-    >
-      <Icon name="material-symbols:chevron-right-rounded" class="text-[3rem]"></Icon>
-    </button>
-
-    <!-- 图片 -->
-    <img
-      id="lightbox-img"
-      src=""
-      alt="放大图片"
-      class="max-w-[90vw] max-h-[85vh] object-contain transition-transform duration-300 select-none"
-    />
-
-    <!-- 底部计数器 -->
-    <div
-      id="lightbox-counter"
-      class="absolute bottom-6 px-4 py-2 rounded-full bg-black/50 text-white/90 text-sm backdrop-blur-sm z-20"
-    ></div>
-  </div>
 </MainGridLayout>
 
 <style>
