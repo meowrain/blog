@@ -2,7 +2,7 @@ import { createLogger, createSSEResponse, stripDsml } from '../_shared';
 import { getAgentEnv } from '../_model';
 import { estimateTokens } from '../_article';
 import { runToolLoop, type HistoryMessage } from '../_agent-loop';
-import { loadCorpus, originOf, type PostRecord } from './_corpus';
+import { loadCorpus, siteOrigin, type PostRecord } from './_corpus';
 import { TOOLS, type FindCtx } from './_tools';
 
 const logger = createLogger('find');
@@ -74,14 +74,8 @@ export async function onRequest(context: any) {
 		return jsonResponse(400, { error: "'makers-conversation-id' header is required" });
 	}
 
-	// 索引从本站静态文件拉，源站按请求头推；拿不到就直接告知，别让模型去猜文章
-	let origin = '';
-	try {
-		origin = originOf(request?.headers);
-	} catch (e) {
-		logger.error('origin unavailable', (e as Error).message);
-		return jsonResponse(500, { error: 'cannot determine site origin' });
-	}
+	// 索引从本站静态文件拉，源站取固定配置（请求头里的 host 是平台内部域名，见 _corpus.ts）
+	const origin = siteOrigin(rawEnv);
 
 	// 历史按预算从最新往回保留，单轮超长的输入也截断
 	const capped = clean.map((m) => ({

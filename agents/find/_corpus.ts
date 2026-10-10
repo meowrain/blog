@@ -24,14 +24,18 @@ const CACHE_TTL_MS = 10 * 60 * 1000;
 let cache: { at: number; posts: PostRecord[] } | null = null;
 let inflight: Promise<PostRecord[]> | null = null;
 
-/** 从请求头推自己的站点源站 —— agent 直接拉自己站点的静态索引，不去猜域名 */
-export function originOf(headers: Record<string, string | undefined> | undefined): string {
-	const host = (headers?.['x-forwarded-host'] || headers?.host || '').trim();
-	if (!host) throw new Error('拿不到 host，无法定位站内索引');
-	// x-forwarded-proto 可能是逗号分隔的一串，只取第一段
-	const forwardedProto = (headers?.['x-forwarded-proto'] || '').split(',')[0].trim();
-	const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host);
-	return `${forwardedProto || (isLocal ? 'http' : 'https')}://${host}`;
+/** 主站 —— 索引就是它的静态文件，agent 直接去这里拉，不去猜域名 */
+const DEFAULT_SITE_ORIGIN = 'https://blog.meowrain.cn';
+
+/**
+ * 站点源站。刻意不从请求头推：平台把请求转给 agent 时会把 Host / x-forwarded-host
+ * 换成内部域名（线上实测 pages-pro-8-e0af.pages-scf-bj-pro.qcloudteo.com，那个域名下
+ * 连 / 和 /robots.txt 都是 404），索引永远拉不到；而且这两个头客户端可以随便伪造，
+ * 等于把「去哪个站拉索引」交给访客。想指到别的部署（比如本地 dev）用环境变量 SITE_ORIGIN。
+ */
+export function siteOrigin(env: Record<string, string | undefined> | undefined): string {
+	const configured = env?.SITE_ORIGIN?.trim();
+	return (configured || DEFAULT_SITE_ORIGIN).replace(/\/+$/, '');
 }
 
 export async function loadCorpus(origin: string): Promise<PostRecord[]> {
