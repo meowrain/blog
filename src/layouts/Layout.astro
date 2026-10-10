@@ -36,7 +36,9 @@ let { title, banner, description, lang, setOGTypeArticle, ogImage } = Astro.prop
 
 // OG 分享图：文章页会传入动态卡片 URL，其他页面默认渲染站点卡片（不带 title 的默认卡）
 if (!ogImage) {
-  ogImage = `${ogImageBase}/api/og/`;
+  // 必须带一段路径：EO 的 catch-all 只映射 /api/og/*，
+  // 空路径的 /api/og 与 /api/og/ 不命中路由，会直接 404。
+  ogImage = `${ogImageBase}/api/og/home`;
 }
 
 // apply a class to the body element to decide the height of the banner, only used for initial page load

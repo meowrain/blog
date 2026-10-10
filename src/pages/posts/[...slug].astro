@@ -47,8 +47,11 @@ const jsonLd = {
 // 动态 OG 分享图：由 EdgeOne Makers Cloud Function（cloud-functions/api/og/[[default]].js）
 // 实时渲染 1200x630 PNG。标题/标签/日期编码在 query 里，函数无状态。
 // 注意：og:image 必须是绝对 URL；函数部署在 Pages 域名上，Astro.site 即可。
+// slug 要逐段 encodeURI：路径里的裸中文会被 EO/Node 的请求行解析拒掉
+//（线上实测 545 Error return from script，本地实测 400），部分爬虫不会替你编码。
+const ogSlugPath = entry.slug.split("/").map(encodeURIComponent).join("/");
 const ogImage =
-	`${ogImageBase}/api/og/${entry.slug}` +
+	`${ogImageBase}/api/og/${ogSlugPath}` +
 	`?title=${encodeURIComponent(entry.data.title)}` +
 	`&tags=${encodeURIComponent((entry.data.tags || []).join(","))}` +
 	`&date=${formatDateToYYYYMMDD(entry.data.published)}`;

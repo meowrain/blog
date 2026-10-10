@@ -1,18 +1,25 @@
 /**
  * 动态 OG 分享图 —— EdgeOne Makers Cloud Function（Node.js 运行时）
  *
- * 路由由文件路径决定：本文件是 catch-all，对应 `/api/og/*`。
+ * 路由由文件路径决定：本文件是 catch-all，对应 `/api/og/<slug>`（slug 可含 `/`，
+ * 如 `生活/这盘芒果沙冰真好吃`）。
  *
  *   GET /api/og/<slug>?title=<标题>&tags=<逗号分隔>&date=<YYYY-MM-DD>
  *     ->  1200x630 PNG 分享卡
  *
  * 不带 title 时渲染站点默认卡片。
  *
+ * 注意：og:image 里必须带上一段路径。平台的 `[[default]].js` 只映射 `/api/og/*`
+ * （生成的路由是 `^/api/og/(.*)$`），`/api/og` 与 `/api/og/` 都不命中，会直接 404。
+ * 站点默认卡片因此走 `/api/og/home`（见 src/layouts/Layout.astro 的 og:image 兜底）。
+ * 不要再加一个 `api/og/index.js` 来兜住空路径 —— 每个路由文件都会各自内嵌一份
+ * base64 字体与 wasm，bundle 体积直接翻倍（实测 7.7MB -> 15.2MB）。
+ *
  * 依赖：satori（JSX 风格树 -> SVG）+ @resvg/resvg-wasm（SVG -> PNG）。
  * 中文字体与 resvg 的 wasm 以 base64 内嵌在 _font.js / _resvg.js 辅助模块里
  * ——不要改成 fetch 站内静态资源，EO 函数运行时禁止回环请求自身站点。
  *
- * og:image 由 Astro 构建时生成（src/pages/posts/[...slug].astro），
+ * og:image 由 Astro 构建时生成（src/pages/posts/[...slug].astro、src/layouts/Layout.astro），
  * URL 指向本函数所在的 Pages 域名。
  */
 
@@ -231,7 +238,7 @@ export async function onRequestGet(context) {
 		.filter(Boolean)
 		.slice(0, 6);
 	const date = url.searchParams.get("date") || "";
-	const slug = context.params.default || url.searchParams.get("slug") || "";
+	const slug = context.params?.default || url.searchParams.get("slug") || "";
 
 	// 防滥用：来源必须是自己站点的 og:image 引用场景之外也允许直接访问，
 	// 但限制单卡渲染文本长度，避免超大内存占用。
