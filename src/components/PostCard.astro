@@ -17,6 +17,7 @@ interface Props {
 	published: Date;
 	updated?: Date;
 	image: string;
+	thumb?: string;
 	description: string;
 	draft: boolean;
 	style: string;
@@ -29,6 +30,7 @@ const {
 	published,
 	updated,
 	image,
+	thumb,
 	description,
 	style,
 	category,
@@ -38,6 +40,10 @@ const isPinned = entry.data.pinned === true;
 const className = Astro.props.class;
 
 const hasCover = image !== undefined && image !== null && image !== "";
+
+// 列表卡片封面很小（手机 62x200 CSS 像素），直接用压缩过的 thumb；
+// 老文章没有 thumb 时回退原图，功能不受影响。
+const coverSrc = thumb || image;
 
 const coverWidth = "28%";
 
@@ -88,7 +94,7 @@ const { remarkPluginFrontmatter } = await entry.render();
                   class="transition opacity-0 group-hover:opacity-100 scale-50 group-hover:scale-100 text-white text-5xl">
             </Icon>
         </div>
-        <ImageWrapper src={image} basePath={path.join("content/posts/", getDir(entry.id))} alt="Cover Image of the Post"
+        <ImageWrapper src={coverSrc} basePath={path.join("content/posts/", getDir(entry.id))} alt="Cover Image of the Post"
                   class="w-full h-full">
         </ImageWrapper>
     </a>}

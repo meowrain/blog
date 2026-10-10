@@ -3,6 +3,7 @@ title: Go_slice切片原理
 published: 2025-07-19
 description: ''
 image: 'https://blog.meowrain.cn/api/i/2025/07/19/uje4vo-1.webp'
+thumb: /covers/uje4vo-1-86c1c7f647.webp
 tags: [切片, Golang, Go]
 category: 'Go'
 draft: false 

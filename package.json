@@ -10,6 +10,7 @@
 		"astro": "astro",
 		"type-check": "tsc --noEmit --isolatedDeclarations",
 		"new-post": "node scripts/new-post.js",
+		"covers": "node scripts/compress-covers.js",
 		"bangumi:snapshot": "node scripts/bangumi-snapshot.js",
 		"clean": "node scripts/clean-unused-images.js",
 		"format": "biome format --write ./src",
