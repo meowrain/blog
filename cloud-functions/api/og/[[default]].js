@@ -203,11 +203,21 @@ async function renderPng(params) {
 
 // ---------- 入口 ----------
 
-function fallbackCard() {
-	return new Response(JSON.stringify({ error: "og card generation failed" }), {
-		status: 500,
-		headers: { "Content-Type": "application/json" },
-	});
+function fallbackCard(err) {
+	return new Response(
+		JSON.stringify({
+			error: "og card generation failed",
+			// 临时调试：定位线上渲染失败原因后移除
+			debug: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+		}),
+		{
+			status: 500,
+			headers: {
+				"Content-Type": "application/json",
+				"Cache-Control": "no-store",
+			},
+		},
+	);
 }
 
 export async function onRequestGet(context) {
@@ -249,7 +259,7 @@ export async function onRequestGet(context) {
 		});
 	} catch (err) {
 		console.error("og render failed:", err);
-		return fallbackCard();
+		return fallbackCard(err);
 	}
 }
 
