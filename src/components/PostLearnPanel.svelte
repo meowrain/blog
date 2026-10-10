@@ -33,6 +33,12 @@
 	let input = $state('');
 	let mode = $state<Mode>('tutor');
 	let sawAbort: AbortController | null = null;
+	let clearing = $state(false);
+
+	// ⭐ 会话代际：换文章 / 新对话 / 清空都会 +1。在途的流式回包和 /history 恢复
+	// 都带着发起时的代际，对不上就丢弃 —— 否则「清空」之后半截回答或迟到的历史
+	// 还会写回列表，看着像没清掉。
+	let epoch = 0;
 
 	// keep a non-reactive mirror for building the posted-history array
 	const msgsMirror: Msg[] = [];
@@ -77,6 +83,8 @@
 	// ⭐ Frontend SSE reader — verbatim from makers-agents sse-protocol.md (sawDone contract)
 	async function post(question: string) {
 		const conversationId = getOrCreateConversationId();
+		const myEpoch = epoch;
+		const alive = () => myEpoch === epoch;
 		error = '';
 		streaming = true;
 		msgs = [...msgs, { role: 'user', content: question }, { role: 'assistant', content: '' }];
@@ -125,8 +133,10 @@
 					const ev = JSON.parse(payload);
 					if (ev.type === 'ai_response') {
 						assistantText += ev.content ?? '';
-						msgs = [...msgs.slice(0, -1), { role: 'assistant', content: assistantText }];
-						scrollToBottom();
+						if (alive()) {
+							msgs = [...msgs.slice(0, -1), { role: 'assistant', content: assistantText }];
+							scrollToBottom();
+						}
 					} else if (ev.type === 'error_message') {
 						const e = new Error(ev.content ?? '未知错误') as Error & { code?: string };
 						e.code = ev.code;
@@ -140,14 +150,15 @@
 				throw new Error('连接中断，请重试'); // truncated stream — offer retry, not empty answer
 			}
 			// turn finished — commit it to the posted-history mirror
-			msgsMirror.push({ role: 'assistant', content: assistantText });
+			if (alive()) msgsMirror.push({ role: 'assistant', content: assistantText });
 		} catch (e) {
 			const err = e as Error & { code?: string };
 			if (err.name === 'AbortError') {
 				// user pressed stop — keep whatever content streamed, commit partial turn
-				msgsMirror.push({ role: 'assistant', content: assistantText });
+				if (alive()) msgsMirror.push({ role: 'assistant', content: assistantText });
 				return;
 			}
+			if (!alive()) return; // 已清空 / 换了会话，这一轮的报错不用再上屏
 			error = err.message;
 			if (err.code === 'AGENT_STATE_CORRUPT') error += '（点「新对话」即可继续）';
 			// ⛔ A failed turn must not leave its user message in the posted history —
@@ -155,9 +166,11 @@
 			msgs = msgs.map((x) => ({ ...x, failed: true }));
 			msgsMirror.length = 0;
 		} finally {
-			streaming = false;
-			sawAbort = null;
-			scrollToBottom();
+			if (alive()) {
+				streaming = false;
+				sawAbort = null;
+				scrollToBottom();
+			}
 		}
 	}
 
@@ -172,12 +185,46 @@
 		sawAbort?.abort();
 	}
 
-	function newChat() {
-		stopQuietly();
-		rotateConversationId();
+	// 界面回到初始态：epoch +1 让在途的流式回包和 /history 恢复结果全部作废
+	function resetView() {
+		epoch++;
+		sawAbort?.abort(); // 同步掐掉在途请求：之后 stopQuietly 看到的是 null
+		sawAbort = null;
+		streaming = false;
 		msgs = [];
 		msgsMirror.length = 0;
 		error = '';
+	}
+
+	function newChat() {
+		void stopQuietly();
+		resetView();
+		rotateConversationId();
+	}
+
+	// 清空会话：删掉这次会话在服务端的记录，界面回到初始态。
+	// 和「新对话」的分工 —— 新对话只换一个 thread_id，旧记录仍留在服务端。
+	async function clearChat() {
+		if (clearing) return;
+		if (!confirm('清空当前会话？服务端保存的这次对话记录会一并删除，无法恢复。')) return;
+		const conversationId = getOrCreateConversationId();
+		clearing = true;
+		try {
+			await stopQuietly(); // 流式回答先停下，别一边删一边往上写
+			const resp = await fetch('/history', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'makers-conversation-id': conversationId },
+				body: JSON.stringify({ conversation_id: conversationId, action: 'clear' }),
+			});
+			const data = (await resp.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+			if (!resp.ok || data?.ok === false) throw new Error(data?.error ?? `HTTP ${resp.status}`);
+			// 服务端删干净了再清界面
+			resetView();
+		} catch (e) {
+			error = `清空失败：${(e as Error).message}`;
+		} finally {
+			clearing = false;
+		}
 	}
 
 	async function stopQuietly() {
@@ -208,14 +255,13 @@
 	// 换文章 = 换 thread：清掉界面状态，再按新的 conversation_id 恢复历史
 	$effect(() => {
 		slug;
-		msgs = [];
-		msgsMirror.length = 0;
-		error = '';
+		resetView();
 		void restore();
 	});
 
 	async function restore() {
 		const conversationId = getOrCreateConversationId();
+		const myEpoch = epoch;
 		try {
 			// /history 是 cloud-function：header 或 body 都行，这里两个都给
 			const resp = await fetch('/history', {
@@ -231,6 +277,7 @@
 			if (!restored.length) return;
 			// 期间用户已经开口了就不要覆盖
 			if (msgs.length || streaming) return;
+			if (myEpoch !== epoch) return; // 期间新对话 / 清空过，这份历史已经过期
 			msgs = restored;
 			msgsMirror.push(...restored);
 			scrollToBottom();
@@ -252,6 +299,12 @@
 			{/each}
 		</div>
 		<span class="min-w-0 flex-1 truncate text-xs text-neutral-400" title={title}>{title}</span>
+		<button
+			class="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 transition hover:border-red-300 hover:text-red-500 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-red-500/50 dark:hover:text-red-400"
+			onclick={clearChat}
+			disabled={clearing}
+			title="删除服务端保存的这次对话记录"
+		>{clearing ? '清空中…' : '清空'}</button>
 		<button
 			class="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 transition hover:text-neutral-800 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-100"
 			onclick={newChat}
