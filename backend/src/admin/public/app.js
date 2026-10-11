@@ -28,6 +28,8 @@ const state = {
     selected: new Set(),
     backupPage: 1,
     backupTotalPages: 1,
+    editorOpen: false,
+    settingsOpen: false,
 };
 
 const meta = { categories: [], tags: [] };
@@ -47,7 +49,12 @@ const dom = {
     categoryFilter: $('category-filter'),
     tagFilter: $('tag-filter'),
     draftFilter: $('draft-filter'),
-    editorModal: $('editor-modal'),
+    editorView: $('editor-view'),
+    breadcrumb: $('breadcrumb'),
+    editorTitleInput: $('article-title'),
+    editorMeta: $('editor-meta'),
+    settingsToggle: $('settings-toggle'),
+    sidebarToggle: $('sidebar-toggle'),
     editorTitle: $('editor-title'),
     editorPath: $('editor-path'),
     articleForm: $('article-form'),
@@ -654,9 +661,62 @@ const editor = {
 let previewVisible = true;
 let zenMode = false;
 
+// --- 编辑器视图切换 --------------------------------------------------------
+
+const VIEW_LABELS = { articles: '文章', categories: '分类目录', tags: '标签', backups: '备份' };
+
+function renderBreadcrumb(trail) {
+    if (!dom.breadcrumb) return;
+    dom.breadcrumb.innerHTML = trail
+        .map((item, index) => {
+            const last = index === trail.length - 1;
+            const node = last
+                ? `<span class='crumb-current'>${escapeHtml(item.label)}</span>`
+                : `<button type='button' data-crumb-view='${escapeHtml(item.view || '')}'>${escapeHtml(item.label)}</button>`;
+            return node + (last ? '' : `<span class='crumb-sep'>/</span>`);
+        })
+        .join('');
+}
+
+function showView(view) {
+    document.querySelectorAll('.view').forEach((element) => {
+        element.classList.toggle('active', element.id === `${view}-view`);
+    });
+    document.querySelectorAll('.nav-item').forEach((item) => {
+        item.classList.toggle('active', item.dataset.view === view);
+    });
+    renderBreadcrumb([{ label: '首页', view: 'articles' }, { label: VIEW_LABELS[view] || '文章' }]);
+}
+
+function openEditorView() {
+    state.editorOpen = true;
+    document.body.classList.add('editor-open');
+    document.querySelectorAll('.view').forEach((element) => {
+        element.classList.toggle('active', element === dom.editorView);
+    });
+    document.querySelectorAll('.nav-item').forEach((item) => item.classList.remove('active'));
+    renderBreadcrumb([
+        { label: '首页', view: 'articles' },
+        { label: '文章', view: 'articles' },
+        { label: editor.path ? '编辑文章' : '新建文章' },
+    ]);
+    refreshEditorLayout();
+}
+
+function closeEditorView() {
+    state.editorOpen = false;
+    editor.snapshot = null;
+    editor.path = null;
+    zenMode = false;
+    document.body.classList.remove('editor-open', 'zen');
+    dom.editorView?.classList.remove('active');
+    showView(state.view);
+    loadArticles({ silent: true });
+}
+
 function setZenMode(on) {
     zenMode = on;
-    dom.editorModal?.classList.toggle('zen', on);
+    document.body.classList.toggle('zen', on);
     const btn = $('zen-toggle');
     if (btn) {
         btn.textContent = on ? '退出沉浸' : '沉浸模式';
@@ -677,7 +737,6 @@ function initEditor() {
     try {
         editor.cm = window.CodeMirror.fromTextArea(textarea, {
             mode: { name: 'markdown', json: true, fencedCodeBlocks: true },
-            theme: 'dracula',
             lineNumbers: true,
             lineWrapping: true,
         });
@@ -842,9 +901,23 @@ function previewTopForScroll(scrollTop, editorRange, previewRange) {
     return segStartPreview + progress * (segEndPreview - segStartPreview);
 }
 
+function syncEditorTitle() {
+    if (!dom.editorTitle) return;
+    const value = formFields.title.value.trim();
+    dom.editorTitle.textContent = value || (editor.path ? '编辑文章' : '新建文章');
+}
+
+function setSettingsOpen(open) {
+    state.settingsOpen = open;
+    if (dom.editorMeta) dom.editorMeta.hidden = !open;
+    dom.settingsToggle?.setAttribute('aria-expanded', String(open));
+    const label = dom.settingsToggle?.querySelector('span');
+    if (label) label.textContent = open ? '收起设置' : '文章设置';
+    refreshEditorLayout();
+}
+
 function fillEditor(article, path) {
     editor.path = path;
-    dom.editorTitle.textContent = '编辑文章';
     if (dom.editorPath) {
         dom.editorPath.textContent = path;
         dom.editorPath.title = path;
@@ -861,8 +934,9 @@ function fillEditor(article, path) {
     updateImagePreview();
 
     setZenMode(false);
-    dom.editorModal.classList.add('active');
-    refreshEditorLayout();
+    setSettingsOpen(false);
+    openEditorView();
+    syncEditorTitle();
     snapshotEditor();
     formFields.title.focus();
 }
@@ -878,7 +952,6 @@ async function openEditorForPath(path) {
 
 function openEditorForNew() {
     editor.path = null;
-    dom.editorTitle.textContent = '新建文章';
     if (dom.editorPath) {
         dom.editorPath.textContent = '尚未保存';
         dom.editorPath.title = '保存后根据标题与分类生成文件路径';
@@ -889,29 +962,30 @@ function openEditorForNew() {
     updateImagePreview();
 
     setZenMode(false);
-    dom.editorModal.classList.add('active');
-    refreshEditorLayout();
+    setSettingsOpen(true);
+    openEditorView();
+    syncEditorTitle();
     snapshotEditor();
     formFields.title.focus();
 }
 
 async function attemptCloseEditor() {
     if (!isEditorDirty()) {
-        dom.editorModal.classList.remove('active');
-        editor.path = null;
-        return;
+        closeEditorView();
+        return true;
     }
     const { ok } = await openDialog({
         title: '有未保存的更改',
-        message: '关闭后本次编辑的内容将丢失。',
+        message: '返回后本次编辑的内容将丢失。',
         confirmText: '放弃修改',
         cancelText: '继续编辑',
         danger: true,
     });
     if (ok) {
-        dom.editorModal.classList.remove('active');
-        editor.path = null;
+        closeEditorView();
+        return true;
     }
+    return false;
 }
 
 function updateImagePreview() {
@@ -955,7 +1029,7 @@ async function saveArticle() {
     editor.saving = true;
     if (dom.saveBtn) {
         dom.saveBtn.disabled = true;
-        dom.saveBtn.textContent = '保存中…';
+        dom.saveBtn.textContent = '发布中…';
     }
 
     try {
@@ -974,10 +1048,7 @@ async function saveArticle() {
             });
         }
 
-        dom.editorModal.classList.remove('active');
-        editor.path = null;
-        editor.snapshot = null;
-        await loadArticles({ silent: true });
+        closeEditorView();
         refreshMeta({ silent: true });
         showToast(isEditing ? '文章已更新' : '文章已创建');
     } catch (error) {
@@ -986,9 +1057,24 @@ async function saveArticle() {
         editor.saving = false;
         if (dom.saveBtn) {
             dom.saveBtn.disabled = false;
-            dom.saveBtn.textContent = '保存';
+            dom.saveBtn.textContent = '发布';
         }
     }
+}
+
+async function previewCurrentEditor() {
+    const raw = readFormValues();
+    if (dom.previewTitle) dom.previewTitle.textContent = raw.title.trim() || '无标题';
+    if (dom.previewMeta) {
+        const bits = [
+            `📁 ${escapeHtml(formatCategoryDisplay(raw.category || '') || '未分类')}`,
+            raw.draft ? '📝 草稿' : '✅ 已发布',
+        ];
+        const tags = parseTags(raw.tags).map((t) => `<span class='tag-badge'>${escapeHtml(t)}</span>`).join('');
+        dom.previewMeta.innerHTML = `<span>${bits.join(' · ')}</span>${tags}`;
+    }
+    if (dom.previewContent) renderMarkdownInto(dom.previewContent, raw.content);
+    dom.previewModal?.classList.add('active');
 }
 
 // --- Markdown toolbar ------------------------------------------------------
@@ -1260,7 +1346,7 @@ function bindImageUpload() {
 
     // 捕获阶段先处理：CodeMirror 的隐藏 textarea 也在监听 paste，命中图片后要拦住它
     zone.addEventListener('paste', (event) => {
-        if (!dom.editorModal?.classList.contains('active')) return;
+        if (!state.editorOpen) return;
         const files = imageFilesFromDataTransfer(event.clipboardData);
         if (files.length === 0) return;
         event.preventDefault();
@@ -1360,16 +1446,26 @@ function bindEditorChrome() {
         saveArticle();
     });
 
-    $('close-editor')?.addEventListener('click', attemptCloseEditor);
     $('cancel-edit')?.addEventListener('click', attemptCloseEditor);
 
-    dom.editorModal?.addEventListener('click', (e) => {
-        if (e.target === dom.editorModal) attemptCloseEditor();
+    // 顶栏面包屑：点「首页 / 文章」返回列表（有未保存内容时先确认）
+    dom.breadcrumb?.addEventListener('click', (e) => {
+        const crumb = e.target.closest('[data-crumb-view]');
+        if (!crumb || !state.editorOpen) return;
+        attemptCloseEditor().then((closed) => {
+            if (closed && crumb.dataset.crumbView) switchView(crumb.dataset.crumbView);
+        });
     });
+
+    dom.settingsToggle?.addEventListener('click', () => setSettingsOpen(!state.settingsOpen));
+
+    $('preview-article-btn')?.addEventListener('click', previewCurrentEditor);
+
+    dom.editorTitleInput?.addEventListener('input', syncEditorTitle);
 
     document.addEventListener('keydown', (e) => {
         if (activeDialog) return;
-        if (!dom.editorModal?.classList.contains('active')) return;
+        if (!state.editorOpen) return;
 
         if (e.key === 'Escape') {
             e.preventDefault();
@@ -1398,7 +1494,7 @@ function bindEditorChrome() {
     });
 
     window.addEventListener('beforeunload', (e) => {
-        if (!dom.editorModal?.classList.contains('active')) return;
+        if (!state.editorOpen) return;
         if (!isEditorDirty()) return;
         e.preventDefault();
         e.returnValue = '';
@@ -2638,12 +2734,14 @@ function switchView(view, { updateHistory = true } = {}) {
     if (!VIEWS.includes(view)) return;
     state.view = view;
 
-    document.querySelectorAll('.nav-item').forEach((item) => {
-        item.classList.toggle('active', item.dataset.view === view);
-    });
-    document.querySelectorAll('.view').forEach((element) => {
-        element.classList.toggle('active', element.id === `${view}-view`);
-    });
+    if (state.editorOpen) {
+        state.editorOpen = false;
+        editor.path = null;
+        editor.snapshot = null;
+        zenMode = false;
+        document.body.classList.remove('editor-open', 'zen');
+    }
+    showView(view);
     animateViewIn(document.getElementById(`${view}-view`));
 
     if (updateHistory) writeHash();
@@ -2663,7 +2761,36 @@ function init() {
     bindBackupDelegation();
 
     document.querySelectorAll('.nav-item').forEach((item) => {
-        item.addEventListener('click', () => switchView(item.dataset.view));
+        item.addEventListener('click', async () => {
+            document.body.classList.remove('sidebar-open');
+            if (state.editorOpen) {
+                const closed = await attemptCloseEditor();
+                if (!closed) return;
+            }
+            switchView(item.dataset.view);
+        });
+    });
+
+    $('sidebar-new-post')?.addEventListener('click', async () => {
+        document.body.classList.remove('sidebar-open');
+        if (state.editorOpen) {
+            const closed = await attemptCloseEditor();
+            if (!closed) return;
+        } else {
+            switchView('articles');
+        }
+        openEditorForNew();
+    });
+
+    dom.sidebarToggle?.addEventListener('click', () => {
+        const mobile = window.matchMedia('(max-width: 900px)').matches;
+        document.body.classList.toggle(mobile ? 'sidebar-open' : 'sidebar-collapsed');
+    });
+
+    document.getElementById('main-content')?.addEventListener('click', () => {
+        if (document.body.classList.contains('sidebar-open')) {
+            document.body.classList.remove('sidebar-open');
+        }
     });
 
     if (readHash()) {
