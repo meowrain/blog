@@ -388,14 +388,57 @@ const bannerOffset =
       class="fixed inset-0 z-[9999] bg-black/95 backdrop-blur-md hidden items-center justify-center transition-opacity duration-300"
     >
       <!-- 顶部工具栏 -->
-      <div class="absolute top-0 left-0 right-0 flex items-center justify-between p-4 bg-gradient-to-b from-black/50 to-transparent z-20">
-        <div id="lightbox-info" class="text-white/90 text-sm font-mono"></div>
-        <button
-          id="lightbox-close"
-          class="text-white/80 hover:text-white transition-colors p-2 rounded-lg hover:bg-white/10"
-        >
-          <Icon name="material-symbols:close-rounded" class="text-[2rem]"></Icon>
-        </button>
+      <div class="absolute top-0 left-0 right-0 flex items-center justify-between gap-3 p-4 bg-gradient-to-b from-black/60 to-transparent z-30">
+        <div
+          id="lightbox-info"
+          class="text-white/90 text-sm font-mono truncate"
+        ></div>
+        <div class="flex items-center gap-1 shrink-0">
+          <button
+            id="lightbox-download"
+            type="button"
+            title="下载原图"
+            class="text-white/80 hover:text-white transition-colors p-2 rounded-lg hover:bg-white/10"
+          >
+            <Icon
+              name="material-symbols:download-rounded"
+              class="text-[1.75rem]"></Icon>
+          </button>
+          <button
+            id="lightbox-share"
+            type="button"
+            title="分享 / 生成卡片"
+            class="text-white/80 hover:text-white transition-colors p-2 rounded-lg hover:bg-white/10"
+          >
+            <Icon name="material-symbols:share" class="text-[1.75rem]"></Icon>
+          </button>
+          <button
+            id="lightbox-close"
+            type="button"
+            title="关闭（Esc）"
+            class="text-white/80 hover:text-white transition-colors p-2 rounded-lg hover:bg-white/10"
+          >
+            <Icon
+              name="material-symbols:close-rounded"
+              class="text-[2rem]"></Icon>
+          </button>
+        </div>
+      </div>
+
+      <!--
+        图片舞台：滚轮 / 双击 / 双指缩放，放大后拖动平移。
+        touch-none 把触摸手势从浏览器手里接过来，pointer 事件统一挂在舞台上。
+      -->
+      <div
+        id="lightbox-stage"
+        class="absolute inset-0 flex items-center justify-center overflow-hidden touch-none"
+      >
+        <img
+          id="lightbox-img"
+          alt="放大图片"
+          draggable="false"
+          class="max-w-[90vw] max-h-[85vh] object-contain transition-transform duration-300 select-none will-change-transform"
+        />
       </div>
 
       <!-- 导航按钮 -->
@@ -412,12 +455,39 @@ const bannerOffset =
         <Icon name="material-symbols:chevron-right-rounded" class="text-[3rem]"></Icon>
       </button>
 
-      <!-- 图片 -->
-      <img
-        id="lightbox-img"
-        alt="放大图片"
-        class="max-w-[90vw] max-h-[85vh] object-contain transition-transform duration-300 select-none"
-      />
+      <!-- 缩放控件 -->
+      <div
+        class="absolute bottom-6 left-6 z-30 flex items-center gap-0.5 px-1.5 py-1 rounded-full bg-black/50 backdrop-blur-sm"
+      >
+        <button
+          id="lightbox-zoom-out"
+          type="button"
+          title="缩小（-）"
+          class="text-white/80 hover:text-white transition-colors p-1.5 rounded-full hover:bg-white/10"
+        >
+          <Icon
+            name="material-symbols:zoom-out-rounded"
+            class="text-[1.5rem]"></Icon>
+        </button>
+        <button
+          id="lightbox-zoom-level"
+          type="button"
+          title="恢复到适应窗口（0）"
+          class="min-w-[3.25rem] px-1 text-white/90 text-xs font-mono tabular-nums hover:text-white transition-colors"
+        >
+          100%
+        </button>
+        <button
+          id="lightbox-zoom-in"
+          type="button"
+          title="放大（+）"
+          class="text-white/80 hover:text-white transition-colors p-1.5 rounded-full hover:bg-white/10"
+        >
+          <Icon
+            name="material-symbols:zoom-in-rounded"
+            class="text-[1.5rem]"></Icon>
+        </button>
+      </div>
 
       <!-- 底部计数器 -->
       <div
@@ -425,6 +495,133 @@ const bannerOffset =
         class="absolute bottom-6 px-4 py-2 rounded-full bg-black/50 text-white/90 text-sm backdrop-blur-sm z-20"
       ></div>
     </div>
+
+    <!--
+      图片分享面板：相册查看器和正文图片预览共用一套。用 <dialog> + showModal()
+      进入 top layer，才能盖住同样以 modal dialog 实现的 Fancybox；因此必须放在
+      Swup 容器和 #lightbox 之外。
+    -->
+    <dialog
+      id="image-share-panel"
+      data-site-title={siteConfig.title}
+      data-site-url={Astro.site?.host ?? ""}
+      class="fixed inset-0 z-[10000] hidden w-full h-full max-w-none max-h-none m-0 items-center justify-center overflow-hidden border-0 bg-black/70 backdrop-blur-sm p-3 sm:p-6"
+    >
+      <div
+        class="flex flex-col w-full max-w-4xl max-h-[92vh] rounded-2xl overflow-hidden bg-white dark:bg-neutral-900 shadow-2xl"
+      >
+        <div class="flex items-center justify-between gap-2 px-4 py-3 border-b border-black/5 dark:border-white/10">
+          <div class="flex items-center gap-2">
+            <Icon
+              name="material-symbols:share"
+              class="text-[1.25rem] text-[var(--primary)]"></Icon>
+            <span class="text-base font-semibold text-90">分享这张照片</span>
+          </div>
+          <button
+            id="image-share-close"
+            type="button"
+            title="关闭"
+            class="p-1.5 rounded-lg text-50 hover:text-90 hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+          >
+            <Icon
+              name="material-symbols:close-rounded"
+              class="text-[1.5rem]"></Icon>
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4">
+          <div class="grid gap-5 md:grid-cols-[minmax(0,1fr)_19rem]">
+            <div class="flex items-start justify-center">
+              <canvas
+                id="image-share-canvas"
+                width="1080"
+                height="1350"
+                class="w-full max-w-md h-auto rounded-xl border border-black/10 dark:border-white/10 shadow-sm md:max-w-none"
+              ></canvas>
+            </div>
+
+            <div class="flex flex-col gap-4">
+              <div>
+                <label
+                  for="image-share-text"
+                  class="block mb-1.5 text-sm font-medium text-75">卡片文案</label>
+                <textarea
+                  id="image-share-text"
+                  rows="4"
+                  maxlength="140"
+                  placeholder="写点什么，会印在卡片上（留空则只有照片）"
+                  class="w-full px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/5 text-sm text-90 resize-none outline-none transition focus:border-[var(--primary)]"
+                ></textarea>
+                <div class="flex items-center justify-between mt-1 text-xs text-50">
+                  <span>支持换行，最多 140 字</span>
+                  <span id="image-share-count">0 / 140</span>
+                </div>
+              </div>
+
+              <label class="flex items-center gap-2 text-sm text-75 cursor-pointer">
+                <input
+                  id="image-share-watermark"
+                  type="checkbox"
+                  checked
+                  class="w-4 h-4 accent-[var(--primary)]"
+                />
+                卡片角落带上站点水印
+              </label>
+
+              <div class="flex flex-col gap-2">
+                <div class="text-xs font-bold text-50">分享卡片</div>
+                <div class="flex flex-wrap gap-2">
+                  <button
+                    id="image-share-card-share"
+                    type="button"
+                    class="px-3 py-2 rounded-lg bg-[var(--primary)] text-white dark:text-black/70 text-sm font-medium transition hover:opacity-90"
+                  >
+                    分享卡片
+                  </button>
+                  <button
+                    id="image-share-card-download"
+                    type="button"
+                    class="px-3 py-2 rounded-lg bg-black/5 dark:bg-white/10 text-75 text-sm font-medium transition hover:bg-black/10 dark:hover:bg-white/15"
+                  >
+                    下载卡片
+                  </button>
+                </div>
+                <div class="mt-1 text-xs font-bold text-50">原图</div>
+                <div class="flex flex-wrap gap-2">
+                  <button
+                    id="image-share-original"
+                    type="button"
+                    class="px-3 py-2 rounded-lg bg-black/5 dark:bg-white/10 text-75 text-sm font-medium transition hover:bg-black/10 dark:hover:bg-white/15"
+                  >
+                    分享原图
+                  </button>
+                  <button
+                    id="image-share-download-original"
+                    type="button"
+                    class="px-3 py-2 rounded-lg bg-black/5 dark:bg-white/10 text-75 text-sm font-medium transition hover:bg-black/10 dark:hover:bg-white/15"
+                  >
+                    下载原图
+                  </button>
+                  <button
+                    id="image-share-copy-link"
+                    type="button"
+                    class="px-3 py-2 rounded-lg bg-black/5 dark:bg-white/10 text-75 text-sm font-medium transition hover:bg-black/10 dark:hover:bg-white/15"
+                  >
+                    复制图片链接
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- 轻提示 -->
+    <div
+      id="image-share-toast"
+      class="fixed bottom-24 left-1/2 -translate-x-1/2 z-[10050] hidden px-4 py-2 rounded-2xl bg-black/85 text-white text-sm text-center whitespace-pre-line shadow-lg pointer-events-none"
+    ></div>
 
     <slot />
 
@@ -873,46 +1070,78 @@ function disableAnimation() {
 
 <script>
   import { Fancybox } from "@fancyapps/ui";
+  import type { FancyboxOptions } from "@fancyapps/ui";
   import "@fancyapps/ui/dist/fancybox/fancybox.css";
+  import {
+    closeShareSheet,
+    downloadImage,
+    fileNameFromUrl,
+    openShareSheet,
+  } from "../scripts/image-share";
+
+  const SELECTOR = ".custom-md img, #post-cover img";
+
+  // 工具栏按钮：fancybox 会给 <svg> 补上尺寸，这里只写路径
+  const ICON_DOWNLOAD =
+    '<svg><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 11l5 5 5-5M12 4v12"/></svg>';
+  const ICON_SHARE =
+    '<svg><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>';
+
+  /** 正在预览的那张图，交给下载 / 分享卡片用 */
+  const currentImageTarget = () => {
+    const slide = Fancybox.getSlide();
+    const trigger = slide?.triggerEl;
+    const url =
+      slide?.src ||
+      (trigger instanceof HTMLImageElement
+        ? trigger.currentSrc || trigger.src
+        : "");
+    return url ? { url, filename: fileNameFromUrl(url) } : null;
+  };
+
+  // 缩放 / 下载 / 分享都放工具栏，和相册查看器保持一致
+  const options: Partial<FancyboxOptions> = {
+    Carousel: {
+      Toolbar: {
+        enabled: true,
+        display: {
+          left: ["counter"],
+          middle: ["zoomOut", "zoomIn", "toggleFull", "reset"],
+          right: ["download", "share", "fullscreen", "close"],
+        },
+        items: {
+          download: {
+            tpl: `<button class="f-button" title="下载原图">${ICON_DOWNLOAD}</button>`,
+            click: () => {
+              const image = currentImageTarget();
+              if (image) void downloadImage(image.url, image.filename);
+            },
+          },
+          share: {
+            tpl: `<button class="f-button" title="分享 / 生成卡片">${ICON_SHARE}</button>`,
+            click: () => {
+              const image = currentImageTarget();
+              if (image) openShareSheet(image);
+            },
+          },
+        },
+      },
+    },
+  };
 
   const setup = () => {
-    Fancybox.bind(".custom-md img, #post-cover img", {
-      clickContent: "close",
-      dblclickContent: "zoom",
-      click: "close",
-      dblclick: "zoom",
-      Panels: {
-        display: ["counter", "zoom"],
-      },
-      Images: {
-        panning: true,
-        zoom: true,
-        protect: false,
-      },
-    } as any);
+    Fancybox.bind(SELECTOR, options);
+
+    // 分享面板挂在 Swup 容器外，换页时得自己收起来
+    window.swup.hooks.on("visit:start", () => closeShareSheet());
 
     window.swup.hooks.on("page:view", () => {
-      Fancybox.bind(".custom-md img, #post-cover img", {
-        clickContent: "close",
-        dblclickContent: "zoom",
-        click: "close",
-        dblclick: "zoom",
-        Panels: {
-          display: ["counter", "zoom"],
-        },
-        Images: {
-          panning: true,
-          zoom: true,
-          protect: false,
-        },
-      } as any);
+      Fancybox.bind(SELECTOR, options);
     });
 
     window.swup.hooks.on(
       "content:replace",
-      () => {
-        Fancybox.unbind(".custom-md img, #post-cover img");
-      },
+      () => Fancybox.unbind(SELECTOR),
       { before: true }
     );
   };

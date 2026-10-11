@@ -1,3 +1,10 @@
+import {
+	closeShareSheet,
+	downloadImage,
+	isShareSheetOpen,
+	openShareSheet,
+} from "./image-share";
+
 type GalleryImage = {
 	url: string;
 	filename: string;
@@ -520,6 +527,240 @@ function initPaginationEvents() {
 }
 
 let lightboxIndex = 0;
+let currentImage: GalleryImage | null = null;
+
+/** 缩放倍数相对「适应窗口」，1 = 原始大小，8 倍差不多到像素级 */
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 8;
+const ZOOM_WHEEL_FACTOR = 0.0015;
+
+let zoomScale = 1;
+let zoomX = 0;
+let zoomY = 0;
+let dragging = false;
+let dragged = false;
+let pointerStartTarget: EventTarget | null = null;
+const activePointers = new Map<number, { x: number; y: number }>();
+let pinchState: {
+	distance: number;
+	scale: number;
+	x: number;
+	y: number;
+	centerX: number;
+	centerY: number;
+} | null = null;
+let lightboxTools: LightboxTools | null = null;
+
+type LightboxTools = {
+	stage: HTMLDivElement | null;
+	downloadBtn: HTMLButtonElement | null;
+	shareBtn: HTMLButtonElement | null;
+	zoomInBtn: HTMLButtonElement | null;
+	zoomOutBtn: HTMLButtonElement | null;
+	zoomLevelBtn: HTMLButtonElement | null;
+};
+
+/** 查看器 DOM 写在 Layout 里、不随 Swup 换页重建，取一次缓存住即可 */
+function tools(): LightboxTools {
+	if (!lightboxTools) {
+		lightboxTools = {
+			stage: byId<HTMLDivElement>("lightbox-stage"),
+			downloadBtn: byId<HTMLButtonElement>("lightbox-download"),
+			shareBtn: byId<HTMLButtonElement>("lightbox-share"),
+			zoomInBtn: byId<HTMLButtonElement>("lightbox-zoom-in"),
+			zoomOutBtn: byId<HTMLButtonElement>("lightbox-zoom-out"),
+			zoomLevelBtn: byId<HTMLButtonElement>("lightbox-zoom-level"),
+		};
+	}
+	return lightboxTools;
+}
+
+/* ---------------------------------- 缩放平移 ---------------------------------- */
+
+function clampZoom() {
+	const { lightboxImg } = getElements();
+	const { stage } = tools();
+	if (!lightboxImg || !stage) return;
+	const maxX = Math.max(
+		0,
+		(lightboxImg.clientWidth * zoomScale - stage.clientWidth) / 2,
+	);
+	const maxY = Math.max(
+		0,
+		(lightboxImg.clientHeight * zoomScale - stage.clientHeight) / 2,
+	);
+	zoomX = Math.min(maxX, Math.max(-maxX, zoomX));
+	zoomY = Math.min(maxY, Math.max(-maxY, zoomY));
+}
+
+function renderZoom(animate: boolean) {
+	const { lightboxImg } = getElements();
+	const { zoomLevelBtn } = tools();
+	if (!lightboxImg) return;
+	// 拖动/捏合期间要关掉过渡，否则每帧都在追上一帧的位置，手感发飘
+	lightboxImg.style.transition = animate ? "" : "none";
+	lightboxImg.style.transform = `translate3d(${zoomX.toFixed(2)}px, ${zoomY.toFixed(2)}px, 0) scale(${zoomScale})`;
+	lightboxImg.style.cursor =
+		zoomScale > 1 ? (dragging ? "grabbing" : "grab") : "zoom-in";
+	if (zoomLevelBtn)
+		zoomLevelBtn.textContent = `${Math.round(zoomScale * 100)}%`;
+}
+
+/** 以视口坐标 origin 为锚点缩放：光标下的那个像素尽量别跑 */
+function setZoom(
+	next: number,
+	origin?: { x: number; y: number },
+	animate = true,
+) {
+	const target = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
+	if (Math.abs(target - zoomScale) < 0.0005) return;
+	const { stage } = tools();
+	const rect = stage?.getBoundingClientRect();
+	if (origin && rect) {
+		const vx = origin.x - (rect.left + rect.width / 2);
+		const vy = origin.y - (rect.top + rect.height / 2);
+		const ratio = target / zoomScale;
+		zoomX = vx - ratio * (vx - zoomX);
+		zoomY = vy - ratio * (vy - zoomY);
+	}
+	zoomScale = target;
+	if (zoomScale <= 1.0001) {
+		zoomScale = 1;
+		zoomX = 0;
+		zoomY = 0;
+	}
+	clampZoom();
+	renderZoom(animate);
+}
+
+function resetZoom(animate = true) {
+	zoomScale = 1;
+	zoomX = 0;
+	zoomY = 0;
+	clampZoom();
+	renderZoom(animate);
+}
+
+function pointerDistance(points: { x: number; y: number }[]) {
+	const [a, b] = points;
+	if (!a || !b) return 0;
+	return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function handlePointerDown(event: PointerEvent) {
+	const { stage } = tools();
+	if (!stage) return;
+	pointerStartTarget = event.target;
+	activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+	// 双指：记下起始距离和中心，后面按比例放大
+	if (activePointers.size === 2) {
+		const points = [...activePointers.values()];
+		const [first, second] = points;
+		pinchState = {
+			distance: pointerDistance(points) || 1,
+			scale: zoomScale,
+			x: zoomX,
+			y: zoomY,
+			centerX: ((first?.x ?? 0) + (second?.x ?? 0)) / 2,
+			centerY: ((first?.y ?? 0) + (second?.y ?? 0)) / 2,
+		};
+		dragging = false;
+		return;
+	}
+
+	if (activePointers.size === 1 && zoomScale > 1) {
+		dragging = true;
+		dragged = false;
+		stage.setPointerCapture(event.pointerId);
+		renderZoom(false);
+	}
+}
+
+function handlePointerMove(event: PointerEvent) {
+	const { stage } = tools();
+	const previous = activePointers.get(event.pointerId);
+	if (!previous || !stage) return;
+	activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+	// 双指缩放：锚点还是起始中心，再叠加双指整体位移
+	if (activePointers.size >= 2 && pinchState) {
+		const points = [...activePointers.values()];
+		const [first, second] = points;
+		const centerX = ((first?.x ?? 0) + (second?.x ?? 0)) / 2;
+		const centerY = ((first?.y ?? 0) + (second?.y ?? 0)) / 2;
+		const ratio = pointerDistance(points) / pinchState.distance;
+		const target = Math.min(
+			MAX_ZOOM,
+			Math.max(MIN_ZOOM, pinchState.scale * ratio),
+		);
+		const rect = stage.getBoundingClientRect();
+		const vx = pinchState.centerX - (rect.left + rect.width / 2);
+		const vy = pinchState.centerY - (rect.top + rect.height / 2);
+		const scaleRatio = target / pinchState.scale;
+		zoomScale = target;
+		zoomX =
+			vx - scaleRatio * (vx - pinchState.x) + (centerX - pinchState.centerX);
+		zoomY =
+			vy - scaleRatio * (vy - pinchState.y) + (centerY - pinchState.centerY);
+		clampZoom();
+		renderZoom(false);
+		return;
+	}
+
+	if (dragging) {
+		const dx = event.clientX - previous.x;
+		const dy = event.clientY - previous.y;
+		if (dx !== 0 || dy !== 0) dragged = true;
+		zoomX += dx;
+		zoomY += dy;
+		clampZoom();
+		renderZoom(false);
+	}
+}
+
+function handlePointerUp(event: PointerEvent) {
+	const { stage } = tools();
+	activePointers.delete(event.pointerId);
+	if (activePointers.size < 2) pinchState = null;
+	if (activePointers.size === 0) dragging = false;
+	if (stage?.hasPointerCapture(event.pointerId)) {
+		stage.releasePointerCapture(event.pointerId);
+	}
+	// 手势结束，把过渡还给 CSS，点按缩放才顺滑
+	renderZoom(true);
+}
+
+function handleWheel(event: WheelEvent) {
+	event.preventDefault();
+	const factor = Math.exp(-event.deltaY * ZOOM_WHEEL_FACTOR);
+	setZoom(zoomScale * factor, { x: event.clientX, y: event.clientY });
+}
+
+function handleDoubleClick(event: MouseEvent) {
+	if (zoomScale > 1.01) {
+		resetZoom();
+		return;
+	}
+	setZoom(2.5, { x: event.clientX, y: event.clientY });
+}
+
+/* --------------------------------- 分享 / 下载 -------------------------------- */
+
+function downloadOriginal() {
+	const image = currentImage;
+	if (!image) return;
+	void downloadImage(image.url, image.filename);
+}
+
+/** 面板由 image-share.ts 承载，相册和正文预览共用同一个 */
+function openCurrentShare() {
+	const image = currentImage;
+	if (!image) return;
+	openShareSheet({ url: image.url, filename: image.filename });
+}
+
+/* ---------------------------------- 打开 / 关闭 --------------------------------- */
 
 function openLightbox(index: number) {
 	const els = getElements();
@@ -535,6 +776,10 @@ function openLightbox(index: number) {
 	}
 
 	lightboxIndex = index;
+	currentImage = imageData;
+	closeShareSheet();
+	resetZoom(false);
+
 	// 预览必须是原图，缩略图只负责网格
 	els.lightboxImg.src = imageData.url;
 	els.lightboxImg.dataset.original = imageData.url;
@@ -557,6 +802,7 @@ function openLightbox(index: number) {
 function closeLightbox() {
 	const { lightbox } = getElements();
 	if (!lightbox) return;
+	closeShareSheet();
 	lightbox.classList.add("hidden");
 	lightbox.classList.remove("flex");
 	document.body.style.overflow = "";
@@ -572,36 +818,104 @@ function showNext() {
 }
 
 function initLightboxEvents() {
-	const closeHandler = () => closeLightbox();
-	const prevHandler = () => showPrev();
-	const nextHandler = () => showNext();
-	const keyHandler = (event: KeyboardEvent) => {
-		const { lightbox } = getElements();
-		if (!lightbox || lightbox.classList.contains("hidden")) return;
-		if (event.key === "Escape") closeLightbox();
-		if (event.key === "ArrowLeft") showPrev();
-		if (event.key === "ArrowRight") showNext();
-	};
-	const bgClickHandler = (event: MouseEvent) => {
-		if (event.target === event.currentTarget) closeLightbox();
-	};
+	const { lightbox } = getElements();
+	const { stage, downloadBtn, shareBtn, zoomInBtn, zoomOutBtn, zoomLevelBtn } =
+		tools();
 
 	const closeBtn = document.getElementById("lightbox-close");
 	const prevBtn = document.getElementById("lightbox-prev");
 	const nextBtn = document.getElementById("lightbox-next");
-	const lightbox = document.getElementById("lightbox");
+
+	const closeHandler = () => closeLightbox();
+	const prevHandler = () => showPrev();
+	const nextHandler = () => showNext();
+	const downloadHandler = () => downloadOriginal();
+	const shareHandler = () => openCurrentShare();
+	const zoomInHandler = () => setZoom(zoomScale * 1.6);
+	const zoomOutHandler = () => setZoom(zoomScale / 1.6);
+	const zoomResetHandler = () => resetZoom();
+
+	const keyHandler = (event: KeyboardEvent) => {
+		const { lightbox: box } = getElements();
+		if (!box || box.classList.contains("hidden")) return;
+		// 分享面板自己是 modal dialog，Esc 由它先处理
+		if (isShareSheetOpen()) return;
+		const tag = (event.target as HTMLElement | null)?.tagName;
+		if (tag === "TEXTAREA" || tag === "INPUT") return;
+
+		switch (event.key) {
+			case "Escape":
+				closeLightbox();
+				break;
+			case "ArrowLeft":
+				showPrev();
+				break;
+			case "ArrowRight":
+				showNext();
+				break;
+			case "+":
+			case "=":
+				setZoom(zoomScale * 1.6);
+				break;
+			case "-":
+			case "_":
+				setZoom(zoomScale / 1.6);
+				break;
+			case "0":
+				resetZoom();
+				break;
+			default:
+				break;
+		}
+	};
+
+	// 点空白关闭：只有按下时就在背景上（不是图片、不是按钮）才算
+	const bgClickHandler = (event: MouseEvent) => {
+		if (dragged) {
+			dragged = false;
+			return;
+		}
+		if (
+			(event.target === lightbox || event.target === stage) &&
+			(pointerStartTarget === lightbox || pointerStartTarget === stage)
+		) {
+			closeLightbox();
+		}
+	};
 
 	closeBtn?.addEventListener("click", closeHandler);
 	prevBtn?.addEventListener("click", prevHandler);
 	nextBtn?.addEventListener("click", nextHandler);
+	downloadBtn?.addEventListener("click", downloadHandler);
+	shareBtn?.addEventListener("click", shareHandler);
+	zoomInBtn?.addEventListener("click", zoomInHandler);
+	zoomOutBtn?.addEventListener("click", zoomOutHandler);
+	zoomLevelBtn?.addEventListener("click", zoomResetHandler);
 	lightbox?.addEventListener("click", bgClickHandler);
+	stage?.addEventListener("wheel", handleWheel, { passive: false });
+	stage?.addEventListener("dblclick", handleDoubleClick);
+	stage?.addEventListener("pointerdown", handlePointerDown);
+	stage?.addEventListener("pointermove", handlePointerMove);
+	stage?.addEventListener("pointerup", handlePointerUp);
+	stage?.addEventListener("pointercancel", handlePointerUp);
 	document.addEventListener("keydown", keyHandler);
 
 	cleanups.push(() => {
 		closeBtn?.removeEventListener("click", closeHandler);
 		prevBtn?.removeEventListener("click", prevHandler);
 		nextBtn?.removeEventListener("click", nextHandler);
+		downloadBtn?.removeEventListener("click", downloadHandler);
+		shareBtn?.removeEventListener("click", shareHandler);
+		zoomInBtn?.removeEventListener("click", zoomInHandler);
+		zoomOutBtn?.removeEventListener("click", zoomOutHandler);
+		zoomLevelBtn?.removeEventListener("click", zoomResetHandler);
 		lightbox?.removeEventListener("click", bgClickHandler);
+		stage?.removeEventListener("wheel", handleWheel);
+		stage?.removeEventListener("dblclick", handleDoubleClick);
+		stage?.removeEventListener("pointerdown", handlePointerDown);
+		stage?.removeEventListener("pointermove", handlePointerMove);
+		stage?.removeEventListener("pointerup", handlePointerUp);
+		stage?.removeEventListener("pointercancel", handlePointerUp);
 		document.removeEventListener("keydown", keyHandler);
 	});
 }
@@ -633,6 +947,15 @@ function teardown() {
 	filteredImages = [];
 	currentPage = 1;
 	lightboxIndex = 0;
+	currentImage = null;
+	closeShareSheet();
+	resetZoom(false);
+	activePointers.clear();
+	pinchState = null;
+	dragging = false;
+	dragged = false;
+	pointerStartTarget = null;
+	lightboxTools = null;
 	columns = [];
 	columnHeights = [];
 	aspectRatioCache = new Map();
@@ -651,7 +974,10 @@ export function mountGalleryPage() {
 
 // 查看器写在 Layout 里（不受 Swup 换页替换），离开相册时自己收起来，免得盖住新页面
 function bindSwupCleanup() {
-	window.swup?.hooks?.on("visit:start", () => closeLightbox());
+	window.swup?.hooks?.on("visit:start", () => {
+		closeShareSheet();
+		closeLightbox();
+	});
 }
 
 if (window.swup) {
@@ -665,6 +991,13 @@ window.addEventListener("resize", () => {
 	if (!ready || !document.getElementById("gallery-grid")) return;
 	clearTimeout(resizeTimer);
 	resizeTimer = setTimeout(() => {
-		if (ready && document.getElementById("gallery-grid")) initGrid();
+		if (!ready || !document.getElementById("gallery-grid")) return;
+		initGrid();
+		// 视口变了，放大中的图要重新夹回可视范围
+		const { lightbox } = getElements();
+		if (lightbox && !lightbox.classList.contains("hidden")) {
+			clampZoom();
+			renderZoom(false);
+		}
 	}, 200);
 });
