@@ -8,15 +8,20 @@ interface Props {
 }
 
 const links = Astro.props.links;
+
+// 移动端面板放不下二级菜单，带 children 的分组直接展开成一层平铺
+const items = links.flatMap((link) =>
+	link.children && link.children.length > 0 ? link.children : [link]
+);
 ---
-<div id="nav-menu-panel" class:list={["float-panel float-panel-closed absolute transition-all fixed right-4 px-2 py-2"]}>
-    {links.map((link) => (
+<div id="nav-menu-panel" class:list={["float-panel float-panel-closed absolute transition-all fixed right-4 px-2 py-2 max-h-[70vh] overflow-y-auto"]}>
+    {items.map((link) => (
         <a href={link.external ? link.url : url(link.url)} class="group flex justify-between items-center py-2 pl-3 pr-1 rounded-lg gap-8
             hover:bg-[var(--btn-plain-bg-hover)] active:bg-[var(--btn-plain-bg-active)] transition
         "
            target={link.external ? "_blank" : null}
         >
-            <div class="transition text-black/75 dark:text-white/75 font-bold group-hover:text-[var(--primary)] group-active:text-[var(--primary)]">
+            <div class="transition whitespace-nowrap text-black/75 dark:text-white/75 font-bold group-hover:text-[var(--primary)] group-active:text-[var(--primary)]">
                 {link.name}
             </div>
             {!link.external && <Icon name="material-symbols:chevron-right-rounded"

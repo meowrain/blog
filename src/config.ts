@@ -69,44 +69,62 @@ export const navBarConfig: NavBarConfig = {
     LinkPreset.Home,
     LinkPreset.Archive,
     {
-      name: "追番",
-      url: "/bangumi/",
-      external: false,
+      name: "内容",
+      url: "#", // 分组入口，不可点击，仅作为下拉菜单的标题
+      children: [
+        {
+          name: "分类",
+          url: "/category/",
+          external: false,
+        },
+        {
+          name: "相册",
+          url: "/gallery/",
+          external: false,
+        },
+        {
+          name: "追番",
+          url: "/bangumi/",
+          external: false,
+        },
+        {
+          name: "音乐",
+          url: "/music/",
+          external: false,
+        },
+      ],
     },
     {
-      name: "分类",
-      url: "/category/",
-      external: false,
+      name: "服务",
+      url: "#", // 分组入口，不可点击，仅作为下拉菜单的标题
+      children: [
+        {
+          name: "AI 助手",
+          url: "/chat/",
+          external: false,
+        },
+        {
+          name: "监控",
+          url: "/monitor/",
+          external: false,
+        },
+      ],
     },
     {
-      name: "相册",
-      url: "/gallery/",
-      external: false,
-    },
-    {
-      name: "音乐",
-      url: "/music/",
-      external: false,
-    },
-    {
-      name: "AI 助手",
-      url: "/chat/",
-      external: false,
-    },
-    {
-      name: "友链",
-      url: "/friends/", // Internal links should not include the base path, as it is automatically added
-      external: false, // Show an external link icon and will open in a new tab
-    },
-    {
-      name: "赞助",
-      url: "/sponsors/", // Internal links should not include the base path, as it is automatically added
-      external: false, // Show an external link icon and will open in a new tab
-    },
-    {
-      name: "监控",
-      url: "/monitor/",
-      external: false,
+      name: "关于",
+      url: "#", // 分组入口，不可点击，仅作为下拉菜单的标题
+      children: [
+        {
+          name: "友链",
+          url: "/friends/",
+          external: false,
+        },
+        {
+          name: "赞助",
+          url: "/sponsors/",
+          external: false,
+        },
+      ],
     },
     // {
     //   name: "统计",

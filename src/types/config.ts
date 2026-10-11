@@ -56,6 +56,8 @@ export type NavBarLink = {
 	name: string;
 	url: string;
 	external?: boolean;
+	// 有 children 时，该链接会渲染成下拉菜单，url 仅作为占位
+	children?: NavBarLink[];
 };
 
 export type NavBarConfig = {

@@ -44,15 +44,56 @@ let links: NavBarLink[] = navBarConfig.links.map(
         {siteConfig.title}
       </div>
     </a>
-    <div class="hidden md:flex">
+    <div class="hidden md:flex items-center">
       {
         links.map((l) => {
+          // 带 children 的链接渲染成下拉菜单，避免导航栏横向溢出
+          if (l.children && l.children.length > 0) {
+            return (
+              <div class="nav-dropdown-wrap relative z-50 h-11">
+                <button
+                  type="button"
+                  aria-haspopup="true"
+                  aria-label={l.name}
+                  class="nav-dropdown-trigger btn-plain scale-animation rounded-lg h-11 font-bold px-5 active:scale-95 whitespace-nowrap"
+                >
+                  <div class="flex items-center">
+                    {l.name}
+                    <Icon
+                      name="material-symbols:keyboard-arrow-down-rounded"
+                      class="nav-dropdown-chevron text-[1.25rem] transition -mr-1 ml-0.5 opacity-60"
+                    />
+                  </div>
+                </button>
+                <div class="nav-dropdown absolute left-0 top-full pt-2">
+                  <div class="flex flex-col min-w-[9rem] rounded-[var(--radius-large)] bg-[var(--float-panel-bg-opaque)] shadow-xl dark:shadow-none p-2">
+                    {l.children.map((c) => (
+                      <a
+                        aria-label={c.name}
+                        href={c.external ? c.url : url(c.url)}
+                        target={c.external ? "_blank" : null}
+                        class="group/item flex items-center justify-between gap-4 rounded-lg px-3 py-2 font-bold text-black/75 dark:text-white/75 transition hover:bg-[var(--btn-plain-bg-hover)] hover:text-[var(--primary)] active:bg-[var(--btn-plain-bg-active)]"
+                      >
+                        <span class="whitespace-nowrap">{c.name}</span>
+                        {c.external && (
+                          <Icon
+                            name="fa6-solid:arrow-up-right-from-square"
+                            class="text-[0.75rem] text-black/25 dark:text-white/25"
+                          />
+                        )}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          }
           return (
             <a
               aria-label={l.name}
               href={l.external ? l.url : url(l.url)}
               target={l.external ? "_blank" : null}
-              class="btn-plain scale-animation rounded-lg h-11 font-bold px-5 active:scale-95"
+              class="btn-plain scale-animation rounded-lg h-11 font-bold px-5 active:scale-95 whitespace-nowrap"
             >
               <div class="flex items-center">
                 {l.name}
@@ -123,5 +164,60 @@ let links: NavBarLink[] = navBarConfig.links.map(
     }
   }
 
+  // 下拉菜单：能 hover 的设备交给 CSS :hover，触屏/键盘靠点击切换
+  function loadDropdownScript() {
+    const canHover = window.matchMedia("(hover: hover)").matches;
+    const wraps = document.querySelectorAll<HTMLElement>(".nav-dropdown-wrap");
+    wraps.forEach((wrap) => {
+      const trigger = wrap.querySelector<HTMLElement>(".nav-dropdown-trigger");
+      if (!trigger) return;
+      trigger.onclick = (e) => {
+        e.preventDefault();
+        if (canHover) return; // 桌面端 hover 已经展开，点击不再粘住菜单
+        const willOpen = !wrap.classList.contains("nav-dropdown-open");
+        wraps.forEach((w) => w.classList.remove("nav-dropdown-open"));
+        wrap.classList.toggle("nav-dropdown-open", willOpen);
+      };
+      // 点击菜单项后收起，避免 swup 切页后菜单还开着
+      wrap.querySelectorAll("a").forEach((a) => {
+        a.addEventListener("click", () => {
+          wrap.classList.remove("nav-dropdown-open");
+        });
+      });
+    });
+
+    document.addEventListener("click", (e) => {
+      const target = e.target as Node;
+      wraps.forEach((wrap) => {
+        if (!wrap.contains(target)) wrap.classList.remove("nav-dropdown-open");
+      });
+    });
+  }
+
   loadButtonScript();
+  loadDropdownScript();
 </script>
+
+<style>
+  /* 下拉菜单默认收起，hover（桌面）或 .nav-dropdown-open（点击）时展开 */
+  .nav-dropdown {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-0.25rem);
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+  }
+  .nav-dropdown-wrap:hover .nav-dropdown,
+  .nav-dropdown-wrap:focus-within .nav-dropdown,
+  .nav-dropdown-wrap.nav-dropdown-open .nav-dropdown {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+  }
+  .nav-dropdown-wrap:hover .nav-dropdown-chevron,
+  .nav-dropdown-wrap.nav-dropdown-open .nav-dropdown-chevron {
+    transform: rotate(180deg);
+  }
+  .nav-dropdown-wrap.nav-dropdown-open .nav-dropdown-trigger {
+    color: var(--primary);
+  }
+</style>
