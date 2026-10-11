@@ -1,0 +1,63 @@
+---
+import YearCharts from "@components/year/YearCharts.astro";
+import YearRankings from "@components/year/YearRankings.astro";
+import YearSummary from "@components/year/YearSummary.astro";
+import MainGridLayout from "@layouts/MainGridLayout.astro";
+import { url } from "@utils/url-utils";
+import { formatWords, getYearReports } from "@utils/year-stats";
+import type { GetStaticPaths } from "astro";
+import { Icon } from "astro-icon/components";
+
+// getStaticPaths 会被 Astro 抽到单独的模块里执行，拿不到页面 frontmatter 的变量，
+// 所以这里自己取一次；PROD 下 getYearReports 带缓存，不会重复渲染文章。
+export const getStaticPaths = (async () => {
+	const reports = await getYearReports();
+	return reports.map((report) => ({
+		params: { year: String(report.year) },
+		props: { report },
+	}));
+}) satisfies GetStaticPaths;
+
+const reports = await getYearReports();
+
+const { report } = Astro.props;
+const newer = reports.find((item) => item.year === report.year + 1);
+const older = reports.find((item) => item.year === report.year - 1);
+---
+
+<MainGridLayout
+	title={`${report.year} 年度报告`}
+	description={`${report.year} 年写了 ${report.postCount} 篇文章，共 ${formatWords(report.words)}`}
+>
+	<div class="flex flex-col gap-4">
+		<div class="flex flex-wrap items-center justify-between gap-3 px-1 text-sm">
+			<a
+				href={url("/year/")}
+				class="flex items-center gap-1 text-50 transition hover:text-[var(--primary)]"
+			>
+				<Icon name="material-symbols:arrow-back-rounded" />
+				全部年份
+			</a>
+			<div class="flex items-center gap-2">
+				{
+					older && (
+						<a href={url(`/year/${older.year}/`)} class="btn-regular h-8 px-3 text-sm">
+							{older.year} 年
+						</a>
+					)
+				}
+				{
+					newer && (
+						<a href={url(`/year/${newer.year}/`)} class="btn-regular h-8 px-3 text-sm">
+							{newer.year} 年
+						</a>
+					)
+				}
+			</div>
+		</div>
+
+		<YearSummary report={report} />
+		<YearCharts report={report} />
+		<YearRankings report={report} />
+	</div>
+</MainGridLayout>

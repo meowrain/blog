@@ -1,0 +1,102 @@
+---
+import type { YearReport } from "@utils/year-stats";
+import { formatDuration, formatNumber, formatWords } from "@utils/year-stats";
+import { Icon } from "astro-icon/components";
+
+interface Props {
+	report: YearReport;
+}
+
+const { report } = Astro.props;
+const {
+	year,
+	postCount,
+	words,
+	minutes,
+	averageWords,
+	activeDays,
+	longestStreak,
+	comparison,
+} = report;
+
+const cards = [
+	{
+		icon: "material-symbols:article-outline-rounded",
+		label: "篇文章",
+		value: formatNumber(postCount),
+	},
+	{
+		icon: "material-symbols:notes-rounded",
+		label: "总字数",
+		value: formatWords(words),
+	},
+	{
+		icon: "material-symbols:schedule-outline-rounded",
+		label: "总阅读时长",
+		value: formatDuration(minutes),
+	},
+	{
+		icon: "material-symbols:event-available-outline-rounded",
+		label: "活跃天数",
+		value: `${activeDays} 天`,
+	},
+];
+
+const postDeltaAbs = comparison ? Math.abs(comparison.postDelta) : 0;
+const wordDeltaAbs = comparison ? Math.abs(comparison.wordDelta) : 0;
+const grew = (comparison?.postDelta ?? 0) >= 0;
+---
+
+<div class="flex flex-col gap-4">
+	<div class="card-base px-8 py-7">
+		<div class="flex items-end gap-3">
+			<div
+				class="bg-gradient-to-br from-[oklch(0.80_0.14_var(--hue))] to-[oklch(0.60_0.17_var(--hue))] bg-clip-text text-5xl font-bold leading-none text-transparent md:text-6xl"
+			>
+				{year}
+			</div>
+			<div class="pb-1 text-sm text-50">年度报告</div>
+		</div>
+
+		<p class="mt-4 text-base leading-relaxed text-75 md:text-lg">
+			这一年你写下 <span class="font-bold text-[var(--primary)]">{postCount}</span> 篇文章，共
+			<span class="font-bold text-[var(--primary)]">{formatWords(words)}</span>，够读 {formatDuration(minutes)}。
+		</p>
+		<p class="mt-2 text-sm text-50">
+			平均每篇 {formatWords(averageWords)}，最长连续 {longestStreak} 天没断更。
+		</p>
+
+		{
+			comparison && (
+				<div class="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius-large)] bg-[var(--btn-regular-bg)] px-4 py-3 text-sm">
+					<Icon
+						name={
+							grew
+								? "material-symbols:trending-up-rounded"
+								: "material-symbols:trending-down-rounded"
+						}
+						class="text-lg text-[var(--primary)]"
+					/>
+					<span class="text-75">
+						比 {comparison.year} 年{grew ? "多" : "少"}写了
+						<span class="font-bold text-90">{postDeltaAbs}</span> 篇，
+						{grew ? "多" : "少"}
+						<span class="font-bold text-90">{formatWords(wordDeltaAbs)}</span>
+					</span>
+				</div>
+			)
+		}
+	</div>
+
+	<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+		{
+			cards.map((card) => (
+				<div class="card-base px-5 py-4">
+					<Icon name={card.icon} class="text-xl text-[var(--primary)]" />
+					<div class="mt-2 text-2xl font-bold text-90">{card.value}</div>
+					<div class="mt-0.5 text-sm text-50">{card.label}</div>
+				</div>
+			))
+		}
+	</div>
+</div>

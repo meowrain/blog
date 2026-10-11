@@ -20,6 +20,7 @@
 - Swup 页面过渡、目录、阅读时长、代码高亮和复制按钮
 - KaTeX 数学公式、GitHub 风格的提示块和仓库卡片
 - 图片画廊、图片放大预览和渐进图片回退
+- 音乐页：云函数代理网易云歌单接口，直接播放歌单、歌词滚动，支持私有歌单
 - RSS、Sitemap、robots.txt 和 SEO 元信息
 - 可选 NestJS 管理后台，支持文章 CRUD、分类/标签管理、图片上传和文件备份恢复
 
@@ -137,6 +138,7 @@ pinned: false
 - `umamiConfig`: Umami 统计
 - `expressiveCodeConfig`: 代码高亮主题
 - `gitHubEditConfig`: 文章编辑链接
+- `musicConfig`: 音乐页要展示的网易云歌单
 
 构建和 Markdown 处理配置位于 `astro.config.mjs`，包括重定向、Swup、Sitemap、图标、Expressive Code、KaTeX、提示块和外部链接处理。
 
@@ -155,6 +157,22 @@ node scripts/generate-gallery-index.js
 ```
 
 脚本会扫描 `public/api/i`，并写入 `public/api/i/images.json`。相册页面读取该索引并生成瀑布流和灯箱预览。
+
+
+## 音乐页
+
+`/music/` 用来直接播放网易云歌单，歌单、曲目和歌词都来自网易云音乐。浏览器不直接请求上游：上游不返回 CORS 头，还会按 Referer / Cookie 风控，所以统一走同源代理：
+
+- 线上：`cloud-functions/api/music/[[default]].js`（EdgeOne Makers 云函数，部署时按文件路径自动生成 `^/api/music/(.*)$` 路由）
+- 本地：`src/plugins/dev-music-api.mjs` 在 `astro dev` 里复用同一个 `onRequest`，两边行为一致
+
+代理有三个动作：`/api/music/playlist?id=`、`/api/music/song?id=` 和 `/api/music/lyric?id=`。播放地址带时效（约 20 分钟），因此只在前端真要播放时才去取。歌单接口会顺手探一遍可播性，把无版权的歌滤掉；歌单详情一次只给 1000 首，更大的歌单会再按 `trackIds` 补齐（上限 2000 首）。
+
+在 `src/config.ts` 的 `musicConfig.playlists` 里填歌单 ID 就能用，ID 就是歌单分享链接里 `id=` 后面那串数字；每一项还可以用 `name` 覆盖歌单显示名。默认放的是本人的「我喜欢的音乐」（`158197454`）。
+
+会员歌和私密歌单需要登录 Cookie，配到部署环境的 `NETEASE_COOKIE`（控制台环境变量）；本地调试用 `NETEASE_COOKIE="MUSIC_U=..." pnpm dev`。这个变量只从服务端读，不接受请求方传入，否则代理就成了任何人拿你的账号听歌的入口。
+
+没配 Cookie 时，会员曲目只能拿到 30 秒试听片段：这些歌在页面上会标「试听」，曲目列表底部也会说明有多少首是这种情况。
 
 ## 管理后台
 
@@ -206,6 +224,8 @@ API_TOKEN=your-token
 │   ├── src/categories/     # 分类模块
 │   ├── src/tags/           # 标签模块
 │   └── src/common/         # 文件、索引、日志等公共模块
+├── cloud-functions/        # EdgeOne Makers 云函数（图片 OG、历史、音乐代理）
+│   └── api/music/          # /api/music/* 网易云音乐代理
 ├── scripts/                # 文章、相册和图片清理脚本
 ├── public/                 # 静态资源
 ├── astro.config.mjs        # Astro 构建配置

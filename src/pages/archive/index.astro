@@ -1,12 +1,26 @@
 ---
 import ArchivePanel from "@components/ArchivePanel.astro";
 import WritingHeatmap from "@components/WritingHeatmap.astro";
+import YearsAgoToday from "@components/YearsAgoToday.astro";
 
 import MainGridLayout from "@layouts/MainGridLayout.astro";
+import { url } from "@utils/url-utils";
+import { Icon } from "astro-icon/components";
 ---
 
 <MainGridLayout title="归档">
     <div class="flex flex-col gap-4">
+        <a href={url("/year/")} class="card-base group flex items-center justify-between gap-4 px-8 py-5">
+            <div class="flex items-center gap-3">
+                <Icon name="material-symbols:auto-awesome-outline-rounded" class="text-2xl text-[var(--primary)]" />
+                <div>
+                    <div class="font-bold text-90 transition group-hover:text-[var(--primary)]">年度报告</div>
+                    <div class="mt-0.5 text-sm text-50">把每一年的写作收成一份小结</div>
+                </div>
+            </div>
+            <Icon name="material-symbols:chevron-right-rounded" class="shrink-0 text-30" />
+        </a>
+        <YearsAgoToday />
         <WritingHeatmap></WritingHeatmap>
         <ArchivePanel></ArchivePanel>
     </div>

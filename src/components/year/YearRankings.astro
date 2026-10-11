@@ -1,0 +1,169 @@
+---
+import { getPostUrlBySlug } from "@utils/url-utils";
+import type { YearReport } from "@utils/year-stats";
+import { formatWords } from "@utils/year-stats";
+import { Icon } from "astro-icon/components";
+
+interface Props {
+	report: YearReport;
+}
+
+const { report } = Astro.props;
+const { topTags, categories, posts, highlight } = report;
+
+const tags = topTags.slice(0, 8);
+const maxTagCount = Math.max(1, ...tags.map((tag) => tag.count));
+
+const categories8 = categories.slice(0, 6);
+const maxCategoryCount = Math.max(1, ...categories8.map((item) => item.count));
+
+function formatDay(date: Date): string {
+	const month = (date.getMonth() + 1).toString().padStart(2, "0");
+	const day = date.getDate().toString().padStart(2, "0");
+	return `${month}-${day}`;
+}
+
+const highlightRows = [
+	{
+		icon: "material-symbols:straighten-rounded",
+		label: "最长的一篇",
+		post: highlight.longest,
+		meta: highlight.longest ? formatWords(highlight.longest.words) : "",
+	},
+	{
+		icon: "material-symbols:bolt-rounded",
+		label: "最短的一篇",
+		post: highlight.shortest,
+		meta: highlight.shortest ? formatWords(highlight.shortest.words) : "",
+	},
+	{
+		icon: "material-symbols:flag-rounded",
+		label: "这一年的第一篇",
+		post: highlight.first,
+		meta: highlight.first ? formatDay(highlight.first.published) : "",
+	},
+	{
+		icon: "material-symbols:celebration-rounded",
+		label: "这一年的最后一篇",
+		post: highlight.last,
+		meta: highlight.last ? formatDay(highlight.last.published) : "",
+	},
+];
+
+const busiestDay = highlight.busiestDay;
+---
+
+<div class="flex flex-col gap-4">
+	<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+		<div class="card-base px-8 py-6">
+			<div class="mb-4 flex items-center gap-2">
+				<Icon name="material-symbols:label-outline-rounded" class="text-[var(--primary)]" />
+				<h2 class="text-lg font-bold text-90">这一年常写的标签</h2>
+			</div>
+			{
+				tags.length === 0 && <p class="text-sm text-50">这一年的文章还没打标签。</p>
+			}
+			<div class="flex flex-col gap-3">
+				{tags.map((tag) => (
+					<div class="flex items-center gap-3">
+						<span class="w-24 shrink-0 truncate text-sm text-75">{tag.name}</span>
+						<div class="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--btn-regular-bg)]">
+							<div
+								class="h-full rounded-full bg-[var(--primary)]"
+								style={`width: ${Math.round((tag.count / maxTagCount) * 100)}%`}
+							>
+							</div>
+						</div>
+						<span class="w-8 shrink-0 text-right text-sm text-50">{tag.count}</span>
+					</div>
+				))}
+			</div>
+		</div>
+
+		<div class="card-base px-8 py-6">
+			<div class="mb-4 flex items-center gap-2">
+				<Icon name="material-symbols:folder-open-outline-rounded" class="text-[var(--primary)]" />
+				<h2 class="text-lg font-bold text-90">这一年主要写在哪</h2>
+			</div>
+			{
+				categories8.length === 0 && <p class="text-sm text-50">这一年的文章还没归到分类里。</p>
+			}
+			<div class="flex flex-col gap-3">
+				{categories8.map((item) => (
+					<div class="flex items-center gap-3">
+						<span class="w-32 shrink-0 truncate text-sm text-75" title={item.name}>{item.name}</span>
+						<div class="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--btn-regular-bg)]">
+							<div
+								class="h-full rounded-full bg-[var(--primary)]"
+								style={`width: ${Math.round((item.count / maxCategoryCount) * 100)}%`}
+							>
+							</div>
+						</div>
+						<span class="w-8 shrink-0 text-right text-sm text-50">{item.count}</span>
+					</div>
+				))}
+			</div>
+		</div>
+	</div>
+
+	<div class="card-base px-8 py-6">
+		<div class="mb-4 flex items-center gap-2">
+			<Icon name="material-symbols:trophy-outline-rounded" class="text-[var(--primary)]" />
+			<h2 class="text-lg font-bold text-90">年度之最</h2>
+		</div>
+		<div class="flex flex-col gap-2">
+			{
+				highlightRows.map((row) =>
+					row.post && (
+						<a
+							href={getPostUrlBySlug(row.post.slug)}
+							class="group flex items-center gap-3 rounded-lg px-2 py-2 transition hover:bg-[var(--btn-plain-bg-hover)]"
+						>
+							<Icon name={row.icon} class="shrink-0 text-lg text-[var(--primary)]" />
+							<span class="w-32 shrink-0 text-sm text-50">{row.label}</span>
+							<span class="min-w-0 flex-1 truncate font-medium text-75 group-hover:text-[var(--primary)]">
+								{row.post.title}
+							</span>
+							<span class="shrink-0 text-xs text-30">{row.meta}</span>
+						</a>
+					),
+				)
+			}
+			{
+				busiestDay && (
+					<div class="flex items-center gap-3 rounded-lg px-2 py-2">
+						<Icon name="material-symbols:local-fire-department-rounded" class="shrink-0 text-lg text-[var(--primary)]" />
+						<span class="w-32 shrink-0 text-sm text-50">最猛的一天</span>
+						<span class="min-w-0 flex-1 truncate font-medium text-75">
+							{formatDay(busiestDay.date)} 一口气发了 {busiestDay.count} 篇
+						</span>
+					</div>
+				)
+			}
+		</div>
+	</div>
+
+	<div class="card-base px-8 py-6">
+		<div class="mb-4 flex items-center gap-2">
+			<Icon name="material-symbols:list-alt-outline-rounded" class="text-[var(--primary)]" />
+			<h2 class="text-lg font-bold text-90">这一年写下的 {report.postCount} 篇</h2>
+		</div>
+		<div class="flex flex-col">
+			{
+				posts.map((post) => (
+					<a
+						href={getPostUrlBySlug(post.slug)}
+						class="group flex items-center gap-3 rounded-lg px-2 py-2 transition hover:bg-[var(--btn-plain-bg-hover)]"
+					>
+						<span class="w-12 shrink-0 text-sm text-30">{formatDay(post.published)}</span>
+						<span class="min-w-0 flex-1 truncate font-medium text-75 group-hover:text-[var(--primary)]">
+							{post.title}
+						</span>
+						<span class="hidden shrink-0 text-xs text-30 md:block">{formatWords(post.words)}</span>
+						<span class="hidden shrink-0 text-xs text-30 md:block">{post.minutes} 分钟</span>
+					</a>
+				))
+			}
+		</div>
+	</div>
+</div>

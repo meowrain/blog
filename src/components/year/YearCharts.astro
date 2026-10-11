@@ -1,0 +1,145 @@
+---
+import type { YearReport } from "@utils/year-stats";
+import { formatNumber } from "@utils/year-stats";
+import { Icon } from "astro-icon/components";
+
+interface Props {
+	report: YearReport;
+}
+
+const { report } = Astro.props;
+const { months, hours, weekdays } = report;
+
+/** 柱条高度：0 也留一条基线，非零至少 6% */
+function barHeight(value: number, max: number): string {
+	if (value === 0) return "0.25rem";
+	return `${Math.max(6, Math.round((value / max) * 100))}%`;
+}
+
+const maxMonth = Math.max(1, ...months.map((item) => item.count));
+const bestMonth = months.reduce((best, item) =>
+	item.count > best.count ? item : best,
+);
+
+const slots = [
+	{
+		label: "凌晨 0-5 点",
+		count: hours.slice(0, 6).reduce((sum, n) => sum + n, 0),
+	},
+	{
+		label: "上午 6-11 点",
+		count: hours.slice(6, 12).reduce((sum, n) => sum + n, 0),
+	},
+	{
+		label: "下午 12-17 点",
+		count: hours.slice(12, 18).reduce((sum, n) => sum + n, 0),
+	},
+	{
+		label: "晚上 18-23 点",
+		count: hours.slice(18, 24).reduce((sum, n) => sum + n, 0),
+	},
+];
+const maxSlot = slots.reduce((best, slot) =>
+	slot.count > best.count ? slot : best,
+);
+
+const maxHour = Math.max(1, ...hours);
+const peakHour = hours.indexOf(maxHour);
+
+const weekdayOrder = [1, 2, 3, 4, 5, 6, 0];
+const weekdayLabels = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+const weekdayRows = weekdayOrder.map((index) => ({
+	label: weekdayLabels[index],
+	count: weekdays[index],
+}));
+const maxWeekday = Math.max(1, ...weekdayRows.map((row) => row.count));
+const busiestWeekday = weekdayRows.reduce((best, row) =>
+	row.count > best.count ? row : best,
+);
+---
+
+<div class="flex flex-col gap-4">
+	<div class="card-base px-8 py-6">
+		<div class="mb-1 flex items-center gap-2">
+			<Icon name="material-symbols:bar-chart-rounded" class="text-[var(--primary)]" />
+			<h2 class="text-lg font-bold text-90">月度节奏</h2>
+		</div>
+		<p class="mb-5 text-sm text-50">
+			最高产的是 {bestMonth.month} 月，一共写了 {bestMonth.count} 篇。
+		</p>
+
+		<div class="grid grid-cols-12 gap-1 md:gap-1.5">
+			{
+				months.map((item) => (
+					<div class="flex flex-col items-center gap-1.5" title={`${item.month} 月：${item.count} 篇`}>
+						<div class="flex h-32 w-full items-end">
+							<div
+								class:list={[
+									"w-full rounded-t-[3px]",
+									item.count > 0 ? "bg-[var(--primary)]" : "bg-[var(--btn-regular-bg)]",
+								]}
+								style={`height: ${barHeight(item.count, maxMonth)}`}
+							>
+							</div>
+						</div>
+						<span class="text-[0.6875rem] text-50">{item.month}</span>
+					</div>
+				))
+			}
+		</div>
+	</div>
+
+	<div class="card-base px-8 py-6">
+		<div class="mb-1 flex items-center gap-2">
+			<Icon name="material-symbols:schedule-outline-rounded" class="text-[var(--primary)]" />
+			<h2 class="text-lg font-bold text-90">你在什么时候写东西</h2>
+		</div>
+		<p class="mb-5 text-sm text-50">
+			发文最多的是{maxSlot.label}（{maxSlot.count} 篇），最常按下发布键的时刻是 {peakHour} 点。
+		</p>
+
+		<div class="flex h-24 items-end gap-[3px]">
+			{
+				hours.map((count, hour) => (
+					<div class="flex h-full flex-1 flex-col justify-end" title={`${hour} 点：${count} 篇`}>
+						<div
+							class:list={[
+								"w-full rounded-t-[2px]",
+								hour === peakHour && count > 0
+									? "bg-[var(--primary)]"
+									: "bg-[var(--btn-regular-bg)]",
+							]}
+							style={`height: ${barHeight(count, maxHour)}`}
+						>
+						</div>
+					</div>
+				))
+			}
+		</div>
+		<div class="mt-2 flex gap-[3px] text-[0.625rem] text-30">
+			{hours.map((_, hour) => <span class="flex-1 text-center">{hour % 6 === 0 ? hour : ""}</span>)}
+		</div>
+	</div>
+
+	<div class="card-base px-8 py-6">
+		<div class="mb-1 flex items-center gap-2">
+			<Icon name="material-symbols:calendar-view-day-rounded" class="text-[var(--primary)]" />
+			<h2 class="text-lg font-bold text-90">一周里的偏好</h2>
+		</div>
+		<p class="mb-5 text-sm text-50">
+			最勤快的是{busiestWeekday.label}，这一天发布了 {busiestWeekday.count} 篇。
+		</p>
+
+		<div class="grid grid-cols-7 gap-1.5 md:gap-2">
+			{
+				weekdayRows.map((row) => (
+					<div class="rounded-lg bg-[var(--btn-regular-bg)] px-1 py-2 text-center" title={`${row.label}：${row.count} 篇`}>
+						<div class="text-sm font-bold text-90">{formatNumber(row.count)}</div>
+						<div class="mt-0.5 text-[0.625rem] text-50">{row.label}</div>
+						<div class="mx-auto mt-1.5 w-full rounded-full bg-[var(--primary)]" style={`height: 2px; opacity: ${row.count / maxWeekday}`}></div>
+					</div>
+				))
+			}
+		</div>
+	</div>
+</div>

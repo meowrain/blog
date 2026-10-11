@@ -1,0 +1,66 @@
+---
+import { Icon } from "astro-icon/components";
+import { getSortedPosts } from "@utils/content-utils";
+import { getPostUrlBySlug } from "@utils/url-utils";
+
+// 「那年今天」：回看往年同一天发布的文章，包含 365 天前的今天。
+// 和 WritingHeatmap 一样纯构建期渲染，站点没有运行时，"今天"就是构建当天。
+// 月日按本地时区取，避免 UTC 换算把文章挪到前一天。
+const today = new Date();
+const todayMonth = today.getMonth();
+const todayDay = today.getDate();
+const currentYear = today.getFullYear();
+
+const posts = await getSortedPosts();
+
+const entries = posts
+	.map((post) => ({ post, published: new Date(post.data.published) }))
+	.filter(
+		({ published }) =>
+			published.getFullYear() < currentYear &&
+			published.getMonth() === todayMonth &&
+			published.getDate() === todayDay,
+	)
+	.map(({ post, published }) => ({
+		post,
+		published,
+		yearsAgo: currentYear - published.getFullYear(),
+	}))
+	.sort((a, b) => a.yearsAgo - b.yearsAgo);
+
+const todayLabel = `${currentYear}-${String(todayMonth + 1).padStart(2, "0")}-${String(todayDay).padStart(2, "0")}`;
+
+function formatMonthDay(date: Date) {
+	const month = String(date.getMonth() + 1).padStart(2, "0");
+	const day = String(date.getDate()).padStart(2, "0");
+	return `${month}-${day}`;
+}
+---
+
+{entries.length > 0 && (
+    <div class="card-base px-8 py-6">
+        <div class="flex items-center gap-2 mb-1">
+            <Icon name="material-symbols:history-rounded" class="text-[var(--primary)]" />
+            <h2 class="text-lg font-bold text-90">那年今天</h2>
+        </div>
+        <p class="text-sm text-50 mb-4">
+            {todayLabel}，往年同一天你写过 {entries.length} 篇文章。
+        </p>
+
+        <div class="flex flex-col">
+            {entries.map((entry) => (
+                <a href={getPostUrlBySlug(entry.post.slug)}
+                   aria-label={entry.post.data.title}
+                   class="group flex items-center gap-3 h-11 w-full rounded-lg px-3 transition
+                    hover:bg-[var(--btn-plain-bg-hover)] active:bg-[var(--btn-plain-bg-active)]"
+                >
+                    <span class="shrink-0 w-[4.5rem] text-sm text-50">{entry.yearsAgo} 年前</span>
+                    <span class="min-w-0 flex-1 truncate text-left font-bold text-75 transition group-hover:text-[var(--primary)]">
+                        {entry.post.data.title}
+                    </span>
+                    <span class="shrink-0 text-sm text-30">{formatMonthDay(entry.published)}</span>
+                </a>
+            ))}
+        </div>
+    </div>
+)}
