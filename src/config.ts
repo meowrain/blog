@@ -84,7 +84,10 @@ export const navBarConfig: NavBarConfig = {
       external: false,
     },
     {
-    {
+      name: "音乐",
+      url: "/music/",
+      external: false,
+    },
     {
       name: "友链",
       url: "/friends/", // Internal links should not include the base path, as it is automatically added
