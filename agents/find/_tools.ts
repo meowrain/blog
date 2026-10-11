@@ -1,11 +1,13 @@
-import type { PostRecord } from './_corpus';
+import { clampArticleBody } from '../_article';
 import type { ToolDef, ToolResult } from '../_agent-loop';
+import type { PostRecord } from './_corpus';
 
 /**
- * `/find` 的工具注册表。加新能力就往 TOOLS 里加一条，tool loop 和前端都不用动。
+ * `/find` 的工具注册表 —— 胶囊助手既能站内找文章，也能当当前这篇文章的学习助手，
+ * 两边的能力都从这里挂上去。加新能力就往 TOOLS 里加一条，tool loop 和前端都不用动。
  *
  * 返回体刻意做得瘦：模型上下文里最贵的就是工具结果，所以条数、每条带什么字段、
- * 回灌进上下文的长度都卡死了（见 _agent-loop.ts 的预算常量）。
+ * 回灌进上下文的长度都卡死了（见 _agent-loop.ts 的预算常量，以及下面 read_article 的覆盖）。
  */
 
 const DEFAULT_LIMIT = 5;
@@ -18,11 +20,33 @@ const MIN_SCORE = 1;
 
 const FIELD_WEIGHTS = { title: 3, tags: 2, category: 1.5, headings: 1.5, excerpt: 1 } as const;
 
+/** 单次 read_article 读进模型的正文 token 上限。超了只给前半部分，剩下的按小节补读。 */
+const ARTICLE_TOKENS_PER_CALL = 6_000;
+/** read_article 结果回灌模型时的字符上限 —— 默认的 4k 装不下一篇正文 */
+const ARTICLE_RESULT_CHARS = 16_000;
+
 export interface FindCtx {
 	origin: string;
 	loadPosts: () => Promise<PostRecord[]>;
 	/** 本次请求里已经返回过的文章 —— 重复命中只给标题和链接 */
 	seen: Set<string>;
+	/** 访客当前正在阅读的文章（前端从页面 DOM 抽好随请求递上来）；不在文章页时为 null */
+	article: ArticleCtx | null;
+}
+
+/** 文章按标题切出来的小节（前端切好递上来，服务端不解析 Markdown） */
+export interface ArticleSection {
+	heading: string;
+	level: number;
+	text: string;
+}
+
+/** 当前页面的文章上下文 */
+export interface ArticleCtx {
+	slug: string;
+	title: string;
+	text: string;
+	sections: ArticleSection[];
 }
 
 interface Scored {
@@ -146,7 +170,7 @@ function matchedHeadings(post: PostRecord, terms: string[]): string[] {
 	return out;
 }
 
-async function searchPosts(args: Record<string, unknown>, ctx: unknown): Promise<ToolResult> {
+export async function searchPosts(args: Record<string, unknown>, ctx: unknown): Promise<ToolResult> {
 	const state = ctx as FindCtx;
 	const query = typeof args.query === 'string' ? args.query.trim() : '';
 	if (!query) {
@@ -265,7 +289,103 @@ async function listRecentPosts(args: Record<string, unknown>, ctx: unknown): Pro
 	};
 }
 
+/** 按序号（1 起）或标题（全等优先，其次包含）找小节 */
+function matchArticleSection(article: ArticleCtx, wanted: string): ArticleSection | null {
+	const index = Number(wanted);
+	if (Number.isInteger(index) && index >= 1 && index <= article.sections.length) {
+		return article.sections[index - 1];
+	}
+	const needle = wanted.toLowerCase();
+	return (
+		article.sections.find((section) => section.heading.toLowerCase() === needle) ??
+		article.sections.find((section) => section.heading.toLowerCase().includes(needle)) ??
+		null
+	);
+}
+
+/**
+ * 读访客正在阅读的这篇文章的正文。
+ * 讲解 / 出题 / 批改都必须从这一步开始 —— 正文只在前端手上，服务端没有别的途径拿到它。
+ */
+function readArticle(args: Record<string, unknown>, ctx: unknown): ToolResult {
+	const { article } = ctx as FindCtx;
+	if (!article) {
+		return {
+			summary: '当前不在文章页',
+			content: JSON.stringify({
+				error:
+					'拿不到文章正文：访客现在不在文章页（或刚换了页）。要讲文章先用 search_posts 找到它、' +
+					'让访客点开阅读；其余问题按普通问答回答即可。',
+			}),
+		};
+	}
+
+	const outline = article.sections.map((section, index) => `${index + 1}. ${section.heading}`);
+	const wanted = typeof args.section === 'string' ? args.section.trim() : '';
+
+	if (wanted) {
+		const hit = matchArticleSection(article, wanted);
+		if (!hit) {
+			return {
+				summary: `没有「${wanted}」这一节`,
+				content: JSON.stringify({
+					title: article.title,
+					outline,
+					hint: '没有匹配的小节。从 outline 里挑一个标题（或它的片段、序号）再读。',
+				}),
+			};
+		}
+		const text = clampArticleBody(hit.text, ARTICLE_TOKENS_PER_CALL);
+		return {
+			summary: `读了小节「${hit.heading}」`,
+			content: JSON.stringify({
+				title: article.title,
+				slug: article.slug,
+				section: hit.heading,
+				text,
+				truncated: text.length < hit.text.trim().length,
+			}),
+		};
+	}
+
+	const full = article.text.trim() || article.sections.map((s) => `${s.heading}\n${s.text}`).join('\n\n');
+	const text = clampArticleBody(full, ARTICLE_TOKENS_PER_CALL);
+	const truncated = text.length < full.length;
+	return {
+		summary: `读了《${article.title || '当前文章'}》正文${truncated ? '（前半部分）' : ''}`,
+		content: JSON.stringify({
+			title: article.title,
+			slug: article.slug,
+			outline,
+			text,
+			truncated,
+			...(truncated
+				? { hint: '正文太长，只给了前半部分。用 read_article({section}) 按小节标题把剩下的读回来。' }
+				: {}),
+		}),
+	};
+}
+
 export const TOOLS: ToolDef[] = [
+	{
+		name: 'read_article',
+		description:
+			'读取访客当前正在阅读的这篇文章的正文（纯文本）。' +
+			'讲解、出题、批改，以及任何涉及文章内容的回答，都必须先调用它拿到正文，不要凭标题猜文章讲了什么。' +
+			'正文过长时结果会被截断，同时返回 outline（小节标题列表），可以用 section 参数按小节标题补读剩下的部分。' +
+			'访客不在文章页时它会返回错误说明。',
+		parameters: {
+			type: 'object',
+			properties: {
+				section: {
+					type: 'string',
+					description: '只读某一小节时传它的标题（或标题片段、outline 里的序号）；省略则读全文',
+				},
+			},
+		},
+		maxResultChars: ARTICLE_RESULT_CHARS,
+		run: readArticle,
+	},
 	{
 		name: 'search_posts',
 		description:

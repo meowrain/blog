@@ -22,6 +22,11 @@ export interface ToolDef {
 	description: string;
 	/** JSON Schema */
 	parameters: Record<string, unknown>;
+	/**
+	 * 这条工具的结果回灌进模型上下文时的字符上限。默认走 MAX_TOOL_RESULT_CHARS；
+	 * read_article 这类「结果本身就是一整篇正文」的工具会调大 —— 界面上拿到的仍是完整结果。
+	 */
+	maxResultChars?: number;
 	run: (args: Record<string, unknown>, ctx: unknown) => Promise<ToolResult> | ToolResult;
 }
 
@@ -46,9 +51,9 @@ interface GatewayChunk {
 
 /** 单轮最多执行几个并行工具调用（模型可能一次发一堆） */
 const MAX_TOOL_CALLS_PER_TURN = 4;
-/** 单条工具结果回灌进模型上下文时的字符上限 */
+/** 单条工具结果回灌进模型上下文时的字符上限（ToolDef.maxResultChars 可单条覆盖） */
 const MAX_TOOL_RESULT_CHARS = 4_000;
-/** 整个请求里工具结果累计进上下文的字符上限，超了丢最早的 */
+/** 整个请求里工具结果累计进上下文的字符上限，超了丢最早的（maxToolContextChars 可覆盖） */
 const MAX_TOOL_CONTEXT_CHARS = 20_000;
 const OMITTED_NOTE = '[更早的检索结果已省略]';
 
@@ -62,7 +67,9 @@ export interface ToolLoopOptions {
 	signal?: AbortSignal;
 	/** 含最后一次「不给工具」的收尾轮 */
 	maxIterations?: number;
-	/** 逐字追加所有外发文字，路由用它写会话历史（同 learn 的 collector） */
+	/** 整轮工具结果累计进上下文的字符上限，默认 MAX_TOOL_CONTEXT_CHARS */
+	maxToolContextChars?: number;
+	/** 逐字追加所有外发文字，路由用它写会话历史（见 find/index.ts 的 collector） */
 	collector?: { text: string };
 	logger?: { log(...args: unknown[]): void; error(...args: unknown[]): void };
 }
@@ -111,12 +118,23 @@ function pushToolCalls(calls: ToolCallAcc[], deltas: NonNullable<GatewayChunk['c
 	}
 }
 
-/** 工具结果进上下文前的预算裁剪：单条截断 + 累计超限时丢最早的 */
-function applyToolBudget(messages: unknown[], toolMessageIndexes: number[]): void {
-	const toolMessages = toolMessageIndexes.map((i) => messages[i] as { role: string; content: string });
-	let total = toolMessages.reduce((n, m) => n + m.content.length, 0);
-	for (const m of toolMessages) {
-		if (total <= MAX_TOOL_CONTEXT_CHARS) break;
+/**
+ * 工具结果进上下文前的预算裁剪：单条按该工具的上限截断 + 累计超限时丢最早的。
+ * 只动「喂给模型」的那条 message —— tool_result 事件里给界面的始终是完整结果。
+ */
+function applyToolBudget(
+	messages: unknown[],
+	toolMessages: { index: number; cap: number }[],
+	totalCap: number,
+): void {
+	const entries = toolMessages.map(({ index, cap }) => {
+		const m = messages[index] as { role: string; content: string };
+		if (m.content.length > cap) m.content = `${m.content.slice(0, cap)}\n…（结果过长已截断）`;
+		return m;
+	});
+	let total = entries.reduce((n, m) => n + m.content.length, 0);
+	for (const m of entries) {
+		if (total <= totalCap) break;
 		if (m.content === OMITTED_NOTE) continue;
 		total -= m.content.length - OMITTED_NOTE.length;
 		m.content = OMITTED_NOTE;
@@ -133,7 +151,8 @@ export async function* runToolLoop(opts: ToolLoopOptions): AsyncGenerator<string
 		{ role: 'system', content: system },
 		...history.map((m) => ({ role: m.role, content: m.content })),
 	];
-	const toolMessageIndexes: number[] = [];
+	/** 每条工具消息在 messages 里的下标 + 它回灌模型时的字符上限 */
+	const toolMessages: { index: number; cap: number }[] = [];
 	const usage = { input: 0, output: 0 };
 	let rounds = 0;
 	let toolCalls = 0;
@@ -253,8 +272,11 @@ export async function* runToolLoop(opts: ToolLoopOptions): AsyncGenerator<string
 			}
 			// 前端看到完整结果；模型只拿到截断后的版本
 			yield sseEvent({ type: 'tool_result', id: call.id, name: call.name, ok, summary, content });
-			messages.push({ role: 'tool', tool_call_id: call.id, content: content.slice(0, MAX_TOOL_RESULT_CHARS) });
-			toolMessageIndexes.push(messages.length - 1);
+			messages.push({ role: 'tool', tool_call_id: call.id, content });
+			toolMessages.push({
+				index: messages.length - 1,
+				cap: toolsByName.get(call.name)?.maxResultChars ?? MAX_TOOL_RESULT_CHARS,
+			});
 		}
 
 		for (const call of skipped) {
@@ -271,10 +293,10 @@ export async function* runToolLoop(opts: ToolLoopOptions): AsyncGenerator<string
 				tool_call_id: call.id,
 				content: JSON.stringify({ error: `本轮最多 ${MAX_TOOL_CALLS_PER_TURN} 个调用，这条被跳过了` }),
 			});
-			toolMessageIndexes.push(messages.length - 1);
+			toolMessages.push({ index: messages.length - 1, cap: MAX_TOOL_RESULT_CHARS });
 		}
 
-		applyToolBudget(messages, toolMessageIndexes);
+		applyToolBudget(messages, toolMessages, opts.maxToolContextChars ?? MAX_TOOL_CONTEXT_CHARS);
 	}
 
 	yield sseEvent({

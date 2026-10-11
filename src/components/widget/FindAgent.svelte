@@ -4,11 +4,15 @@ import MarkdownIt from "markdown-it";
 import { tick } from "svelte";
 
 /**
- * 全站右下角的「找文章」入口。
+ * 全站右下角的胶囊助手 —— 站内找文章 + 当前这篇文章的学习助手（讲解 / 出题 / 批改），
+ * 全站只有这一个入口，不再有单独的学习面板。
  *
  * 挂在 Layout.astro（Swup 容器之外），所以换页时面板和对话都留着 —— 这正是
- * 「全站一个入口」要的行为。真正干活的是 /find（agents/find）：它自带 search_posts 等
- * 工具，自己决定搜什么、搜几次；这里只负责把工具调用过程如实显示出来。
+ * 「全站一个入口」要的行为。真正干活的是 /find（agents/find）：它自带 search_posts /
+ * read_article 等工具，自己决定搜什么、读什么；这里只负责把工具调用过程如实显示出来。
+ *
+ * 正文只存在于页面上，所以文章页发送前会先把正文抽出来一起递上去（read_article 工具
+ * 只有这一条路能拿到正文）。
  */
 
 type ToolPart = {
@@ -51,6 +55,9 @@ const SUGGESTIONS = [
 	"帮我找面试相关的笔记",
 ];
 
+/** 文章页的开场白：把「讲解 / 出题 / 批改」直接摆在用户面前 */
+const ARTICLE_SUGGESTIONS = ["讲解这篇", "出题考考我", "这篇文章讲了什么？"];
+
 let open = $state(false);
 let msgs = $state<Msg[]>([]);
 let input = $state("");
@@ -60,6 +67,9 @@ let restoring = $state(false);
 let listEl = $state<HTMLDivElement | null>(null);
 let inputEl = $state<HTMLInputElement | null>(null);
 let sawAbort: AbortController | null = null;
+/** 开场提示按页面切：文章页换成讲解 / 出题那一组 */
+let suggestions = $state<string[]>(SUGGESTIONS);
+let articleTitle = $state("");
 
 // 回灌给 /find 的历史必须是「user/assistant 文字」且末尾只有一个 user ——
 // 工具片段只活在界面上，不进历史（见平台的 sse-protocol 约定）。
@@ -103,6 +113,79 @@ function prettyArgs(args: string): string {
 	}
 }
 
+/* ── 文章上下文：文章页把正文抽出来，随请求递给 /find 的 read_article 工具 ── */
+
+const MAX_ARTICLE_CHARS = 60_000;
+
+type ArticleSection = { heading: string; level: number; text: string };
+
+/** 逐块取文本：块之间补换行，代码块整段保留，界面噪声（复制按钮之类）跳过 */
+function flattenText(el: Element): string {
+	const lines: string[] = [];
+	const visit = (node: Element) => {
+		if (node.matches("button, svg, .copy-btn, .not-prose, [data-expressive-code-copy]")) return;
+		const tag = node.tagName.toLowerCase();
+		if (tag === "pre") {
+			const code = (node.textContent ?? "").trim();
+			if (code) lines.push(code);
+			return;
+		}
+		if (!node.children.length) {
+			const text = (node.textContent ?? "").replace(/\s+/g, " ").trim();
+			if (text) lines.push(text);
+			return;
+		}
+		for (const child of Array.from(node.children)) visit(child);
+		if (/^(p|li|blockquote|figcaption|dd|dt)$/.test(tag)) lines.push("");
+	};
+	visit(el);
+	return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** 当前页面的文章（正文 + 按标题切好的小节）；不在文章页返回 null */
+function readArticleContext(): { slug: string; title: string; text: string; sections: ArticleSection[] } | null {
+	if (typeof document === "undefined") return null;
+	const content = document.querySelector(".markdown-content");
+	if (!content) return null;
+	const container = document.querySelector("#post-container");
+
+	const sections: ArticleSection[] = [];
+	let current: ArticleSection | null = null;
+	for (const node of Array.from(content.children)) {
+		const heading = /^h([1-6])$/.exec(node.tagName.toLowerCase());
+		if (heading) {
+			current = { heading: (node.textContent ?? "").trim().slice(0, 120), level: Number(heading[1]), text: "" };
+			sections.push(current);
+			continue;
+		}
+		const text = flattenText(node);
+		if (!text) continue;
+		if (!current) {
+			current = { heading: "（开头）", level: 0, text: "" };
+			sections.push(current);
+		}
+		current.text = current.text ? current.text + "\n" + text : text;
+	}
+
+	const usable = sections.filter((section) => section.text.trim());
+	if (!usable.length) return null;
+	const text = usable
+		.map((section) => (section.level ? section.heading + "\n" + section.text : section.text))
+		.join("\n\n");
+	return {
+		slug: container?.getAttribute("data-post-slug")?.trim() ?? "",
+		title: container?.getAttribute("data-post-title")?.trim() ?? "",
+		text: text.length > MAX_ARTICLE_CHARS ? text.slice(0, MAX_ARTICLE_CHARS) : text,
+		sections: usable,
+	};
+}
+
+/** 面板的开场白跟着当前页面走：进页面、换页、打开面板时都重算一次 */
+function refreshPageContext() {
+	articleTitle = readArticleContext()?.title ?? "";
+	suggestions = articleTitle ? ARTICLE_SUGGESTIONS : SUGGESTIONS;
+}
+
 async function scrollToBottom() {
 	await tick();
 	listEl?.scrollTo({ top: listEl.scrollHeight, behavior: "smooth" });
@@ -135,13 +218,21 @@ async function post(question: string) {
 	let sawDone = false;
 
 	try {
+		// 文章页顺手把正文一起递上去
+		const article = readArticleContext();
 		const resp = await fetch("/find", {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
 				"makers-conversation-id": conversationId,
 			},
-			body: JSON.stringify({ messages: [...mirror], query: question }),
+			body: JSON.stringify({
+				messages: [...mirror],
+				query: question,
+				...(article
+					? { slug: article.slug, title: article.title, article: article.text, sections: article.sections }
+					: {}),
+			}),
 			signal: sawAbort.signal,
 		});
 		if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`);
@@ -323,6 +414,7 @@ async function restore() {
 function toggle() {
 	open = !open;
 	if (open) {
+		refreshPageContext();
 		void tick().then(() => inputEl?.focus());
 		// 第一次点开才去恢复历史：不在每次进站时就白发一个请求
 		if (!msgs.length) void restore();
@@ -340,8 +432,8 @@ $effect(() => {
 <div class="fixed right-4 bottom-4 z-40 lg:right-8 lg:bottom-8">
 	<button
 		class="find-fab group flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg transition hover:scale-105 active:scale-95"
-		aria-label={open ? '收起找文章助手' : '打开找文章助手'}
-		title="找文章"
+		aria-label={open ? '收起 AI 助手' : '打开 AI 助手'}
+		title="AI 助手"
 		onclick={toggle}
 	>
 		<Icon icon={open ? 'material-symbols:close-rounded' : 'material-symbols:smart-toy-outline-rounded'} class="text-[1.75rem]" />
@@ -358,8 +450,10 @@ $effect(() => {
 		<div class="flex items-center gap-2 border-b border-black/5 px-3 py-2 dark:border-white/10">
 			<Icon icon="material-symbols:smart-toy-outline-rounded" class="text-[1.125rem] text-[var(--primary)]" />
 			<div class="min-w-0 flex-1">
-				<div class="text-sm font-bold text-90">找文章</div>
-				<div class="truncate text-[0.7rem] text-black/40 dark:text-white/40">描述你想看的，它在站内自己搜</div>
+				<div class="text-sm font-bold text-90">AI 助手</div>
+				<div class="truncate text-[0.7rem] text-black/40 dark:text-white/40">
+					{articleTitle ? `当前文章：${articleTitle}` : '描述你想看的，它在站内自己搜'}
+				</div>
 			</div>
 			<button
 				class="rounded-md px-2 py-1 text-xs text-black/50 transition hover:bg-black/5 dark:text-white/50 dark:hover:bg-white/10"
@@ -378,11 +472,16 @@ $effect(() => {
 					<p class="text-sm text-black/40 dark:text-white/40">正在恢复上次的对话…</p>
 				{:else}
 					<div class="text-sm text-black/50 dark:text-white/50">
-						<p>我是这个博客的导览员，告诉我你想看什么，我去站内找。</p>
-						<p class="mt-1 text-xs text-black/40 dark:text-white/40">比如「有没有讲 Redis 的文章」「最近写了什么」；方向不明也可以直接说「随便推荐点」。</p>
+						{#if articleTitle}
+							<p>这一页是《{articleTitle}》。想让我讲解、出题，还是批改你的答案？</p>
+							<p class="mt-1 text-xs text-black/40 dark:text-white/40">也可以让我在站内找别的文章，直接说就行。</p>
+						{:else}
+							<p>我是这个博客的助手，告诉我你想看什么，我帮你找。</p>
+							<p class="mt-1 text-xs text-black/40 dark:text-white/40">比如「有没有讲 Redis 的文章」「最近写了什么」；方向不明也可以直接说「随便推荐点」。</p>
+						{/if}
 					</div>
 					<div class="flex flex-wrap gap-2">
-						{#each SUGGESTIONS as s}
+						{#each suggestions as s}
 							<button
 								class="rounded-full bg-black/5 px-3 py-1 text-xs text-black/60 transition hover:bg-black/10 dark:bg-white/10 dark:text-white/60 dark:hover:bg-white/20"
 								onclick={() => { input = s; submit(); }}
@@ -454,7 +553,7 @@ $effect(() => {
 				name="find-query"
 				class="min-w-0 flex-1 rounded-md border border-black/10 bg-black/[0.03] px-3 py-2 text-sm text-90 outline-none dark:border-white/15 dark:bg-white/5"
 				bind:value={input}
-				placeholder={streaming ? '生成中…' : '想看什么？'}
+				placeholder={streaming ? '生成中…' : articleTitle ? '想讲解、出题，还是批改？' : '想看什么？'}
 				disabled={streaming}
 				onkeydown={(e) => { if (e.key === 'Enter' && !e.isComposing) submit(); }}
 			/>

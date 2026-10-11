@@ -1,10 +1,5 @@
-// 文章正文的抽取、预算与裁剪。刻意不引任何三方包（见 learn/index.ts 顶部说明：
+// 文章正文的预算与裁剪。刻意不引任何三方包（见 _model.ts 顶部说明：
 // agent 运行时会裁剪外部依赖，任何三方 import 都可能让整包在加载期崩掉）。
-
-export interface ChatTurn {
-	role: 'user' | 'assistant';
-	content: string;
-}
 
 /**
  * 中文按 1 token/字、英文按 4 字符/token 粗估。
@@ -30,10 +25,4 @@ export function clampArticleBody(body: string, maxTokens: number): string {
 		else hi = mid - 1;
 	}
 	return text.slice(0, lo);
-}
-
-/** 给注入的正文加边界，避免模型把正文和指令混着读。 */
-export function wrapArticleBody(body: string, title: string): string {
-	if (!body.trim()) return '';
-	return [`以下是《${title || '这篇文章'}》的正文（Markdown 原文，可能被截断）：`, '<<<ARTICLE', body, 'ARTICLE'].join('\n');
 }

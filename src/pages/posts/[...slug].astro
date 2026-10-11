@@ -8,7 +8,6 @@ import { getSortedPosts } from "@utils/content-utils";
 import { getDir, getPostUrlBySlug } from "@utils/url-utils";
 import { Icon } from "astro-icon/components";
 import { gitHubEditConfig, licenseConfig, ogImageBase } from "src/config";
-import PostLearnPanel from "../../components/PostLearnPanel.svelte";
 import PostMetadata from "../../components/PostMeta.astro";
 import ImageWrapper from "../../components/misc/ImageWrapper.astro";
 import { profileConfig, siteConfig } from "../../config";
@@ -59,9 +58,14 @@ const ogImage =
 <MainGridLayout banner={entry.data.image} title={entry.data.title} description={entry.data.description} lang={entry.data.lang} setOGTypeArticle={true} ogImage={ogImage} headings={headings}>
     <script is:inline slot="head" type="application/ld+json" set:html={JSON.stringify(jsonLd)}></script>
     <div class="flex w-full rounded-[var(--radius-large)] overflow-hidden relative mb-4">
-        <div id="post-container" class:list={["card-base z-10 px-6 md:px-9 pt-6 pb-4 relative w-full border border-black/10 dark:border-white/10 ",
-            {}
-        ]}>
+        <div
+            id="post-container"
+            data-post-slug={entry.slug}
+            data-post-title={entry.data.title}
+            class:list={["card-base z-10 px-6 md:px-9 pt-6 pb-4 relative w-full border border-black/10 dark:border-white/10 ",
+                {}
+            ]}
+        >
             <!-- word count and reading time -->
             <div class="flex flex-row text-black/30 dark:text-white/30 gap-5 mb-3 transition onload-animation">
                 <div class="flex flex-row items-center">
@@ -197,17 +201,6 @@ const ogImage =
                     async>
             </script> -->
     <br>
-
-    <!-- AI 学习面板 — Svelte island, client-only; AI 端点跑在 Makers agents/ 下 -->
-    <div class="mb-4 rounded-[var(--radius-large)] overflow-hidden card-base border border-black/10 dark:border-white/10">
-        <div class="flex items-center gap-2 px-6 pt-4 text-black/75 dark:text-white/75 font-bold">
-            <Icon name="material-symbols:smart-toy-outline-rounded" class="text-[1.25rem] text-[var(--primary)]" />
-            <span>AI 学习助手</span>
-        </div>
-        <div class="h-[30rem] p-4">
-            <PostLearnPanel client:only="svelte" slug={entry.slug} title={entry.data.title} />
-        </div>
-    </div>
 
     <div class="flex flex-col md:flex-row justify-between mb-4 gap-4 overflow-hidden w-full">
         <a href={entry.data.nextSlug ? getPostUrlBySlug(entry.data.nextSlug) : "#"}
