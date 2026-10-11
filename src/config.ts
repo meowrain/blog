@@ -3,6 +3,7 @@ import type {
   GitHubEditConfig,
   ImageFallbackConfig,
   LicenseConfig,
+  MusicConfig,
   NavBarConfig,
   ProfileConfig,
   SiteConfig,
@@ -82,6 +83,8 @@ export const navBarConfig: NavBarConfig = {
       url: "/gallery/",
       external: false,
     },
+    {
+    {
     {
       name: "友链",
       url: "/friends/", // Internal links should not include the base path, as it is automatically added
@@ -171,3 +174,11 @@ export const gitHubEditConfig: GitHubEditConfig = {
 export const ogImageBase = "https://blog-edgeone.meowrain.cn";
 
 // todoConfig removed from here
+
+export const musicConfig: MusicConfig = {
+  // 歌单 ID 就是网页版歌单地址里 id=xxxx 那串数字；私密歌单和会员歌需要在部署环境里
+  // 配 NETEASE_COOKIE 才能完整播放，见 README 的「音乐页」。
+  playlists: [
+    { id: "158197454", name: "我喜欢的音乐" },
+  ],
+};

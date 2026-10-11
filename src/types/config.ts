@@ -79,6 +79,18 @@ export type LicenseConfig = {
 	url: string;
 };
 
+export type MusicConfig = {
+	/**
+	 * 音乐页要展示的网易云歌单。id 就是歌单分享链接里 id= 后面那串数字。
+	 * 私密歌单、会员歌需要在部署环境里配 NETEASE_COOKIE，见 README 的「音乐页」。
+	 */
+	playlists: {
+		id: string;
+		/** 可选：覆盖显示名；留空就用网易云返回的歌单名 */
+		name?: string;
+	}[];
+};
+
 export type ImageFallbackConfig = {
 	enable: boolean;
 	originalDomain: string;

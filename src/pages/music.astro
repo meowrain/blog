@@ -1,0 +1,42 @@
+---
+import MusicPlayer from "@components/music/MusicPlayer.svelte";
+import MainGridLayout from "@layouts/MainGridLayout.astro";
+import { Icon } from "astro-icon/components";
+import { musicConfig } from "@/config";
+
+// 线上由 EdgeOne 云函数 cloud-functions/api/music/[[default]].js 提供，
+// 本地 `pnpm dev` 由 src/plugins/dev-music-api.mjs 顶上；想打别的后端就设 PUBLIC_MUSIC_API_BASE
+const apiBase = import.meta.env.PUBLIC_MUSIC_API_BASE || "/api/music";
+const playlists = musicConfig.playlists;
+---
+
+<MainGridLayout title="音乐" description="我喜欢的网易云歌单，在这儿直接播放。">
+	<div id="music-page" class="space-y-4">
+		<header class="card-base p-6 md:p-8">
+			<div class="flex items-center gap-3">
+				<div
+					class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--primary)] text-white dark:text-black/70"
+				>
+					<Icon name="material-symbols:music-note-rounded" class="text-[1.6rem]" />
+				</div>
+				<div class="min-w-0">
+					<h1 class="text-2xl font-black text-90">音乐</h1>
+					<p class="mt-1 text-sm leading-relaxed text-50">
+						我喜欢的歌单，直接在这儿播。歌单和歌词来自网易云音乐，仅供个人收听。
+					</p>
+				</div>
+			</div>
+		</header>
+
+		{
+			playlists.length === 0 ? (
+				<section class="card-base p-6 text-sm leading-relaxed text-75 md:p-8">
+					还没配置歌单：在 <code>src/config.ts</code> 的 <code>musicConfig.playlists</code>
+					里填上网易云歌单 ID 就能用了。
+				</section>
+			) : (
+				<MusicPlayer client:only="svelte" apiBase={apiBase} playlists={playlists} />
+			)
+		}
+	</div>
+</MainGridLayout>
