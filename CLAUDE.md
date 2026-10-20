@@ -33,6 +33,11 @@ pnpm new-note [slug]
 # Unit tests for pure utils (search-core, personal-core)
 pnpm test
 
+# Rebuild the gallery index public/api/i/images.json (pnpm build runs this first).
+# Scans public/api/i, or --dir / GALLERY_BED_DIR elsewhere.
+# Exits 0 without writing when the image directory is absent (CI has no image bed).
+pnpm gallery:index
+
 # Clean unused images from src/content/assets/
 pnpm clean
 
