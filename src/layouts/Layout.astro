@@ -61,6 +61,11 @@ banner = siteConfig.banner.src;
 const enableBanner = siteConfig.banner.enable;
 // 背景图开关真正生效：关闭时 #bg-box 只显示跟随主题的渐变色
 const bgEnabled = siteConfig.background.enable && !!siteConfig.background.src;
+const glass = siteConfig.frostedGlass;
+const glassEnabled = !!glass?.enable;
+const glassBlur = glass?.blur ?? 22;
+const glassOpacity = glass?.opacity ?? 0.66;
+const glassDarkOpacity = glass?.darkOpacity ?? 0.58;
 
 let pageTitle: string;
 if (title) {
@@ -99,7 +104,8 @@ const bannerOffset =
 <!doctype html>
 <html
   lang={siteLang}
-  class="bg-[var(--page-bg)] transition text-[12px] md:text-[16px]"
+  class:list={["bg-[var(--page-bg)] transition text-[12px] md:text-[16px]", { glass: glassEnabled }]}
+  style={`--glass-blur: ${glassBlur}px; --glass-card-opacity: ${glassEnabled ? glassOpacity : 1}; --glass-card-opacity-dark: ${glassEnabled ? glassDarkOpacity : 1}; --glass-panel-opacity: ${glassEnabled ? 0.82 : 1}; --glass-panel-opacity-dark: ${glassEnabled ? 0.78 : 1};`}
   data-overlayscrollbars-initialize
 >
   <!-- 手机端适配 -->
@@ -258,6 +264,7 @@ const bannerOffset =
         left: 0;
         width: 100%;
         height: 100%;
+        overflow: hidden;
         /* 未启用背景图时只显示渐变层：颜色跟随主题色（--hue）和明暗模式 */
         background-image: var(--bg-url),
           linear-gradient(
@@ -275,6 +282,31 @@ const bannerOffset =
         z-index: -1;
       }
 
+      /* 磨砂外观：在背景上叠一层跟随主题色的失焦色块，给卡片提供可以“磨”的内容 */
+      .glass #bg-box::before {
+        content: "";
+        position: absolute;
+        inset: -18%;
+        background-image:
+          radial-gradient(38% 34% at 20% 22%, oklch(0.78 0.16 calc(var(--hue) + 22) / 0.55), transparent 72%),
+          radial-gradient(36% 40% at 82% 16%, oklch(0.72 0.17 calc(var(--hue) - 38) / 0.42), transparent 72%),
+          radial-gradient(52% 44% at 62% 88%, oklch(0.70 0.15 calc(var(--hue) + 8) / 0.34), transparent 74%);
+        filter: blur(46px) saturate(1.25);
+        transform: scale(1.04);
+        pointer-events: none;
+      }
+
+      /* 细颗粒让渐变更像磨砂材质，而不是纯色光晕 */
+      .glass #bg-box::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+        opacity: 0.035;
+        mix-blend-mode: soft-light;
+        pointer-events: none;
+      }
+
       :root.dark #bg-box {
         background-image: var(--bg-url),
           linear-gradient(
@@ -283,6 +315,13 @@ const bannerOffset =
             oklch(0.16 0.025 var(--hue)) 50%,
             oklch(0.19 0.028 var(--hue)) 100%
           );
+      }
+
+      .glass:root.dark #bg-box::before {
+        background-image:
+          radial-gradient(40% 36% at 20% 20%, oklch(0.52 0.15 calc(var(--hue) + 20) / 0.5), transparent 72%),
+          radial-gradient(38% 42% at 84% 16%, oklch(0.45 0.14 calc(var(--hue) - 40) / 0.42), transparent 72%),
+          radial-gradient(54% 46% at 60% 90%, oklch(0.52 0.13 calc(var(--hue) + 10) / 0.34), transparent 74%);
       }
     </style>
 

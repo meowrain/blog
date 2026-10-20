@@ -32,6 +32,16 @@ export type SiteConfig = {
 		attachment?: "fixed" | "scroll" | "local";
 		opacity?: number;
 	};
+	/**
+	 * 磨砂玻璃（毛玻璃）外观。开启后卡片变成半透明并模糊背后的背景，
+	 * 同时背景会叠一层跟随主题色的柔光色块。纯 CSS，不需要额外图片。
+	 */
+	frostedGlass?: {
+		enable: boolean;
+		blur?: number;
+		opacity?: number;
+		darkOpacity?: number;
+	};
 	toc: {
 		enable: boolean;
 		depth: 1 | 2 | 3;

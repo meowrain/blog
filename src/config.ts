@@ -45,6 +45,14 @@ export const siteConfig: SiteConfig = {
     attachment: "fixed", // Background attachment: 'fixed', 'scroll', 'local'
     opacity: 0.8, // Background opacity (0-1)
   },
+  frostedGlass: {
+    // 磨砂玻璃外观：半透明卡片 + 背景柔光 + 毛玻璃模糊。
+    // 喜欢现在的纯色卡片就把 enable 改成 false。
+    enable: true,
+    blur: 22, // 卡片背后模糊半径（px）
+    opacity: 0.66, // 亮色模式卡片不透明度（0-1）
+    darkOpacity: 0.58, // 暗色模式卡片不透明度（0-1）
+  },
   toc: {
     enable: true, // Display the table of contents on the right side of the post
     depth: 2, // Maximum heading depth to show in the table, from 1 to 3

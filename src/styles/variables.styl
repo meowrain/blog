@@ -25,7 +25,10 @@ define(vars)
 define({
   --primary: oklch(0.70 0.14 var(--hue)) oklch(0.75 0.14 var(--hue))
   --page-bg: oklch(0.95 0.01 var(--hue)) oklch(0.16 0.014 var(--hue))
-  --card-bg: rgba(255, 255, 255, 1) unquote("oklch(0.23 0.015 var(--hue))")
+  --card-bg: unquote("rgba(255, 255, 255, var(--glass-card-opacity, 1))") unquote("oklch(0.23 0.015 var(--hue) / var(--glass-card-opacity-dark, 1))")
+  --glass-border: rgba(255, 255, 255, 0.6) rgba(255, 255, 255, 0.1)
+  --glass-highlight: rgba(255, 255, 255, 0.7) rgba(255, 255, 255, 0.06)
+  --glass-shadow: rgba(58, 20, 44, 0.16) rgba(0, 0, 0, 0.5)
 
   --btn-content: oklch(0.55 0.12 var(--hue)) oklch(0.75 0.1 var(--hue))
 
@@ -65,8 +68,8 @@ define({
   --link-hover: oklch(0.95 0.025 var(--hue)) oklch(0.40 0.08 var(--hue))
   --link-active: oklch(0.90 0.05 var(--hue)) oklch(0.35 0.07 var(--hue))
 
-  --float-panel-bg: rgba(255, 255, 255, 1) unquote("oklch(0.19 0.015 var(--hue))")
-  --float-panel-bg-opaque: rgba(255, 255, 255, 1) unquote("oklch(0.19 0.015 var(--hue))")
+  --float-panel-bg: unquote("rgba(255, 255, 255, var(--glass-panel-opacity, 1))") unquote("oklch(0.19 0.015 var(--hue) / var(--glass-panel-opacity-dark, 1))")
+  --float-panel-bg-opaque: unquote("rgba(255, 255, 255, var(--glass-panel-opacity, 1))") unquote("oklch(0.19 0.015 var(--hue) / var(--glass-panel-opacity-dark, 1))")
 
   --scrollbar-bg-light: black(0.4)
   --scrollbar-bg-hover-light: black(0.5)
