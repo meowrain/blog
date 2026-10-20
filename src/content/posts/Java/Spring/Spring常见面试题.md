@@ -5,6 +5,7 @@ description: ''
 image: ''
 tags: ["Spring","Java"]
 category: 'Java > Spring'
+series: Spring
 draft: false 
 lang: ''
 ---

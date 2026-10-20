@@ -5,6 +5,7 @@ description: ''
 image: ''
 tags: []
 category: ''
+series: MySQL
 draft: false 
 lang: ''
 ---

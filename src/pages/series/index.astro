@@ -1,0 +1,59 @@
+---
+import MainGridLayout from "@layouts/MainGridLayout.astro";
+import { getAllSeries } from "@utils/series-utils";
+import { formatDateToYYYYMMDD } from "@utils/date-utils";
+import { getPostUrlBySlug } from "@utils/url-utils";
+import { Icon } from "astro-icon/components";
+
+const seriesList = await getAllSeries();
+const chapterCount = seriesList.reduce((total, item) => total + item.chapters.length, 0);
+---
+
+<MainGridLayout title="系列" description="同一主题的文章按章节串成系列，可以顺着上一章、下一章读下去">
+    <div class="flex flex-col gap-4">
+        <div class="card-base px-8 py-6">
+            <div class="flex items-center gap-3">
+                <Icon name="material-symbols:library-books-outline-rounded" class="text-2xl text-[var(--primary)]" />
+                <div>
+                    <div class="font-bold text-90 text-lg">系列导航</div>
+                    <div class="mt-0.5 text-sm text-50">
+                        {seriesList.length} 个系列 · {chapterCount} 篇文章，按章节顺序串起来读
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {seriesList.map((item) => (
+            <section id={item.slug} class="card-base scroll-mt-24 px-8 py-6">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="font-bold text-90 text-lg">{item.name}</div>
+                    <div class="text-xs text-50">
+                        共 {item.chapters.length} 章 · 最近更新 {formatDateToYYYYMMDD(item.latestPublished)}
+                    </div>
+                </div>
+                <ol class="mt-4 flex flex-col gap-1">
+                    {item.chapters.map((chapter) => (
+                        <li>
+                            <a href={getPostUrlBySlug(chapter.slug)}
+                               class="group flex items-center gap-3 rounded-lg px-3 py-2 transition hover:bg-[var(--btn-plain-bg-hover)]">
+                                <span class="w-6 shrink-0 text-right text-xs text-30 tabular-nums group-hover:text-[var(--primary)]">
+                                    {chapter.index}
+                                </span>
+                                <span class="truncate text-sm text-75 group-hover:text-[var(--primary)]">
+                                    {chapter.title}
+                                </span>
+                                <span class="ml-auto shrink-0 text-xs text-25">{formatDateToYYYYMMDD(chapter.published)}</span>
+                            </a>
+                        </li>
+                    ))}
+                </ol>
+            </section>
+        ))}
+
+        {seriesList.length === 0 && (
+            <div class="card-base px-8 py-6 text-sm text-50">
+                还没有系列，给文章加上 <code>series</code> frontmatter 就会出现在这里。
+            </div>
+        )}
+    </div>
+</MainGridLayout>

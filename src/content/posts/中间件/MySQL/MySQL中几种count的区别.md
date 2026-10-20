@@ -5,6 +5,7 @@ description: "MySQL中count(*),count(1)和count(字段名)的区别"
 image: ""
 tags: ["count", "MySQL"]
 category: "中间件 > MySQL"
+series: MySQL
 draft: false
 lang: ""
 ---

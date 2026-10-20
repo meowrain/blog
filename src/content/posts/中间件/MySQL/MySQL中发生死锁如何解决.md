@@ -5,6 +5,7 @@ description: 'MySQL中发生死锁如何解决'
 image: ''
 tags: ['MySQL','死锁']
 category: '中间件 > MySQL'
+series: MySQL
 draft: false 
 lang: ''
 ---

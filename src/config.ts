@@ -73,6 +73,11 @@ export const navBarConfig: NavBarConfig = {
       url: "#", // 分组入口，不可点击，仅作为下拉菜单的标题
       children: [
         {
+          name: "系列",
+          url: "/series/",
+          external: false,
+        },
+        {
           name: "分类",
           url: "/category/",
           external: false,

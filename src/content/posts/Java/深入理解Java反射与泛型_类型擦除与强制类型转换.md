@@ -5,6 +5,7 @@ description: ''
 image: ''
 tags: [反射, 泛型, 类型擦除, 强制类型转换]
 category: 'Java'
+series: Java 基础
 draft: false 
 lang: ''
 ---

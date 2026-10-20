@@ -17,6 +17,7 @@
 - 年度报告页与归档页「那年今天」卡片：按年聚合写作统计，回看往年同一天发布的文章
 - Markdown/MDX 内容集合，带 frontmatter 校验
 - 站内搜索，基于构建出的 RSS 内容进行客户端检索
+- 系列（合集）导航：用 `series` frontmatter 把同一主题的文章串成系列，正文顶部给出上一章 / 下一章和阅读进度条，`/series/` 汇总全部系列
 - 响应式布局、深色/浅色主题和主题色自定义
 - Swup 页面过渡、目录、阅读时长、代码高亮和复制按钮
 - KaTeX 数学公式、GitHub 风格的提示块和仓库卡片
@@ -107,6 +108,8 @@ description: 文章简介
 image: ./cover.jpg
 tags: [Astro, NestJS]
 category: 开发/博客
+series: JUC
+seriesOrder: 1
 draft: false
 lang: zh_CN
 pinned: false
@@ -127,6 +130,8 @@ pinned: false
 | `draft` | boolean | 否 | `false` | 是否为草稿 |
 | `lang` | string | 否 | `""` | 文章语言 |
 | `pinned` | boolean | 否 | `false` | 是否置顶 |
+| `series` | string | 否 | `""` | 所属系列名，同名文章自动串成系列并可上一章 / 下一章翻页 |
+| `seriesOrder` | number | 否 | - | 系列内的章节序号，留空按发布时间排序 |
 
 ## 站点配置
 

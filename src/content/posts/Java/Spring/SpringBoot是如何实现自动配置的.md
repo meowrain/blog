@@ -5,6 +5,7 @@ description: ''
 image: ''
 tags: ['SpringBoot','Java','自动配置']
 category: 'Java > Spring'
+series: Spring
 draft: false 
 lang: ''
 ---

@@ -5,6 +5,7 @@ description: ''
 image: ''
 tags: [MYSQL,relaylog,MySQL]
 category: '中间件 > MySQL'
+series: MySQL
 draft: false 
 lang: ''
 ---

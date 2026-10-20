@@ -61,6 +61,7 @@ export async function GET(_context: APIContext) {
 			slug: post.slug,
 			url: getPostUrlBySlug(post.slug),
 			category: toCategories(post.data.category),
+			series: post.data.series ?? "",
 			tags: post.data.tags ?? [],
 			published: post.data.published.toISOString().slice(0, 10),
 			headings: extractHeadings(post.body ?? ""),

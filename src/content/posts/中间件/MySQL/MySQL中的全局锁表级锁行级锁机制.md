@@ -5,6 +5,7 @@ description: 'MySQL中的全局锁，表级锁，行级锁机制'
 image: ''
 tags: [全局锁,表级锁，行级锁]
 category: '中间件 > MySQL'
+series: MySQL
 draft: false 
 lang: ''
 ---

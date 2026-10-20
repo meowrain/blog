@@ -5,6 +5,7 @@ description: ''
 image: ''
 tags: [主从复制,中间件,Redis]
 category: '中间件 > Redis'
+series: Redis
 draft: false 
 lang: ''
 ---

@@ -5,6 +5,7 @@ description: ''
 image: ''
 tags: [MySQL, binlog, redolog, undolog]
 category: '中间件 > MySQL'
+series: MySQL
 draft: false 
 lang: ''
 ---

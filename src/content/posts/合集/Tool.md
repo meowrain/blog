@@ -5,6 +5,8 @@ description: ''
 image: ''
 tags: [Java]
 category: '合集'
+series: 笔记合集
+seriesOrder: 1
 draft: false 
 lang: ''
 ---

@@ -5,6 +5,7 @@ description: ''
 image: ''
 tags: [函数式接口, Java, 编程]
 category: 'Java'
+series: Java 基础
 draft: false 
 lang: ''
 ---

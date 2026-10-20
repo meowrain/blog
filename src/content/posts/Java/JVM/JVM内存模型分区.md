@@ -5,6 +5,7 @@ description: ''
 image: ''
 tags: [JVM,内存模型]
 category: 'Java > JVM'
+series: JVM
 draft: false 
 lang: ''
 ---

@@ -6,6 +6,8 @@ image: ''
 draft: false 
 lang: ''
 category: Python
+series: Python 面向对象
+seriesOrder: 3
 tags: 
   - Python
   - OOP

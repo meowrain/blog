@@ -5,6 +5,7 @@ description: ''
 image: ''
 tags: []
 category: '中间件 > Redis'
+series: Redis
 draft: false 
 lang: ''
 ---

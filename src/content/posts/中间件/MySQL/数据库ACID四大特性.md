@@ -5,6 +5,7 @@ description: ''
 image: ''
 tags: [ACID,四大特性]
 category: '中间件 > MySQL'
+series: MySQL
 draft: false 
 lang: ''
 ---

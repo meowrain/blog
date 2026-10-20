@@ -117,6 +117,8 @@ description: Post description
 image: ./cover.jpg  # Relative to post
 tags: [tag1, tag2]
 category: Category
+series: JUC  # Optional, groups posts into a series with prev/next chapter + progress bar
+seriesOrder: 1  # Optional, chapter order inside the series (defaults to published date)
 draft: false
 lang: zh_CN  # Optional, overrides site default
 ---

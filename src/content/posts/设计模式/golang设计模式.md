@@ -5,6 +5,7 @@ description: ''
 image: ''
 tags: [设计模式, golang]
 category: '设计模式'
+series: 设计模式
 draft: false 
 lang: ''
 ---

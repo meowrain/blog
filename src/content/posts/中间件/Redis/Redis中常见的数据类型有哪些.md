@@ -5,6 +5,7 @@ description: 'Redis中常见的数据类型有哪些'
 image: ''
 tags: [Redis, 中间件, Redis数据类型]
 category: '中间件 > Redis'
+series: Redis
 draft: false 
 lang: ''
 ---

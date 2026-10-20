@@ -5,6 +5,7 @@ description: 深入理解Spring容器的核心接口BeanFactory与特殊工厂Be
 image: ''
 tags: [Java, Spring, IoC, DI, BeanFactory, FactoryBean]
 category: 'Java > Spring'
+series: Spring
 draft: false 
 lang: zh-CN
 ---

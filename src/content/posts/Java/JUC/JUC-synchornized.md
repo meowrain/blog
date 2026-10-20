@@ -6,6 +6,7 @@ image: ''
 tags:
   - JUC
 category: Java > JUC
+series: JUC
 draft: false
 lang: ''
 ---

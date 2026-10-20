@@ -5,6 +5,7 @@ description: ''
 image: ''
 tags: [JUC,JAVA,volatile,双重锁]
 category: 'Java > JUC'
+series: JUC
 draft: false 
 lang: ''
 ---

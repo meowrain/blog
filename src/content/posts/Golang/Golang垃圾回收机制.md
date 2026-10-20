@@ -6,6 +6,7 @@ image: 'https://blog.meowrain.cn/api/i/2025/07/19/uje4vo-1.webp'
 thumb: /covers/uje4vo-1-86c1c7f647.webp
 tags: [垃圾回收, Golang, GC]
 category: 'Go'
+series: Golang
 draft: false 
 lang: ''
 ---

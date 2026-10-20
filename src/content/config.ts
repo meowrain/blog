@@ -18,6 +18,11 @@ const postsCollection = defineCollection({
 		]).optional(),
 		lang: z.string().optional().default(""),
 		pinned: z.boolean().optional().default(false),
+		// 系列（合集）名：同一 series 的文章按 seriesOrder / 发布时间排成章节，
+		// 正文顶部会渲染「上一章 / 下一章 + 进度条」。留空表示不属于任何系列。
+		series: z.string().optional().default(""),
+		// 章节序号，留空按发布时间排序；合集这类固定阅读顺序的系列用它指定。
+		seriesOrder: z.number().optional(),
 
 		/* For internal use */
 		prevTitle: z.string().default(""),

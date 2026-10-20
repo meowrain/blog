@@ -7,6 +7,7 @@ tags:
   - JUC
   - Java
 category: Java > JUC
+series: JUC
 draft: false
 lang: ''
 ---

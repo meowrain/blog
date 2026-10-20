@@ -5,6 +5,7 @@ description: ' Java内存模型 '
 image: ''
 tags: ['JMM','Java内存模型']
 category: 'Java > 面试题'
+series: Java 基础
 draft: false 
 lang: ''
 ---

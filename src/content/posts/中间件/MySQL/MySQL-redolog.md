@@ -5,6 +5,7 @@ description: ''
 image: ''
 tags: [MYSQL,redolog,MySQL]
 category: '中间件 > MySQL'
+series: MySQL
 draft: false 
 lang: ''
 ---

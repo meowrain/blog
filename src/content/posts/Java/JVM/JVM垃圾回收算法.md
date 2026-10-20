@@ -5,6 +5,7 @@ description: ''
 image: ''
 tags: [JVM,垃圾回收，分代回收]
 category: 'Java > JVM'
+series: JVM
 draft: false 
 lang: ''
 ---

@@ -5,11 +5,13 @@ import Markdown from "@components/misc/Markdown.astro";
 
 import MainGridLayout from "@layouts/MainGridLayout.astro";
 import { getSortedPosts } from "@utils/content-utils";
+import { getSeriesInfo } from "@utils/series-utils";
 import { getDir, getPostUrlBySlug } from "@utils/url-utils";
 import { Icon } from "astro-icon/components";
 import { gitHubEditConfig, licenseConfig, ogImageBase } from "src/config";
 import PostMetadata from "../../components/PostMeta.astro";
 import ImageWrapper from "../../components/misc/ImageWrapper.astro";
+import SeriesNav from "../../components/SeriesNav.astro";
 import { profileConfig, siteConfig } from "../../config";
 import { formatDateToYYYYMMDD } from "../../utils/date-utils";
 
@@ -25,6 +27,9 @@ const { entry } = Astro.props;
 const { Content, headings } = await entry.render();
 
 const { remarkPluginFrontmatter } = await entry.render();
+
+// 系列内上一章 / 下一章，不在任何系列里就是 null
+const seriesInfo = await getSeriesInfo(entry);
 
 const jsonLd = {
 	"@context": "https://schema.org",
@@ -117,6 +122,8 @@ const ogImage =
                 ></PostMetadata>
                 {!entry.data.image && <div class="border-[var(--line-divider)] border-dashed border-b-[1px] mb-5"></div>}
             </div>
+
+            {seriesInfo && <SeriesNav series={seriesInfo} />}
 
             <!-- always show cover as long as it has one -->
 

@@ -5,6 +5,7 @@ description: ''
 image: ''
 tags: [HashMap,Java]
 category: 'Java > 集合框架'
+series: Java 集合
 draft: false 
 lang: ''
 ---

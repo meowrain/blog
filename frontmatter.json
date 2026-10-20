@@ -47,6 +47,16 @@
           "type": "list"
         },
         {
+          "title": "series",
+          "name": "series",
+          "type": "string"
+        },
+        {
+          "title": "seriesOrder",
+          "name": "seriesOrder",
+          "type": "number"
+        },
+        {
           "title": "draft",
           "name": "draft",
           "type": "boolean"

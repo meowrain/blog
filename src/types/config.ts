@@ -122,6 +122,8 @@ export type BlogPostData = {
 	category?: string | string[];
 	draft?: boolean;
 	image?: string;
+	series?: string;
+	seriesOrder?: number;
 	prevTitle?: string;
 	prevSlug?: string;
 	nextTitle?: string;

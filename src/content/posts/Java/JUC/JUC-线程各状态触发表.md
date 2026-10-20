@@ -6,6 +6,7 @@ image: 'https://blog.meowrain.cn/api/i/2026/02/18/ubkq6z-1.png'
 thumb: /covers/ubkq6z-1-7151e80239.webp
 tags: [JUC,Java]
 category: 'Java > JUC'
+series: JUC
 draft: false 
 lang: ''
 ---

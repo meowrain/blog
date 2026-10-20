@@ -5,6 +5,7 @@ description: ''
 image: 'https://blog.meowrain.cn/api/i/2025/07/19/p9zr81-1.webp'
 tags: [Redis, 中间件, Redis数据类型]
 category: '中间件 > Redis'
+series: Redis
 draft: false 
 lang: ''
 ---

@@ -5,6 +5,7 @@ description: ''
 image: 'https://blog.meowrain.cn/api/i/2026/02/18/umxyzl-1.png'
 tags: [JUC,Java]
 category: 'Java > JUC'
+series: JUC
 draft: false 
 lang: ''
 ---
