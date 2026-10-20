@@ -1,0 +1,109 @@
+---
+import ProjectCard from "@components/personal/ProjectCard.astro";
+import MainGridLayout from "@layouts/MainGridLayout.astro";
+import {
+	PROJECT_STATUS_LABELS,
+	type ProjectStatus,
+} from "@utils/personal-core";
+import { getSortedProjects } from "@utils/personal-utils";
+import { Icon } from "astro-icon/components";
+
+const projects = await getSortedProjects();
+
+const featured = projects.filter((project) => project.data.featured);
+const rest = projects.filter((project) => !project.data.featured);
+
+const statusOrder: ProjectStatus[] = ["active", "wip", "archived"];
+const statusCounts = statusOrder
+	.map((status) => ({
+		status,
+		label: PROJECT_STATUS_LABELS[status],
+		count: projects.filter((project) => project.data.status === status).length,
+	}))
+	.filter((item) => item.count > 0);
+---
+
+<MainGridLayout
+	title="项目"
+	description="自己写和正在维护的项目：博客、后台、小工具，以及还没做完的实验。"
+>
+	<div class="flex flex-col gap-4">
+		<div class="card-base px-6 py-5 md:px-8">
+			<div class="flex items-center gap-2">
+				<Icon name="material-symbols:rocket-launch-outline-rounded" class="text-2xl text-[var(--primary)]" />
+				<h1 class="text-2xl font-bold text-90">项目</h1>
+			</div>
+			<p class="mt-2 text-sm leading-relaxed text-50">
+				自己写、自己维护的东西。有的在跑，有的还在改，有的已经归档但舍不得删。
+			</p>
+			<div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-30">
+				<span>{projects.length} 个项目</span>
+				{statusCounts.map((item) => <span>{item.label} {item.count}</span>)}
+			</div>
+		</div>
+
+		{
+			featured.length > 0 && (
+				<section class="flex flex-col gap-3">
+					<div class="flex items-center gap-3 px-1">
+						<span class="rounded-full bg-[var(--btn-regular-bg)] px-3 py-1 text-xs font-bold text-[var(--btn-content)]">
+							精选
+						</span>
+						<div class="h-px flex-1 bg-[var(--line-divider)]" />
+					</div>
+					<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+						{featured.map((project) => (
+							<ProjectCard
+								title={project.data.title}
+								description={project.data.description}
+								icon={project.data.icon}
+								tags={project.data.tags}
+								status={project.data.status}
+								url={project.data.url}
+								repo={project.data.repo}
+								href={`/projects/${project.slug}/`}
+							/>
+						))}
+					</div>
+				</section>
+			)
+		}
+
+		{
+			rest.length > 0 && (
+				<section class="flex flex-col gap-3">
+					{featured.length > 0 && (
+						<div class="flex items-center gap-3 px-1">
+							<span class="rounded-full bg-[var(--btn-regular-bg)] px-3 py-1 text-xs font-bold text-[var(--btn-content)]">
+								其他项目
+							</span>
+							<div class="h-px flex-1 bg-[var(--line-divider)]" />
+						</div>
+					)}
+					<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+						{rest.map((project) => (
+							<ProjectCard
+								title={project.data.title}
+								description={project.data.description}
+								icon={project.data.icon}
+								tags={project.data.tags}
+								status={project.data.status}
+								url={project.data.url}
+								repo={project.data.repo}
+								href={`/projects/${project.slug}/`}
+							/>
+						))}
+					</div>
+				</section>
+			)
+		}
+
+		{
+			projects.length === 0 && (
+				<div class="card-base px-8 py-6 text-sm text-50">
+					还没有项目。在 <code>src/content/projects/</code> 里新建一个 Markdown 文件就会出现在这里。
+				</div>
+			)
+		}
+	</div>
+</MainGridLayout>

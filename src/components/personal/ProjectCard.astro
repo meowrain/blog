@@ -1,0 +1,88 @@
+---
+import {
+	PROJECT_STATUS_ICONS,
+	PROJECT_STATUS_LABELS,
+	type ProjectStatus,
+} from "@utils/personal-core";
+import { Icon } from "astro-icon/components";
+
+interface Props {
+	title: string;
+	description: string;
+	icon: string;
+	tags: string[];
+	status: ProjectStatus;
+	url?: string;
+	repo?: string;
+	href?: string;
+}
+
+const {
+	title,
+	description,
+	icon,
+	tags,
+	status,
+	url = "",
+	repo = "",
+	href = "",
+} = Astro.props;
+
+// 整张卡片可点：有详情页时跳详情页，否则跳到项目主页，再退到仓库。
+const target = href || url || repo;
+const statusLabel = PROJECT_STATUS_LABELS[status];
+const statusIcon = PROJECT_STATUS_ICONS[status];
+// 三种状态用不同色调区分。Tailwind 的 `/10` 透明度修饰符对 CSS 变量不生效，
+// 所以颜色直接写成带 alpha 的 oklch，主题色变化时会跟着变。
+const statusTone =
+	status === "active"
+		? "text-[var(--primary)] bg-[oklch(0.70_0.14_var(--hue)/0.12)]"
+		: status === "wip"
+			? "text-[oklch(0.62_0.14_70)] bg-[oklch(0.62_0.14_70/0.12)] dark:text-[oklch(0.80_0.13_70)]"
+			: "text-50 bg-black/5 dark:bg-white/10";
+---
+
+<div class="card-base group relative flex h-full flex-col gap-3 border border-black/10 p-5 dark:border-white/10">
+	<div class="flex items-start gap-3">
+		<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--btn-regular-bg)] text-[var(--primary)]">
+			<Icon name={icon} class="text-[1.35rem]" />
+		</div>
+		<div class="min-w-0 flex-1">
+			<h3 class="truncate font-bold text-90">
+				{
+					target ? (
+						<a href={target} class="transition after:absolute after:inset-0 after:content-[''] group-hover:text-[var(--primary)]">
+							{title}
+						</a>
+					) : (
+						title
+					)
+				}
+			</h3>
+			<div class={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${statusTone}`}>
+				<Icon name={statusIcon} class="text-[0.875rem]" />
+				{statusLabel}
+			</div>
+		</div>
+	</div>
+
+	<p class="line-clamp-2 text-sm leading-relaxed text-50">{description}</p>
+
+	<div class="mt-auto flex flex-wrap items-center gap-1.5">
+		{tags.slice(0, 4).map((tag) => (
+			<span class="rounded-full bg-[var(--btn-regular-bg)] px-2 py-0.5 text-xs text-50">#{tag}</span>
+		))}
+		<div class="relative z-10 ml-auto flex items-center gap-1">
+			{repo && (
+				<a href={repo} target="_blank" rel="noopener noreferrer" aria-label={`${title} 仓库`} class="btn-plain h-7 w-7 rounded-md">
+					<Icon name="fa6-brands:github" class="text-[0.875rem]" />
+				</a>
+			)}
+			{url && (
+				<a href={url} target="_blank" rel="noopener noreferrer" aria-label={`${title} 网站`} class="btn-plain h-7 w-7 rounded-md">
+					<Icon name="material-symbols:open-in-new" class="text-[0.875rem]" />
+				</a>
+			)}
+		</div>
+	</div>
+</div>
