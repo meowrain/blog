@@ -23,6 +23,7 @@ const interval = 50;
                 description={entry.data.description}
                 draft={entry.data.draft}
                 category={entry.data.category}
+                tags={entry.data.tags}
                 class:list="onload-animation"
                 style={`animation-delay: calc(var(--content-delay) + ${delay++ * interval}ms);`}
         ></PostCard>
