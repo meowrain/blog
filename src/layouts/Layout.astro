@@ -10,6 +10,7 @@ import ConfigCarrier from "@components/ConfigCarrier.astro";
 import FallingEffect from "@components/widget/FallingEffect.astro";
 import EmojiCursor from "@components/widget/EmojiCursor.astro";
 import FindAgent from "@components/widget/FindAgent.svelte";
+import MobileTOC from "@components/widget/MobileTOC.astro";
 import {
   AUTO_MODE,
   BANNER_HEIGHT,
@@ -416,6 +417,8 @@ const bannerOffset =
     <ConfigCarrier />
     <!-- 全站「找文章」入口：放在 Swup 容器之外，换页时面板和对话不会被替换 -->
     <FindAgent client:only="svelte" />
+    <!-- 移动端目录 + 阅读进度条：同样必须在 Swup 容器外，切页后由组件自己重建目录 -->
+    <MobileTOC />
 
     <!--
       相册图片查看器。必须放在 Swup 容器（main/#toc）和 z-30 的正文容器之外：

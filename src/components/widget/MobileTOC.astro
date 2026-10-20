@@ -1,0 +1,762 @@
+---
+import { Icon } from "astro-icon/components";
+import { siteConfig } from "../../config";
+
+// 组件故意不放在 Swup 容器里：容器（main/#toc）里的 fixed 会被带 transform 的
+// #content-wrapper 当成包含块，抽屉就铺不满视口。放在容器外意味着组件会跨页存活，
+// 所以目录内容由浏览器端从 .markdown-content 里按当前页标题重建。
+const tocDepth = siteConfig.toc.depth;
+const tocEnabled = siteConfig.toc.enable;
+---
+
+<mobile-toc data-toc-depth={tocDepth} data-toc-enabled={tocEnabled ? "true" : "false"} hidden>
+	{/* 阅读进度条：手机 / 平板没有右侧 TOC，用顶部细条兜底 */}
+	<div
+		class="reading-progress"
+		role="progressbar"
+		aria-label="阅读进度"
+		aria-valuemin="0"
+		aria-valuemax="100"
+		aria-valuenow="0"
+	>
+		<div class="reading-progress-fill"></div>
+	</div>
+
+	<button
+		type="button"
+		class="mobile-toc-toggle"
+		aria-label="打开文章目录"
+		aria-expanded="false"
+		aria-controls="mobile-toc-drawer"
+		hidden
+	>
+		<Icon
+			name="material-symbols:format-list-bulleted-rounded"
+			class="text-[1.375rem]"
+		/>
+	</button>
+
+	<div class="mobile-toc-overlay" aria-hidden="true"></div>
+
+	<aside
+		id="mobile-toc-drawer"
+		class="mobile-toc-drawer"
+		role="dialog"
+		aria-modal="true"
+		aria-label="文章目录"
+	>
+		<div class="mobile-toc-header">
+			<div class="flex min-w-0 items-center gap-2">
+				<Icon
+					name="material-symbols:format-list-bulleted-rounded"
+					class="text-[1.125rem] text-[var(--primary)]"
+				/>
+				<span class="mobile-toc-title">目录</span>
+			</div>
+			<div class="flex shrink-0 items-center gap-1">
+				<span class="mobile-toc-percent">0%</span>
+				<button type="button" class="mobile-toc-close" aria-label="关闭文章目录">
+					<Icon name="material-symbols:close-rounded" class="text-[1.25rem]" />
+				</button>
+			</div>
+		</div>
+
+		<nav class="mobile-toc-list" aria-label="文章目录"></nav>
+	</aside>
+</mobile-toc>
+
+<style>
+	mobile-toc {
+		display: contents;
+	}
+
+	mobile-toc[hidden] {
+		display: none;
+	}
+
+	.reading-progress {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 3px;
+		z-index: 60;
+		pointer-events: none;
+		background: transparent;
+	}
+
+	.reading-progress-fill {
+		height: 100%;
+		width: 0%;
+		border-radius: 0 9999px 9999px 0;
+		background: var(--primary);
+		transition: width 0.12s linear;
+	}
+
+	.mobile-toc-toggle {
+		position: fixed;
+		right: 1rem;
+		bottom: 5.5rem;
+		z-index: 40;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 3.5rem;
+		height: 3.5rem;
+		border-radius: 9999px;
+		border: 1px solid rgba(0, 0, 0, 0.08);
+		background: var(--card-bg);
+		color: var(--primary);
+		box-shadow: 0 12px 30px -14px rgba(0, 0, 0, 0.45);
+		transition:
+			transform 0.2s ease,
+			box-shadow 0.2s ease;
+	}
+
+	.mobile-toc-toggle[hidden] {
+		display: none;
+	}
+
+	.mobile-toc-toggle:active {
+		transform: scale(0.92);
+	}
+
+	/* lg 起 AI 助手按钮挪到 right-8 / bottom-8，这里跟着让开 */
+	@media (min-width: 1024px) {
+		.mobile-toc-toggle {
+			right: 2rem;
+			bottom: 6.5rem;
+		}
+	}
+
+	.mobile-toc-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 70;
+		opacity: 0;
+		visibility: hidden;
+		pointer-events: none;
+		background: rgba(0, 0, 0, 0.38);
+		-webkit-backdrop-filter: blur(2px);
+		backdrop-filter: blur(2px);
+		transition:
+			opacity 0.25s ease,
+			visibility 0.25s;
+	}
+
+	mobile-toc.is-open .mobile-toc-overlay {
+		opacity: 1;
+		visibility: visible;
+		pointer-events: auto;
+	}
+
+	.mobile-toc-drawer {
+		position: fixed;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 71;
+		display: flex;
+		flex-direction: column;
+		width: min(84vw, 21rem);
+		visibility: hidden;
+		transform: translateX(102%);
+		background: var(--float-panel-bg);
+		box-shadow: -20px 0 50px -30px rgba(0, 0, 0, 0.4);
+		/* visibility 跟着滑出动画结束再隐藏；打开时立刻可见，否则焦点放不进抽屉 */
+		transition:
+			transform 0.3s cubic-bezier(0.32, 0.72, 0, 1),
+			visibility 0s linear 0.3s;
+	}
+
+	/* 只有开启磨砂外观时才模糊抽屉背后的内容 */
+	:global(html.glass) .mobile-toc-drawer {
+		-webkit-backdrop-filter: blur(var(--glass-blur, 22px));
+		backdrop-filter: blur(var(--glass-blur, 22px));
+	}
+
+	mobile-toc.is-open .mobile-toc-drawer {
+		visibility: visible;
+		transform: none;
+		transition:
+			transform 0.3s cubic-bezier(0.32, 0.72, 0, 1),
+			visibility 0s linear 0s;
+	}
+
+	.mobile-toc-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding: calc(env(safe-area-inset-top, 0px) + 1rem) 0.75rem 0.75rem 1rem;
+		border-bottom: 1px solid var(--line-divider);
+	}
+
+	.mobile-toc-title {
+		font-weight: 700;
+		color: rgba(0, 0, 0, 0.9);
+	}
+
+	.mobile-toc-percent {
+		font-size: 0.75rem;
+		font-variant-numeric: tabular-nums;
+		color: rgba(0, 0, 0, 0.45);
+	}
+
+	.mobile-toc-close {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.25rem;
+		height: 2.25rem;
+		border-radius: 0.625rem;
+		color: rgba(0, 0, 0, 0.55);
+		transition:
+			background 0.2s ease,
+			color 0.2s ease;
+	}
+
+	.mobile-toc-close:hover,
+	.mobile-toc-close:active {
+		background: var(--toc-btn-hover);
+		color: var(--primary);
+	}
+
+	.mobile-toc-list {
+		flex: 1;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		-webkit-overflow-scrolling: touch;
+		padding: 0.75rem 0.625rem calc(env(safe-area-inset-bottom, 0px) + 1rem);
+		/* 抽屉里不需要看见滚动条，滑动时也没有可见位移提示 */
+		scrollbar-width: none;
+		-ms-overflow-style: none;
+	}
+
+	.mobile-toc-list::-webkit-scrollbar {
+		display: none;
+	}
+
+	/* 类名由脚本生成，用 :global 避免被 scope 掉 */
+	:global(.mobile-toc-link) {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.625rem;
+		padding: 0.55rem 0.75rem;
+		border-radius: 0.75rem;
+		font-size: 0.875rem;
+		line-height: 1.35;
+		color: rgba(0, 0, 0, 0.62);
+		transition:
+			background 0.2s ease,
+			color 0.2s ease;
+	}
+
+	:global(.mobile-toc-link:hover) {
+		background: var(--toc-btn-hover);
+	}
+
+	:global(.mobile-toc-link[data-active="true"]) {
+		background: var(--toc-btn-hover);
+		color: var(--primary);
+		font-weight: 700;
+	}
+
+	:global(.mobile-toc-link[data-depth="1"]) {
+		padding-left: 1.75rem;
+		font-size: 0.8125rem;
+	}
+
+	:global(.mobile-toc-link[data-depth="2"]) {
+		padding-left: 2.5rem;
+		font-size: 0.78125rem;
+	}
+
+	:global(.mobile-toc-dot) {
+		flex-shrink: 0;
+		width: 0.375rem;
+		height: 0.375rem;
+		margin-top: 0.45rem;
+		border-radius: 9999px;
+		background: currentColor;
+		opacity: 0.4;
+		transition:
+			transform 0.2s ease,
+			opacity 0.2s ease;
+	}
+
+	:global(.mobile-toc-link[data-active="true"] .mobile-toc-dot) {
+		opacity: 1;
+		transform: scale(1.35);
+	}
+
+	:global(.mobile-toc-text) {
+		word-break: break-word;
+	}
+
+	:global(.dark) .mobile-toc-toggle {
+		border-color: rgba(255, 255, 255, 0.1);
+	}
+
+	:global(.dark) .mobile-toc-title {
+		color: rgba(255, 255, 255, 0.9);
+	}
+
+	:global(.dark) .mobile-toc-percent {
+		color: rgba(255, 255, 255, 0.45);
+	}
+
+	:global(.dark) .mobile-toc-close {
+		color: rgba(255, 255, 255, 0.55);
+	}
+
+	/* 目录项由脚本运行时创建，拿不到 Astro 的 scope 属性，整条选择器都要 global */
+	:global(.dark .mobile-toc-link) {
+		color: rgba(255, 255, 255, 0.62);
+	}
+
+	/* 深色下当前章节同样用主题色，别被上面的深色文字规则盖掉 */
+	:global(.dark .mobile-toc-link[data-active="true"]) {
+		color: var(--primary);
+	}
+
+	/* AI 助手面板打开时让开它，避免按钮压在面板上 */
+	:global(body.find-panel-open) .mobile-toc-toggle {
+		display: none;
+	}
+
+	/* 2xl 起右侧已有完整 TOC，移动端这套完全不渲染 */
+	@media (min-width: 1536px) {
+		mobile-toc {
+			display: none;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.reading-progress-fill,
+		.mobile-toc-overlay,
+		.mobile-toc-drawer,
+		:global(.mobile-toc-dot) {
+			transition: none;
+		}
+	}
+</style>
+
+<script>
+	type TocHeading = { id: string; text: string; depth: number };
+
+	const HEADING_SELECTOR = "h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]";
+
+	class MobileTOCElement extends HTMLElement {
+		private toggle: HTMLButtonElement | null = null;
+		private overlay: HTMLElement | null = null;
+		private drawer: HTMLElement | null = null;
+		private closeButton: HTMLButtonElement | null = null;
+		private listEl: HTMLElement | null = null;
+		private progressBar: HTMLElement | null = null;
+		private progressFill: HTMLElement | null = null;
+		private percentEl: HTMLElement | null = null;
+		private links: HTMLAnchorElement[] = [];
+		private headingIndex = new Map<Element, number>();
+		private observer: IntersectionObserver | null = null;
+		private activeIndex = -1;
+		private rafId = 0;
+		private lastFocused: HTMLElement | null = null;
+		private initialized = false;
+		private swupBound = false;
+		private refreshTimer: number | null = null;
+		private contentEl: HTMLElement | null = null;
+		private signature = "";
+
+		connectedCallback(): void {
+			if (this.initialized || !this.isConnected) return;
+			this.initialized = true;
+
+			this.toggle = this.querySelector<HTMLButtonElement>(".mobile-toc-toggle");
+			this.overlay = this.querySelector<HTMLElement>(".mobile-toc-overlay");
+			this.drawer = this.querySelector<HTMLElement>(".mobile-toc-drawer");
+			this.closeButton =
+				this.querySelector<HTMLButtonElement>(".mobile-toc-close");
+			this.listEl = this.querySelector<HTMLElement>(".mobile-toc-list");
+			this.progressBar = this.querySelector<HTMLElement>(".reading-progress");
+			this.progressFill = this.querySelector<HTMLElement>(
+				".reading-progress-fill",
+			);
+			this.percentEl = this.querySelector<HTMLElement>(".mobile-toc-percent");
+
+			this.bindEvents();
+			this.bindSwup();
+
+			// 首屏时正文容器可能还在做进场动画
+			requestAnimationFrame(() => this.refresh());
+		}
+
+		disconnectedCallback(): void {
+			this.observer?.disconnect();
+			this.observer = null;
+			window.removeEventListener("scroll", this.onScroll);
+			window.removeEventListener("resize", this.onScroll);
+			document.removeEventListener("keydown", this.onKeydown);
+			this.overlay?.removeEventListener("touchmove", this.blockBackgroundScroll);
+			if (this.rafId) {
+				cancelAnimationFrame(this.rafId);
+				this.rafId = 0;
+			}
+			if (this.refreshTimer) {
+				window.clearTimeout(this.refreshTimer);
+				this.refreshTimer = null;
+			}
+			this.initialized = false;
+		}
+
+		private get isOpen(): boolean {
+			return this.classList.contains("is-open");
+		}
+
+		private bindEvents(): void {
+			this.toggle?.addEventListener("click", () => {
+				if (this.isOpen) this.close();
+				else this.open();
+			});
+			this.closeButton?.addEventListener("click", () => this.close());
+			this.overlay?.addEventListener("click", () => this.close());
+			// 遮罩上的滑动/滚轮不该带动背后的正文
+			this.overlay?.addEventListener("touchmove", this.blockBackgroundScroll, {
+				passive: false,
+			});
+			this.overlay?.addEventListener("wheel", this.blockBackgroundScroll, {
+				passive: false,
+			});
+
+			window.addEventListener("scroll", this.onScroll, { passive: true });
+			window.addEventListener("resize", this.onScroll, { passive: true });
+			document.addEventListener("keydown", this.onKeydown);
+		}
+
+		/**
+		 * 组件常驻在 Swup 容器之外，切页后不会重新 connected，
+		 * 需要自己监听 Swup 的生命周期重建目录。
+		 */
+		private bindSwup(): void {
+			const bind = () => {
+				if (this.swupBound || !window.swup?.hooks) return;
+				this.swupBound = true;
+				window.swup.hooks.on("page:view", this.scheduleRefresh);
+				window.swup.hooks.on("content:replace", this.scheduleRefresh);
+			};
+
+			if (window.swup?.hooks) bind();
+			else document.addEventListener("swup:enable", bind, { once: true });
+		}
+
+		private scheduleRefresh = (): void => {
+			if (this.refreshTimer) window.clearTimeout(this.refreshTimer);
+			// content:replace 时拿到的还是旧 DOM，等 Swup 把页面写完再扫一次
+			this.refreshTimer = window.setTimeout(() => {
+				this.refreshTimer = null;
+				this.refresh();
+			}, 60);
+		};
+
+		private blockBackgroundScroll = (event: Event): void => {
+			if (event.cancelable) event.preventDefault();
+		};
+
+		private open(): void {
+			if (this.isOpen || !this.hasHeadings) return;
+			this.lastFocused =
+				document.activeElement instanceof HTMLElement
+					? document.activeElement
+					: null;
+			this.classList.add("is-open");
+			this.toggle?.setAttribute("aria-expanded", "true");
+			this.scrollActiveIntoView(false);
+			// 抽屉打开前是 visibility:hidden，焦点要等样式生效后才放得进去
+			requestAnimationFrame(() => {
+				if (this.isOpen) this.closeButton?.focus({ preventScroll: true });
+			});
+		}
+
+		private close(): void {
+			if (!this.isOpen) return;
+			this.classList.remove("is-open");
+			this.toggle?.setAttribute("aria-expanded", "false");
+			this.restoreFocus();
+		}
+
+		private restoreFocus(): void {
+			const target = this.lastFocused ?? this.toggle;
+			// 切页 / 非文章页时按钮可能已经隐藏，别把焦点抢到看不见的地方
+			if (!target || !target.isConnected) return;
+			if (target === this.toggle && this.toggle?.hidden) return;
+			target.focus({ preventScroll: true });
+		}
+
+		private onKeydown = (event: KeyboardEvent): void => {
+			if (!this.isOpen) return;
+
+			if (event.key === "Escape") {
+				event.preventDefault();
+				this.close();
+				return;
+			}
+
+			if (event.key !== "Tab" || !this.drawer) return;
+
+			// 简单的焦点循环，避免 Tab 跑到抽屉背后的页面
+			const focusables = Array.from(
+				this.drawer.querySelectorAll<HTMLElement>(
+					'a[href], button:not([disabled])',
+				),
+			);
+			if (!focusables.length) return;
+			const first = focusables[0];
+			const last = focusables[focusables.length - 1];
+			const active = document.activeElement;
+			if (event.shiftKey && active === first) {
+				event.preventDefault();
+				last.focus();
+			} else if (!event.shiftKey && active === last) {
+				event.preventDefault();
+				first.focus();
+			}
+		};
+
+		private onScroll = (): void => {
+			if (this.rafId) return;
+			this.rafId = requestAnimationFrame(() => {
+				this.rafId = 0;
+				// 目录条目不多，直接按位置算当前章节，比只靠 IO 回调可靠：
+				// 大段代码块里可能一个标题都不在激活带上，此时不能停在旧值
+				this.updateActiveFromPosition();
+				this.updateProgress();
+			});
+		};
+
+		private get hasHeadings(): boolean {
+			return this.links.length > 0;
+		}
+
+		/**
+		 * 按当前页面重建目录：找正文容器、收集标题、重建 IO。
+		 * 非文章页（没有正文容器）直接隐藏整个组件。
+		 */
+		private refresh(): void {
+			if (!this.isConnected) return;
+
+			// 关掉目录时整块隐藏（进度条随目录一起关，和桌面端行为一致）
+			const content =
+				this.dataset.tocEnabled === "true" ? this.getContentElement() : null;
+			if (!content) {
+				// 切页收起抽屉，但不还原焦点：即将隐藏的按钮不该被聚焦
+				this.classList.remove("is-open");
+				this.toggle?.setAttribute("aria-expanded", "false");
+				this.hidden = true;
+				this.reset();
+				return;
+			}
+
+			const headings = this.collectHeadings(content);
+			const signature = headings.map((h) => h.id).join("|");
+
+			// Swup 每次换页都会替换正文节点：标题名字相同也要重建 IO，
+			// 否则观察的还是已经脱离文档的旧标题
+			const contentChanged = content !== this.contentEl;
+			this.contentEl = content;
+
+			// 标题没变（例如同一页的锚点跳转）就不重建，避免抽屉闪一下
+			if (contentChanged || signature !== this.signature) {
+				this.signature = signature;
+				this.renderLinks(headings, content);
+			}
+
+			this.hidden = false;
+			this.updateProgress();
+		}
+
+		private reset(): void {
+			this.signature = "";
+			this.contentEl = null;
+			this.activeIndex = -1;
+			this.links = [];
+			this.headingIndex.clear();
+			this.observer?.disconnect();
+			this.observer = null;
+			if (this.listEl) this.listEl.replaceChildren();
+			this.toggle?.setAttribute("hidden", "");
+		}
+
+		private getContentElement(): HTMLElement | null {
+			// 只认文章页的正文容器；聊天/助手面板里的 .prose 不能算
+			return document.querySelector<HTMLElement>(
+				"#post-container .markdown-content",
+			);
+		}
+
+		private collectHeadings(content: HTMLElement): TocHeading[] {
+			const maxDepth = Number(this.dataset.tocDepth) || 2;
+			const all = Array.from(
+				content.querySelectorAll<HTMLElement>(HEADING_SELECTOR),
+			).map((heading) => ({
+				id: heading.id,
+				text: this.headingText(heading),
+				depth: Number(heading.tagName.substring(1)),
+			}));
+
+			if (!all.length) return [];
+
+			const minDepth = Math.min(...all.map((heading) => heading.depth));
+			return all.filter((heading) => heading.depth < minDepth + maxDepth);
+		}
+
+		private headingText(heading: HTMLElement): string {
+			// rehype-autolink-headings 会往标题末尾追加一个 "#" 锚点
+			const clone = heading.cloneNode(true) as HTMLElement;
+			for (const anchor of clone.querySelectorAll(".anchor")) anchor.remove();
+			return clone.textContent?.trim() ?? "";
+		}
+
+		private renderLinks(
+			headings: TocHeading[],
+			content: HTMLElement,
+		): void {
+			this.observer?.disconnect();
+			this.headingIndex.clear();
+			this.activeIndex = -1;
+
+			const fragment = document.createDocumentFragment();
+			this.links = [];
+
+			const minDepth = headings.length
+				? Math.min(...headings.map((heading) => heading.depth))
+				: 0;
+
+			for (const heading of headings) {
+				const link = document.createElement("a");
+				link.href = `#${heading.id}`;
+				link.className = "mobile-toc-link";
+				link.dataset.depth = String(heading.depth - minDepth);
+				link.addEventListener("click", () => this.close());
+
+				const dot = document.createElement("span");
+				dot.className = "mobile-toc-dot";
+				const text = document.createElement("span");
+				text.className = "mobile-toc-text";
+				text.textContent = heading.text;
+				link.append(dot, text);
+
+				fragment.appendChild(link);
+				this.links.push(link);
+			}
+
+			this.listEl?.replaceChildren(fragment);
+
+			if (!this.links.length) {
+				this.toggle?.setAttribute("hidden", "");
+				return;
+			}
+
+			this.toggle?.removeAttribute("hidden");
+
+			this.observer = new IntersectionObserver(this.onIntersect, {
+				// 标题越过视口上方 1/4 处就算进入当前章节；用一条带子触发回调，
+				// 具体是哪个章节仍按标题位置算，避免快速滚动时漏掉回调
+				rootMargin: "-20% 0px -60% 0px",
+				threshold: 0,
+			});
+
+			this.links.forEach((link, idx) => {
+				const id = decodeURIComponent(link.hash.slice(1));
+				const heading =
+					content.querySelector<HTMLElement>(`#${CSS.escape(id)}`) ??
+					document.getElementById(id);
+				if (!heading) return;
+				this.headingIndex.set(heading, idx);
+				this.observer?.observe(heading);
+			});
+
+			// 打开页面的瞬间就把当前章节标出来
+			this.updateActiveFromPosition();
+		}
+
+		/**
+		 * 按标题在视口中的位置选当前章节：越过激活线（视口 25% 处）的最后一个标题。
+		 * 标题顺序和目录顺序一致，所以直接顺序扫描即可。
+		 */
+		private updateActiveFromPosition(): void {
+			const cutoff = window.innerHeight * 0.25;
+			let current = 0;
+
+			for (const [heading, index] of this.headingIndex) {
+				// Swup 换页过渡期间标题可能已经脱离文档，位置不可信
+				if (!heading.isConnected) continue;
+				if (heading.getBoundingClientRect().top <= cutoff) current = index;
+				else break;
+			}
+
+			if (current !== this.activeIndex) this.setActive(current);
+		}
+
+		// 标题进出激活带时按位置重算一次，比逐条维护布尔状态简单且不会错位
+		private onIntersect = (): void => {
+			this.updateActiveFromPosition();
+			this.updateProgress();
+		};
+
+		private setActive(index: number): void {
+			this.activeIndex = index;
+			this.links.forEach((link, i) => {
+				if (i === index) link.dataset.active = "true";
+				else link.removeAttribute("data-active");
+			});
+
+			if (this.isOpen) this.scrollActiveIntoView(true);
+		}
+
+		private scrollActiveIntoView(smooth: boolean): void {
+			const link = this.links[this.activeIndex];
+			const list = this.listEl;
+			if (!link || !list) return;
+
+			const listRect = list.getBoundingClientRect();
+			const linkRect = link.getBoundingClientRect();
+			const delta =
+				linkRect.top - listRect.top - listRect.height / 2 + linkRect.height / 2;
+
+			list.scrollTo({
+				top: Math.max(list.scrollTop + delta, 0),
+				behavior: smooth ? "smooth" : "auto",
+			});
+		}
+
+		private updateProgress(): void {
+			const content = this.contentEl ?? this.getContentElement();
+			if (!content) return;
+
+			const scrollTop =
+				window.scrollY ||
+				document.documentElement.scrollTop ||
+				document.body.scrollTop ||
+				0;
+			const viewport = window.innerHeight;
+			const top = content.getBoundingClientRect().top + scrollTop;
+			// 从正文顶部开始计，正文底部露出 85% 视口时算读完
+			const start = top - 80;
+			const end = top + content.offsetHeight - viewport * 0.85;
+			let ratio = (scrollTop - start) / Math.max(end - start, 1);
+
+			ratio = Math.min(1, Math.max(0, ratio));
+			const percent = Math.round(ratio * 100);
+
+			if (this.progressFill) this.progressFill.style.width = `${percent}%`;
+			if (this.progressBar) {
+				this.progressBar.setAttribute("aria-valuenow", String(percent));
+			}
+			if (this.percentEl) this.percentEl.textContent = `${percent}%`;
+		}
+	}
+
+	if (!customElements.get("mobile-toc")) {
+		customElements.define("mobile-toc", MobileTOCElement);
+	}
+</script>
