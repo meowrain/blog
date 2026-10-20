@@ -91,6 +91,11 @@ export const navBarConfig: NavBarConfig = {
           external: false,
         },
         {
+          name: "标签",
+          url: "/tags/",
+          external: false,
+        },
+        {
           name: "相册",
           url: "/gallery/",
           external: false,

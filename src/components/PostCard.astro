@@ -22,6 +22,7 @@ interface Props {
 	draft: boolean;
 	style: string;
 	category?: string | string[];
+	tags?: string[];
 }
 const {
 	entry,
@@ -34,6 +35,7 @@ const {
 	description,
 	style,
 	category,
+	tags = [],
 } = Astro.props;
 
 const isPinned = entry.data.pinned === true;
@@ -69,7 +71,7 @@ const { remarkPluginFrontmatter } = await entry.render();
         </div>
 
         <!-- metadata -->
-        <PostMetadata published={published} updated={updated} hideUpdateDate={true} hidePublishedDate={true} slug={entry.slug} category={category} class="mb-2 md:mb-4"></PostMetadata>
+        <PostMetadata published={published} updated={updated} hideUpdateDate={true} hidePublishedDate={true} slug={entry.slug} category={category} tags={tags} class="mb-2 md:mb-4"></PostMetadata>
 
         <!-- word count, read time and page views -->
         <div class="text-sm text-black/30 dark:text-white/30 flex gap-4 transition">
