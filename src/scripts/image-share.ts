@@ -114,7 +114,7 @@ function triggerDownload(url: string, filename: string) {
 	link.remove();
 }
 
-function downloadBlob(blob: Blob, filename: string) {
+export function downloadBlob(blob: Blob, filename: string) {
 	const url = URL.createObjectURL(blob);
 	triggerDownload(url, filename);
 	setTimeout(() => URL.revokeObjectURL(url), 10000);
@@ -163,7 +163,7 @@ function siteInfo() {
 }
 
 /** 主题色的实际计算值（--primary 是 oklch 表达式，得让浏览器先解析） */
-function accentColor() {
+export function accentColor() {
 	const probe = document.createElement("span");
 	probe.style.color = "var(--primary)";
 	probe.style.position = "fixed";
@@ -196,7 +196,7 @@ export async function downloadImage(url: string, filename?: string) {
 
 /* ---------------------------------- 分享卡片 ---------------------------------- */
 
-function roundRectPath(
+export function roundRectPath(
 	ctx: CanvasRenderingContext2D,
 	x: number,
 	y: number,
@@ -214,7 +214,7 @@ function roundRectPath(
 	ctx.closePath();
 }
 
-function cardFont(size: number, weight = 600) {
+export function cardFont(size: number, weight = 600) {
 	return `${weight} ${size}px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif`;
 }
 
@@ -237,7 +237,7 @@ function tokenizeForCard(text: string) {
 	return tokens;
 }
 
-function wrapCardText(
+export function wrapCardText(
 	ctx: CanvasRenderingContext2D,
 	text: string,
 	maxWidth: number,
@@ -441,7 +441,7 @@ function loadCardImage(url: string) {
 	attempt(!isSameOrigin(href));
 }
 
-function canvasToFile(canvas: HTMLCanvasElement, filename: string) {
+export function canvasToFile(canvas: HTMLCanvasElement, filename: string) {
 	return new Promise<File | null>((resolve) => {
 		try {
 			canvas.toBlob((blob) => {
@@ -470,7 +470,7 @@ async function fetchAsFile(url: string, filename: string) {
 }
 
 /** 走系统分享面板；浏览器不支持就返回 false，由调用方兜底 */
-async function shareFile(file: File, text?: string) {
+export async function shareFile(file: File, text?: string) {
 	if (typeof navigator.canShare !== "function") return false;
 	if (!navigator.canShare({ files: [file] })) return false;
 	try {
