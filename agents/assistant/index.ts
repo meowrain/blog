@@ -8,10 +8,15 @@ import { TOOLS, type ChatCtx } from './_tools';
 const logger = createLogger('chat');
 
 /**
- * POST /chat —— 站内 /chat 聊天页的后端。
+ * POST /assistant —— 站内 /chat/ 页面（AI 助手）的后端。
  *
  * 跟 /find 的分工：那边是「站内找文章 + 当前文章的学习助手」，话头永远围着本站内容；
  * 这边是通用助手，什么问题都能问，能力靠联网（Tavily）撑起来 —— 见 _tools.ts。
+ *
+ * ⚠️ 路由不能再叫 /chat：站内页面就是 /chat/，而 EdgeOne 的 routes.json 第一条是
+ * `{handle:"filesystem"}`，静态文件优先于自定义路由 —— 路由同名的话，POST /chat 会被
+ * dist/chat/index.html 整个接走（返回 HTML），页面解析事件流失败，只报「连接中断」。
+ * 所以页面留在 /chat/，接口放 /assistant，两边不要同名。
  *
  * 这一层只管喂历史、卡预算、包 SSE、存消息；工具怎么挑、怎么搜是 _tools.ts 的事。
  * 前端每次都要带 makers-conversation-id（平台的会话契约），历史也以它为准。
@@ -75,11 +80,10 @@ function jsonResponse(status: number, payload: Record<string, unknown>) {
 export async function onRequest(context: any) {
 	const { request, conversation_id: conversationId, store, env: rawEnv } = context;
 
-	// 页面的地址是 /chat/，而这个 agent 路由是 ^/chat$（平台按全方法匹配），
-	// 所以浏览器里手敲 /chat 会落到这里。给人跳到页面，别甩一段 JSON 报错。
-	if (request?.method === 'GET') {
-		return new Response(null, { status: 302, headers: { Location: '/chat/' } });
+	if (request?.method !== 'POST') {
+		return jsonResponse(405, { error: 'method not allowed' });
 	}
+
 	const body = (request?.body ?? {}) as ChatRequestBody;
 	const clean = (Array.isArray(body.messages) ? body.messages : []).filter(
 		(m) => (m?.role === 'user' || m?.role === 'assistant') && typeof m?.content === 'string' && m.content.trim(),
@@ -113,7 +117,7 @@ export async function onRequest(context: any) {
 	}
 
 	logger.log(
-		'POST /chat conv=%s web=%s turns=%d(kept %d) latest=%s',
+		'POST /assistant conv=%s web=%s turns=%d(kept %d) latest=%s',
 		conversationId,
 		tavilyKey ? 'on' : 'off',
 		clean.length,

@@ -4,7 +4,7 @@ import { searchPosts } from '../find/_tools';
 import { tavilyExtract, tavilySearch, type TavilyTimeRange, type TavilyTopic } from '../_tavily';
 
 /**
- * `/chat` 的工具注册表 —— 聊天页的三只手：联网搜（Tavily）、抓某个网页的正文、翻站内文章。
+ * `/assistant` 的工具注册表 —— 聊天页的三只手：联网搜（Tavily）、抓某个网页的正文、翻站内文章。
  *
  * 站内那只直接复用 /find 里已经调好的检索实现（切词、idf 加权、摘要切片都在那边），
  * 这里只把 ChatCtx 适配成它要的形状，不维护第二份打分逻辑。

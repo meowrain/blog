@@ -4,9 +4,10 @@ import MarkdownIt from "markdown-it";
 import { tick } from "svelte";
 
 /**
- * /chat 聊天页的主体 —— 一个通用 AI 助手：什么都聊，需要时自己联网查、自己翻站内文章。
+ * /chat/ 聊天页的主体 —— 一个通用 AI 助手：什么都聊，需要时自己联网查、自己翻站内文章。
  *
- * 真正干活的是 /chat（agents/chat）：联网走 Tavily，站内检索复用 /find 那套索引。
+ * 真正干活的是 /assistant（agents/assistant）：联网走 Tavily，站内检索复用 /find 那套索引。
+ * 接口不能跟页面同路径：页面占着 /chat/，同名时静态文件会把 POST 请求整个吃掉（见 agent 头部注释）。
  * 这里只负责把工具调用过程如实显示出来，以及历史消息的存取。
  *
  * 会话 id 存 localStorage，并且跟胶囊助手（/find）用不同的 key —— 两边是两段独立的对话。
@@ -87,7 +88,7 @@ let listEl = $state<HTMLDivElement | null>(null);
 let inputEl = $state<HTMLTextAreaElement | null>(null);
 let abortCtl: AbortController | null = null;
 
-/** 回灌 /chat 的历史必须是「user/assistant 文字」且末尾只有一个 user；工具片段不进行历史 */
+/** 回灌 /assistant 的历史必须是「user/assistant 文字」且末尾只有一个 user；工具片段不进行历史 */
 const mirror: { role: "user" | "assistant"; content: string }[] = [];
 
 function turnText(parts: Part[]): string {
@@ -175,7 +176,7 @@ async function post(question: string) {
 	let sawDone = false;
 
 	try {
-		const resp = await fetch("/chat", {
+		const resp = await fetch("/assistant", {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
