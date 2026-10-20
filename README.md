@@ -14,9 +14,10 @@
 
 - Astro 5 静态站点，构建产物可直接部署到任意静态托管平台
 - 文章、归档、分类、标签、相册、友链和赞助页面
+- 个人主页化：`/about/` 自我介绍、`/projects/` 项目卡片（含详情页）、`/notes/` 碎碎念时间线，首页顶部也有入口
 - 年度报告页与归档页「那年今天」卡片：按年聚合写作统计，回看往年同一天发布的文章
 - Markdown/MDX 内容集合，带 frontmatter 校验
-- 站内搜索，基于构建出的 RSS 内容进行客户端检索
+- 站内搜索：复用 `posts-index.json` 索引，中文 bigram 分词、多关键词 AND、字段加权排序，支持 ⌘K 快捷键及分类/标签筛选
 - 系列（合集）导航：用 `series` frontmatter 把同一主题的文章串成系列，正文顶部给出上一章 / 下一章和阅读进度条，`/series/` 汇总全部系列
 - 响应式布局、深色/浅色主题和主题色自定义
 - Swup 页面过渡、目录、阅读时长、代码高亮和复制按钮
@@ -82,7 +83,10 @@ pnpm preview
 | `pnpm build` | 构建生产站点 |
 | `pnpm preview` | 预览生产构建 |
 | `pnpm type-check` | 运行 TypeScript 类型检查 |
+| `pnpm test` | 运行搜索核心等 Node 单元测试 |
 | `pnpm new-post <path>` | 创建新文章 |
+| `pnpm new-note [slug]` | 创建一条碎碎念 |
+| `pnpm test` | 运行纯函数单元测试 |
 | `pnpm clean` | 清理 `src/content/assets` 下未被引用的图片 |
 | `pnpm format` | 使用 Biome 格式化 `src` |
 | `pnpm lint` | 使用 Biome 检查并修复 `src` |
@@ -132,6 +136,52 @@ pinned: false
 | `pinned` | boolean | 否 | `false` | 是否置顶 |
 | `series` | string | 否 | `""` | 所属系列名，同名文章自动串成系列并可上一章 / 下一章翻页 |
 | `seriesOrder` | number | 否 | - | 系列内的章节序号，留空按发布时间排序 |
+
+## 个人主页内容
+
+除了文章，站点还有三个内容集合，都是 `src/content/` 下的 Markdown 文件：
+
+### 碎碎念 `src/content/notes/`
+
+```yaml
+---
+published: 2026-10-20T23:40:00
+title: 可选，不写就用正文第一句
+tags: [站务]
+mood: 可选
+location: 可选
+pinned: false
+draft: false
+---
+```
+
+`/notes/` 按月份分组渲染整条正文，`pinned: true` 的排最前。每一条都有锚点
+（`/notes/#文件名`），首页「最近在记」和单独的 `/notes/rss.xml` 都指向它。
+
+### 项目 `src/content/projects/`
+
+```yaml
+---
+title: 项目名
+description: 一句话说明
+url: https://example.com      # 可选，项目主页
+repo: https://github.com/...  # 可选，源码
+icon: material-symbols:rocket-launch-outline-rounded
+tags: [Astro]
+status: active                # active / wip / archived
+featured: true                # 在 /projects/ 的「精选」区单独列出
+order: 1                      # 可选，数字越小越靠前
+published: 2026-01-01
+draft: false
+---
+```
+
+`/projects/` 列卡片，`/projects/<文件名>/` 渲染正文，并给出上一个 / 下一个和标签相同的相关项目。
+
+### 关于 `src/content/about/about.md`
+
+只放一份，`/about/` 的名片区、站点数据（文章数、碎碎念数、项目数、系列数）和正文
+都来自它和内容集合。
 
 ## 站点配置
 
@@ -217,6 +267,9 @@ API_TOKEN=your-token
 │   ├── components/         # Astro 和 Svelte 组件
 │   ├── content/
 │   │   ├── posts/         # Markdown/MDX 文章
+│   │   ├── notes/         # 碎碎念（短笔记）
+│   │   ├── projects/      # 项目介绍
+│   │   ├── about/         # 关于页正文
 │   │   └── assets/        # 内容资源
 │   ├── layouts/            # 页面布局
 │   ├── pages/              # Astro 路由

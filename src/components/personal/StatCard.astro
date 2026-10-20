@@ -1,0 +1,24 @@
+---
+import { Icon } from "astro-icon/components";
+
+interface Props {
+	value: string | number;
+	label: string;
+	icon: string;
+	href?: string;
+}
+
+const { value, label, icon, href } = Astro.props;
+---
+
+<div class="card-base flex items-center gap-3 border border-black/10 px-4 py-4 dark:border-white/10">
+	<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--btn-regular-bg)] text-[var(--primary)]">
+		<Icon name={icon} class="text-[1.25rem]" />
+	</div>
+	<div class="min-w-0">
+		<div class="font-bold text-xl leading-tight text-90 tabular-nums">{value}</div>
+		<div class="mt-0.5 truncate text-xs text-50">
+			{href ? <a href={href} class="transition hover:text-[var(--primary)]">{label}</a> : label}
+		</div>
+	</div>
+</div>

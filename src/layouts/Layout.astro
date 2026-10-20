@@ -878,11 +878,9 @@ function disableAnimation() {
     "nav-menu-panel",
     "nav-menu-switch",
   ]);
-  setClickOutsideToClose("search-panel", [
-    "search-panel",
-    "search-bar",
-    "search-switch",
-  ]);
+  // 搜索面板的开关由 Search.svelte 自己管（Svelte 的 class 指令和外部直接改 class
+  // 会打架：外部加上 float-panel-closed 后，组件的 panelOpen 状态并不知道面板已被关闭）。
+  // 这里不再接管 search-panel 的点击外部关闭。
 
   function loadTheme() {
     const theme = getStoredTheme();

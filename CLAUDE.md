@@ -27,6 +27,12 @@ pnpm type-check
 # Create new blog post (creates file in src/content/posts/)
 pnpm new-post <title>
 
+# Create a short note (creates file in src/content/notes/)
+pnpm new-note [slug]
+
+# Unit tests for pure utils (search-core, personal-core)
+pnpm test
+
 # Clean unused images from src/content/assets/
 pnpm clean
 
@@ -58,8 +64,12 @@ pnpm lint
 
 ### Content System
 - **Blog posts**: `src/content/posts/*.md` with frontmatter schema validation
+- **Short notes**: `src/content/notes/*.md`, rendered as a timeline at `/notes/` (no per-note page, anchors only)
+- **Projects**: `src/content/projects/*.md`, cards at `/projects/` plus `/projects/<slug>/` detail pages
+- **About**: `src/content/about/about.md`, single entry rendered at `/about/`
 - **Assets**: `src/content/assets/` for images/media
-- **Content collections**: Defined in Astro config with TypeScript schemas
+- **Content collections**: Defined in `src/content/config.ts` with TypeScript schemas
+- **Personal helpers**: `src/utils/personal-core.ts` (pure, tested) + `src/utils/personal-utils.ts` (collection access)
 
 ### Plugin System (src/plugins/)
 Custom remark/rehype plugins for Markdown processing:
@@ -122,6 +132,30 @@ seriesOrder: 1  # Optional, chapter order inside the series (defaults to publish
 draft: false
 lang: zh_CN  # Optional, overrides site default
 ---
+```
+
+Notes and projects use their own schemas:
+
+```yaml
+# notes
+published: 2026-10-20T23:40:00
+title: ""        # optional, falls back to the first sentence
+tags: []
+mood: ""         # optional
+location: ""     # optional
+pinned: false
+
+# projects
+title: Project Name
+description: One-liner
+url: ""                        # optional
+repo: ""                       # optional
+icon: material-symbols:rocket-launch-outline-rounded
+tags: []
+status: active                 # active | wip | archived
+featured: false
+order: 1                       # optional, lower comes first
+published: 2026-01-01
 ```
 
 ## Custom Markdown Features
