@@ -1,0 +1,36 @@
+---
+import { Icon } from "astro-icon/components";
+
+interface Props {
+	slug: string;
+	title: string;
+	url: string;
+	series?: string;
+	class?: string;
+}
+
+const { slug, title, url, series = "", class: className } = Astro.props;
+const isActive = false;
+---
+
+<button
+	type="button"
+	data-read-later-btn
+	data-slug={slug}
+	data-title={title}
+	data-url={url}
+	data-series={series}
+	aria-pressed={String(isActive)}
+	aria-label="稍后读"
+	title="稍后读"
+	class:list={[
+		className,
+		"group inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium text-50 transition",
+		"hover:bg-[var(--btn-plain-bg-hover)] hover:text-[var(--primary)] active:bg-[var(--btn-plain-bg-active)]",
+		"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]",
+	]}
+>
+	<Icon name="material-symbols:bookmark-add-outline-rounded" class="rl-add text-[1rem]" />
+	<Icon name="material-symbols:bookmark-added-rounded" class="rl-added hidden text-[1rem]" />
+	<span class="rl-label">稍后读</span>
+</button>
