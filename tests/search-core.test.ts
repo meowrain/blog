@@ -5,6 +5,7 @@ import {
 	collectFilterOptions,
 	extractPhrases,
 	highlightParts,
+	highlightTokens,
 	normalizeText,
 	parseSearchIndex,
 	searchDocs,
@@ -13,6 +14,7 @@ import {
 
 function doc(overrides: Partial<SearchDoc> & { title: string }): SearchDoc {
 	return {
+		id: 0,
 		slug: overrides.title,
 		url: `/posts/${overrides.title}/`,
 		category: "",
@@ -97,6 +99,21 @@ describe("extractPhrases", () => {
 			"缓存",
 			"过期",
 		]);
+	});
+});
+
+describe("highlightTokens", () => {
+	it("短查询返回 bigram 与单字，长查询额外保留完整短语", () => {
+		assert.deepEqual(highlightTokens("线程池"), ["线程池", "线程", "程池"]);
+		assert.deepEqual(highlightTokens("缓存"), ["缓存"]);
+	});
+
+	it("长短语排在 bigram 前面，高亮区间能合并成整段", () => {
+		const parts = highlightParts(
+			"线程池的拒绝策略",
+			highlightTokens("拒绝策略"),
+		);
+		assert.ok(parts.some((part) => part.match && part.text === "拒绝策略"));
 	});
 });
 
@@ -223,6 +240,7 @@ describe("parseSearchIndex", () => {
 		});
 		assert.deepEqual(docs, [
 			{
+				id: 0,
 				title: "标题",
 				slug: "slug",
 				url: "/posts/slug/",
@@ -245,6 +263,8 @@ describe("parseSearchIndex", () => {
 		});
 		assert.deepEqual(docs, [
 			{
+				// 文档号取原始下标（第 3 条），否则倒排表会指向别的文章
+				id: 2,
 				title: "ok",
 				slug: "ok",
 				url: "/posts/ok/",
