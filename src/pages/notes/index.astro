@@ -1,0 +1,73 @@
+---
+import NoteItem from "@components/personal/NoteItem.astro";
+import MainGridLayout from "@layouts/MainGridLayout.astro";
+import { getSortedNotes } from "@utils/personal-utils";
+import { url } from "@utils/url-utils";
+import { Icon } from "astro-icon/components";
+
+const notes = await getSortedNotes();
+
+// 按年月分组：时间线先给一个月份锚点，长列表不会一路平铺下去。
+const groups: { key: string; label: string; notes: typeof notes }[] = [];
+for (const note of notes) {
+	const date = note.data.published;
+	// 和条目里的时间一样按 UTC 取，分组月份不会和显示的日期对不上
+	const key = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+	const label = `${date.getUTCFullYear()} 年 ${date.getUTCMonth() + 1} 月`;
+	const last = groups[groups.length - 1];
+	if (last?.key === key) {
+		last.notes.push(note);
+	} else {
+		groups.push({ key, label, notes: [note] });
+	}
+}
+
+const tagCount = new Set(notes.flatMap((note) => note.data.tags)).size;
+---
+
+<MainGridLayout
+	title="碎碎念"
+	description="短笔记和随手记：技术上的小发现、生活里的小事，以及写不成文章的想法。"
+>
+	<link slot="head" rel="alternate" type="application/rss+xml" title="碎碎念" href={url("/notes/rss.xml")} />
+	<div class="flex flex-col gap-4">
+		<div class="card-base px-6 py-5 md:px-8">
+			<div class="flex items-center gap-2">
+				<Icon name="material-symbols:edit-note-rounded" class="text-2xl text-[var(--primary)]" />
+				<h1 class="text-2xl font-bold text-90">碎碎念</h1>
+			</div>
+			<p class="mt-2 text-sm leading-relaxed text-50">
+				短笔记、随手记和没写完的想法。它们不够长，成不了一篇文章，但也不想就这么丢掉。
+			</p>
+			<div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-30">
+				<span>{notes.length} 条</span>
+				{notes.length > 0 && <span>{groups.length} 个月</span>}
+				{tagCount > 0 && <span>{tagCount} 个标签</span>}
+				<a href={url("/notes/rss.xml")} class="transition hover:text-[var(--primary)]">碎碎念 RSS</a>
+			</div>
+		</div>
+
+		{
+			groups.map((group) => (
+				<section class="flex flex-col gap-3" aria-label={group.label}>
+					<div class="flex items-center gap-3 px-1">
+						<span class="rounded-full bg-[var(--btn-regular-bg)] px-3 py-1 text-xs font-bold text-[var(--btn-content)]">
+							{group.label}
+						</span>
+						<span class="text-xs text-30">{group.notes.length} 条</span>
+						<div class="h-px flex-1 bg-[var(--line-divider)]" />
+					</div>
+					{group.notes.map((note) => <NoteItem note={note} />)}
+				</section>
+			))
+		}
+
+		{
+			notes.length === 0 && (
+				<div class="card-base px-8 py-6 text-sm text-50">
+					还没有碎碎念。在 <code>src/content/notes/</code> 里新建一个 Markdown 文件就会出现在这里。
+				</div>
+			)
+		}
+	</div>
+</MainGridLayout>

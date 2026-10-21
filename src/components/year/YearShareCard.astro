@@ -1,0 +1,155 @@
+---
+import type { YearReport } from "@utils/year-stats";
+import { formatDuration, formatNumber, formatWords } from "@utils/year-stats";
+import { Icon } from "astro-icon/components";
+import { siteConfig } from "../../config";
+import type { YearCardPayload } from "../../scripts/year-card";
+
+interface Props {
+	report: YearReport;
+}
+
+const { report } = Astro.props;
+const { year, months, topTags, highlight, comparison } = report;
+
+function monthDay(date: Date | undefined): string | null {
+	if (!date) return null;
+	const month = (date.getMonth() + 1).toString().padStart(2, "0");
+	const day = date.getDate().toString().padStart(2, "0");
+	return `${month}-${day}`;
+}
+
+const slots = [
+	{
+		label: "凌晨 0-5 点",
+		count: report.hours.slice(0, 6).reduce((sum, n) => sum + n, 0),
+	},
+	{
+		label: "上午 6-11 点",
+		count: report.hours.slice(6, 12).reduce((sum, n) => sum + n, 0),
+	},
+	{
+		label: "下午 12-17 点",
+		count: report.hours.slice(12, 18).reduce((sum, n) => sum + n, 0),
+	},
+	{
+		label: "晚上 18-23 点",
+		count: report.hours.slice(18, 24).reduce((sum, n) => sum + n, 0),
+	},
+];
+const peakSlot = slots.reduce((best, slot) =>
+	slot.count > best.count ? slot : best,
+);
+const peakHour = report.hours.indexOf(Math.max(...report.hours));
+
+const comparisonText = comparison
+	? `比 ${comparison.year} 年${comparison.postDelta >= 0 ? "多" : "少"}写了 ${Math.abs(comparison.postDelta)} 篇，${comparison.wordDelta >= 0 ? "多" : "少"}了 ${formatWords(Math.abs(comparison.wordDelta))}`
+	: null;
+
+const payload: YearCardPayload = {
+	year,
+	summary: `这一年你写下 ${formatNumber(report.postCount)} 篇文章，共 ${formatWords(report.words)}，够读 ${formatDuration(report.minutes)}。`,
+	stats: [
+		{ label: "篇文章", value: formatNumber(report.postCount) },
+		{ label: "总字数", value: formatWords(report.words) },
+		{ label: "总阅读时长", value: formatDuration(report.minutes) },
+		{ label: "活跃天数", value: `${report.activeDays} 天` },
+		{ label: "最长连续", value: `${report.longestStreak} 天` },
+		{ label: "平均每篇", value: formatWords(report.averageWords) },
+	],
+	months: months.map((item) => item.count),
+	topTags: topTags.slice(0, 8).map((tag) => tag.name),
+	longest: highlight.longest
+		? {
+				title: highlight.longest.title,
+				meta: formatWords(highlight.longest.words),
+			}
+		: null,
+	busiestDay: highlight.busiestDay
+		? {
+				label: monthDay(highlight.busiestDay.date) ?? "",
+				count: highlight.busiestDay.count,
+			}
+		: null,
+	firstDay: monthDay(highlight.first?.published),
+	lastDay: monthDay(highlight.last?.published),
+	peakHour,
+	peakSlot: peakSlot.label,
+	comparison: comparisonText,
+};
+
+// JSON 里出现 </script> 会把行内脚本提前掐断
+const payloadJson = JSON.stringify(payload).replace(/</g, "\\u003c");
+---
+
+<div
+	id="year-card"
+	data-site-title={siteConfig.title}
+	data-site-url={Astro.site?.host ?? ""}
+>
+	<button
+		id="year-card-open"
+		type="button"
+		class="btn-regular h-8 gap-1.5 px-3 text-sm"
+	>
+		<Icon name="material-symbols:share" class="text-base" />
+		生成分享卡
+	</button>
+
+	<dialog
+		id="year-card-panel"
+		aria-label={`${year} 年度分享卡`}
+		class="fixed inset-0 z-[10000] hidden h-full w-full max-h-none max-w-none items-center justify-center overflow-hidden border-0 bg-black/70 p-3 backdrop-blur-sm sm:p-6"
+	>
+		<div
+			class="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-neutral-900"
+		>
+			<div
+				class="flex items-center justify-between gap-2 border-b border-black/5 px-4 py-3 dark:border-white/10"
+			>
+				<div class="flex items-center gap-2">
+					<Icon
+						name="material-symbols:auto-awesome-outline-rounded"
+						class="text-[1.25rem] text-[var(--primary)]"></Icon>
+					<span class="text-base font-semibold text-90">{year} 年度分享卡</span>
+				</div>
+				<button
+					id="year-card-close"
+					type="button"
+					title="关闭"
+					class="rounded-lg p-1.5 text-50 transition-colors hover:bg-black/5 hover:text-90 dark:hover:bg-white/10"
+				>
+					<Icon name="material-symbols:close-rounded" class="text-[1.5rem]"></Icon>
+				</button>
+			</div>
+
+			<div class="flex-1 overflow-y-auto p-4">
+				<canvas
+					id="year-card-canvas"
+					width="1080"
+					height="1620"
+					class="h-auto w-full rounded-xl border border-black/10 shadow-sm dark:border-white/10"
+				></canvas>
+			</div>
+
+			<div class="flex gap-2 border-t border-black/5 px-4 py-3 dark:border-white/10">
+				<button
+					id="year-card-share"
+					type="button"
+					class="flex-1 rounded-lg bg-[var(--primary)] px-3 py-2 text-sm font-medium text-white transition hover:opacity-90 dark:text-black/70"
+				>
+					分享卡片
+				</button>
+				<button
+					id="year-card-download"
+					type="button"
+					class="flex-1 rounded-lg bg-black/5 px-3 py-2 text-sm font-medium text-75 transition hover:bg-black/10 dark:bg-white/10 dark:hover:bg-white/15"
+				>
+					下载卡片
+				</button>
+			</div>
+		</div>
+	</dialog>
+
+	<script type="application/json" id="year-card-data" is:inline set:html={payloadJson}></script>
+</div>

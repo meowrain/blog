@@ -7,6 +7,14 @@
     {
       "title": "posts",
       "path": "[[workspace]]/src/content/posts"
+    },
+    {
+      "title": "notes",
+      "path": "[[workspace]]/src/content/notes"
+    },
+    {
+      "title": "projects",
+      "path": "[[workspace]]/src/content/projects"
     }
   ],
   "frontMatter.taxonomy.contentTypes": [
@@ -65,6 +73,124 @@
           "title": "language",
           "name": "language",
           "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "note",
+      "pageBundle": false,
+      "filePrefix": null,
+      "clearEmpty": true,
+      "fields": [
+        {
+          "title": "title",
+          "name": "title",
+          "type": "string",
+          "description": "可留空，留空时列表用正文第一句"
+        },
+        {
+          "title": "published",
+          "name": "published",
+          "type": "datetime",
+          "default": "{{now}}",
+          "isPublishDate": true
+        },
+        {
+          "title": "tags",
+          "name": "tags",
+          "type": "list"
+        },
+        {
+          "title": "mood",
+          "name": "mood",
+          "type": "string"
+        },
+        {
+          "title": "location",
+          "name": "location",
+          "type": "string"
+        },
+        {
+          "title": "pinned",
+          "name": "pinned",
+          "type": "boolean"
+        },
+        {
+          "title": "draft",
+          "name": "draft",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "project",
+      "pageBundle": false,
+      "filePrefix": null,
+      "clearEmpty": true,
+      "fields": [
+        {
+          "title": "title",
+          "name": "title",
+          "type": "string",
+          "single": true
+        },
+        {
+          "title": "description",
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "title": "url",
+          "name": "url",
+          "type": "string"
+        },
+        {
+          "title": "repo",
+          "name": "repo",
+          "type": "string"
+        },
+        {
+          "title": "icon",
+          "name": "icon",
+          "type": "string",
+          "default": "material-symbols:rocket-launch-outline-rounded"
+        },
+        {
+          "title": "tags",
+          "name": "tags",
+          "type": "list"
+        },
+        {
+          "title": "status",
+          "name": "status",
+          "type": "choice",
+          "choices": [
+            { "title": "active", "value": "active" },
+            { "title": "wip", "value": "wip" },
+            { "title": "archived", "value": "archived" }
+          ]
+        },
+        {
+          "title": "featured",
+          "name": "featured",
+          "type": "boolean"
+        },
+        {
+          "title": "order",
+          "name": "order",
+          "type": "number"
+        },
+        {
+          "title": "published",
+          "name": "published",
+          "type": "datetime",
+          "default": "{{now}}",
+          "isPublishDate": true
+        },
+        {
+          "title": "draft",
+          "name": "draft",
+          "type": "boolean"
         }
       ]
     }

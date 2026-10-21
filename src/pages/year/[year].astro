@@ -1,6 +1,7 @@
 ---
 import YearCharts from "@components/year/YearCharts.astro";
 import YearRankings from "@components/year/YearRankings.astro";
+import YearShareCard from "@components/year/YearShareCard.astro";
 import YearSummary from "@components/year/YearSummary.astro";
 import MainGridLayout from "@layouts/MainGridLayout.astro";
 import { url } from "@utils/url-utils";
@@ -39,6 +40,7 @@ const older = reports.find((item) => item.year === report.year - 1);
 				全部年份
 			</a>
 			<div class="flex items-center gap-2">
+				<YearShareCard report={report} />
 				{
 					older && (
 						<a href={url(`/year/${older.year}/`)} class="btn-regular h-8 px-3 text-sm">

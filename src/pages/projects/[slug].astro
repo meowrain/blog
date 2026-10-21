@@ -1,0 +1,148 @@
+---
+import License from "@components/misc/License.astro";
+import Markdown from "@components/misc/Markdown.astro";
+import ProjectCard from "@components/personal/ProjectCard.astro";
+import MainGridLayout from "@layouts/MainGridLayout.astro";
+import {
+	PROJECT_STATUS_ICONS,
+	PROJECT_STATUS_LABELS,
+	formatContentDate,
+} from "@utils/personal-core";
+import { getSortedProjects } from "@utils/personal-utils";
+import type { GetStaticPaths } from "astro";
+import { Icon } from "astro-icon/components";
+
+export const getStaticPaths = (async () => {
+	const projects = await getSortedProjects();
+	return projects.map((project) => ({
+		params: { slug: project.slug },
+		props: { project },
+	}));
+}) satisfies GetStaticPaths;
+
+const { project } = Astro.props;
+const { Content } = await project.render();
+
+const projects = await getSortedProjects();
+const index = projects.findIndex((item) => item.slug === project.slug);
+// 顺序和 /projects/ 列表一致，前后各取一个
+const prev = index > 0 ? projects[index - 1] : null;
+const next =
+	index >= 0 && index < projects.length - 1 ? projects[index + 1] : null;
+
+const related = projects
+	.filter(
+		(item) =>
+			item.slug !== project.slug &&
+			item.data.tags.some((tag) => project.data.tags.includes(tag)),
+	)
+	.slice(0, 2);
+---
+
+<MainGridLayout
+	title={project.data.title}
+	description={project.data.description}
+	setOGTypeArticle={true}
+>
+	<div class="flex flex-col gap-4">
+		<nav class="flex items-center gap-2 px-1 text-sm text-50">
+			<a href="/projects/" class="transition hover:text-[var(--primary)]">项目</a>
+			<Icon name="material-symbols:chevron-right-rounded" class="text-sm" />
+			<span class="truncate text-75">{project.data.title}</span>
+		</nav>
+
+		<article class="card-base border border-black/10 px-6 py-6 dark:border-white/10 md:px-9 md:py-8">
+			<div class="flex items-start gap-4">
+				<div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[var(--btn-regular-bg)] text-[var(--primary)]">
+					<Icon name={project.data.icon} class="text-[1.75rem]" />
+				</div>
+				<div class="min-w-0 flex-1">
+					<h1 class="text-2xl font-bold text-90 md:text-3xl">{project.data.title}</h1>
+					<div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-50">
+						<span class="inline-flex items-center gap-1 rounded-full bg-[var(--btn-regular-bg)] px-2 py-0.5">
+							<Icon name={PROJECT_STATUS_ICONS[project.data.status]} class="text-[0.875rem]" />
+							{PROJECT_STATUS_LABELS[project.data.status]}
+						</span>
+						<span>始于 {formatContentDate(project.data.published)}</span>
+					</div>
+				</div>
+			</div>
+
+			{project.data.description && (
+				<p class="mt-4 text-sm leading-relaxed text-75">{project.data.description}</p>
+			)}
+
+			<div class="mt-4 flex flex-wrap items-center gap-2">
+				{project.data.url && (
+					<a href={project.data.url} target="_blank" rel="noopener noreferrer" class="btn-regular h-9 gap-1.5 px-3 text-sm">
+						<Icon name="material-symbols:open-in-new" class="text-[1rem]" />
+						访问网站
+					</a>
+				)}
+				{project.data.repo && (
+					<a href={project.data.repo} target="_blank" rel="noopener noreferrer" class="btn-regular h-9 gap-1.5 px-3 text-sm">
+						<Icon name="fa6-brands:github" class="text-[1rem]" />
+						源码
+					</a>
+				)}
+				{project.data.tags.map((tag) => (
+					<span class="rounded-full bg-[var(--btn-regular-bg)] px-2.5 py-1 text-xs text-50">#{tag}</span>
+				))}
+			</div>
+
+			<div class="my-6 border-t border-dashed border-[var(--line-divider)]" />
+
+			<Markdown class="mb-2">
+				<Content />
+			</Markdown>
+		</article>
+
+		{(prev || next) && (
+			<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+				{prev && (
+					<a href={`/projects/${prev.slug}/`} class="card-base group flex items-center gap-3 border border-black/10 px-5 py-4 dark:border-white/10">
+						<Icon name="material-symbols:chevron-left-rounded" class="text-2xl text-30" />
+						<div class="min-w-0">
+							<div class="text-xs text-30">上一个</div>
+							<div class="truncate text-sm font-bold text-75 transition group-hover:text-[var(--primary)]">{prev.data.title}</div>
+						</div>
+					</a>
+				)}
+				{next && (
+					<a href={`/projects/${next.slug}/`} class="card-base group flex items-center justify-end gap-3 border border-black/10 px-5 py-4 text-right dark:border-white/10">
+						<div class="min-w-0">
+							<div class="text-xs text-30">下一个</div>
+							<div class="truncate text-sm font-bold text-75 transition group-hover:text-[var(--primary)]">{next.data.title}</div>
+						</div>
+						<Icon name="material-symbols:chevron-right-rounded" class="text-2xl text-30" />
+					</a>
+				)}
+			</div>
+		)}
+
+		{related.length > 0 && (
+			<section class="flex flex-col gap-3">
+				<div class="flex items-center gap-3 px-1">
+					<span class="rounded-full bg-[var(--btn-regular-bg)] px-3 py-1 text-xs font-bold text-[var(--btn-content)]">相关项目</span>
+					<div class="h-px flex-1 bg-[var(--line-divider)]" />
+				</div>
+				<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+					{related.map((item) => (
+						<ProjectCard
+							title={item.data.title}
+							description={item.data.description}
+							icon={item.data.icon}
+							tags={item.data.tags}
+							status={item.data.status}
+							url={item.data.url}
+							repo={item.data.repo}
+							href={`/projects/${item.slug}/`}
+						/>
+					))}
+				</div>
+			</section>
+		)}
+
+		<License title={project.data.title} slug={project.slug} pubDate={project.data.published} class="rounded-xl license-container" />
+	</div>
+</MainGridLayout>

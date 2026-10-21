@@ -91,6 +91,16 @@ export const navBarConfig: NavBarConfig = {
           external: false,
         },
         {
+          name: "标签",
+          url: "/tags/",
+          external: false,
+        },
+        {
+          name: "碎碎念",
+          url: "/notes/",
+          external: false,
+        },
+        {
           name: "相册",
           url: "/gallery/",
           external: false,
@@ -127,6 +137,16 @@ export const navBarConfig: NavBarConfig = {
       name: "关于",
       url: "#", // 分组入口，不可点击，仅作为下拉菜单的标题
       children: [
+        {
+          name: "关于我",
+          url: "/about/",
+          external: false,
+        },
+        {
+          name: "项目",
+          url: "/projects/",
+          external: false,
+        },
         {
           name: "友链",
           url: "/friends/",

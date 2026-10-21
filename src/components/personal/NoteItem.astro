@@ -1,0 +1,56 @@
+---
+import Markdown from "@components/misc/Markdown.astro";
+import { formatContentDateTime, noteAnchor } from "@utils/personal-core";
+import type { NoteEntry } from "@utils/personal-utils";
+import { Icon } from "astro-icon/components";
+
+interface Props {
+	note: NoteEntry;
+}
+
+const { note } = Astro.props;
+
+// 没写 title 的碎碎念不渲染标题行，正文直接铺开，时间线更像「随手记」。
+const title = (note.data.title ?? "").trim();
+const { Content } = await note.render();
+const anchor = noteAnchor(note.slug);
+---
+
+<article id={anchor} class="card-base scroll-mt-24 border border-black/10 px-6 py-5 dark:border-white/10 md:px-8">
+	<header class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-50">
+		<time datetime={note.data.published.toISOString()} class="font-mono tabular-nums">
+			{formatContentDateTime(note.data.published)}
+		</time>
+		{note.data.pinned && (
+			<span class="inline-flex items-center gap-1 rounded-full bg-[oklch(0.70_0.14_var(--hue)/0.12)] px-2 py-0.5 text-xs text-[var(--primary)]">
+				<Icon name="material-symbols:bolt-rounded" class="text-[0.875rem]" />
+				置顶
+			</span>
+		)}
+		{note.data.mood && <span class="text-30">心情：{note.data.mood}</span>}
+		{note.data.location && (
+			<span class="inline-flex items-center gap-0.5 text-30">
+				<Icon name="material-symbols:location-on-outline-rounded" class="text-[0.875rem]" />
+				{note.data.location}
+			</span>
+		)}
+	</header>
+
+	{title && (
+		<h2 class="mt-2 font-bold text-lg text-90">
+			<a href={`#${anchor}`} class="transition hover:text-[var(--primary)]">{title}</a>
+		</h2>
+	)}
+
+	<Markdown class="mt-2 text-sm leading-relaxed">
+		<Content />
+	</Markdown>
+
+	{note.data.tags.length > 0 && (
+		<footer class="mt-3 flex flex-wrap gap-1.5">
+			{note.data.tags.map((tag) => (
+				<span class="rounded-full bg-[var(--btn-regular-bg)] px-2 py-0.5 text-xs text-50">#{tag}</span>
+			))}
+		</footer>
+	)}
+</article>
