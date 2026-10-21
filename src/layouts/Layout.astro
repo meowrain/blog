@@ -1208,6 +1208,13 @@ function disableAnimation() {
       load: () =>
         import("../scripts/bangumi").then((module) => module.initBangumiPage()),
     },
+    {
+      marker: "year-card",
+      load: () =>
+        import("../scripts/year-card").then((module) =>
+          module.mountYearCardPage()
+        ),
+    },
   ];
 
   const mountPages = () => {
