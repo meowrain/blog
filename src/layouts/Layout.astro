@@ -33,9 +33,19 @@ interface Props {
   lang?: string;
   setOGTypeArticle?: boolean;
   ogImage?: string;
+  // 404 这类不该被收录的页面，不输出 canonical
+  noCanonical?: boolean;
 }
 
-let { title, banner, description, lang, setOGTypeArticle, ogImage } = Astro.props;
+let {
+  title,
+  banner,
+  description,
+  lang,
+  setOGTypeArticle,
+  ogImage,
+  noCanonical,
+} = Astro.props;
 
 // OG 分享图：文章页会传入动态卡片 URL，其他页面默认渲染站点卡片（不带 title 的默认卡）
 if (!ogImage) {
@@ -93,6 +103,10 @@ if (!lang) {
 }
 const siteLang = lang.replace("_", "-");
 
+// canonical 统一指向 astro.config 的主域名（blog.meowrain.cn），
+// 避免 blog2 / www 等镜像域名分散收录。只用 pathname，丢掉 query 和 hash。
+const canonicalUrl = new URL(Astro.url.pathname, Astro.site).href;
+
 const bannerOffsetByPosition = {
   top: `${BANNER_HEIGHT_EXTEND}vh`,
   center: `${BANNER_HEIGHT_EXTEND / 2}vh`,
@@ -126,8 +140,9 @@ const bannerOffset =
       )
     }
 
+    {!noCanonical && <link rel="canonical" href={canonicalUrl} />}
     <meta property="og:site_name" content={siteConfig.title} />
-    <meta property="og:url" content={Astro.url} />
+    <meta property="og:url" content={canonicalUrl} />
     <meta property="og:title" content={pageTitle} />
     <meta property="og:description" content={description} />
     {
@@ -139,7 +154,7 @@ const bannerOffset =
     }
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta property="twitter:url" content={Astro.url} />
+    <meta property="twitter:url" content={canonicalUrl} />
     <meta name="twitter:title" content={pageTitle} />
     <meta name="twitter:description" content={description} />
     <meta property="og:image" content={ogImage} />
@@ -268,11 +283,11 @@ const bannerOffset =
         overflow: hidden;
         /* 未启用背景图时只显示渐变层：颜色跟随主题色（--hue）和明暗模式 */
         background-image: var(--bg-url),
-          linear-gradient(
-            160deg,
-            oklch(0.97 0.015 var(--hue)) 0%,
-            oklch(0.945 0.03 var(--hue)) 50%,
-            oklch(0.965 0.02 var(--hue)) 100%
+          radial-gradient(
+            130% 110% at 50% 0%,
+            oklch(0.955 0.028 var(--hue)) 0%,
+            oklch(0.915 0.05 var(--hue)) 58%,
+            oklch(0.945 0.035 var(--hue)) 100%
           );
         background-position: var(--bg-position);
         background-size: var(--bg-size);
@@ -283,17 +298,25 @@ const bannerOffset =
         z-index: -1;
       }
 
-      /* 磨砂外观：在背景上叠一层跟随主题色的失焦色块，给卡片提供可以“磨”的内容 */
+      /* 磨砂外观：在背景上铺一层跟随主题色的柔光色斑，给卡片提供可以“磨”的内容。
+         两个要点：色斑必须铺满整个视口（包括正文中间），否则卡片背后是一段平滑
+         渐变，模糊前后没差别，卡片看起来还是实心白块；另外色斑要有一定色度，
+         透过半透明卡片后才能看出偏色。三组色相围绕 --hue 交错，避免整屏一片粉。 */
       .glass #bg-box::before {
         content: "";
         position: absolute;
-        inset: -18%;
+        inset: -20%;
         background-image:
-          radial-gradient(38% 34% at 20% 22%, oklch(0.78 0.16 calc(var(--hue) + 22) / 0.55), transparent 72%),
-          radial-gradient(36% 40% at 82% 16%, oklch(0.72 0.17 calc(var(--hue) - 38) / 0.42), transparent 72%),
-          radial-gradient(52% 44% at 62% 88%, oklch(0.70 0.15 calc(var(--hue) + 8) / 0.34), transparent 74%);
-        filter: blur(46px) saturate(1.25);
-        transform: scale(1.04);
+          radial-gradient(34% 30% at 6% 6%, oklch(0.78 0.19 calc(var(--hue) + 36) / 1), transparent 66%),
+          radial-gradient(30% 34% at 38% 0%, oklch(0.74 0.17 calc(var(--hue) - 30) / 0.9), transparent 68%),
+          radial-gradient(34% 32% at 72% 6%, oklch(0.68 0.21 calc(var(--hue) - 52) / 0.95), transparent 66%),
+          radial-gradient(30% 34% at 98% 26%, oklch(0.76 0.18 calc(var(--hue) + 62) / 0.9), transparent 68%),
+          radial-gradient(42% 40% at 22% 38%, oklch(0.84 0.15 calc(var(--hue) - 10) / 0.95), transparent 68%),
+          radial-gradient(46% 44% at 68% 52%, oklch(0.76 0.2 calc(var(--hue) + 18) / 0.9), transparent 68%),
+          radial-gradient(38% 36% at 4% 72%, oklch(0.7 0.2 calc(var(--hue) - 48) / 0.9), transparent 66%),
+          radial-gradient(44% 42% at 42% 86%, oklch(0.8 0.17 calc(var(--hue) + 30) / 0.95), transparent 68%),
+          radial-gradient(48% 46% at 92% 92%, oklch(0.72 0.21 calc(var(--hue) - 20) / 0.95), transparent 68%);
+        filter: blur(14px) saturate(1.5);
         pointer-events: none;
       }
 
@@ -303,26 +326,32 @@ const bannerOffset =
         position: absolute;
         inset: 0;
         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-        opacity: 0.035;
+        opacity: 0.09;
         mix-blend-mode: soft-light;
         pointer-events: none;
       }
 
       :root.dark #bg-box {
         background-image: var(--bg-url),
-          linear-gradient(
-            160deg,
-            oklch(0.21 0.03 var(--hue)) 0%,
-            oklch(0.16 0.025 var(--hue)) 50%,
-            oklch(0.19 0.028 var(--hue)) 100%
+          radial-gradient(
+            130% 110% at 50% 0%,
+            oklch(0.3 0.05 var(--hue)) 0%,
+            oklch(0.15 0.03 var(--hue)) 58%,
+            oklch(0.19 0.035 var(--hue)) 100%
           );
       }
 
       .glass:root.dark #bg-box::before {
         background-image:
-          radial-gradient(40% 36% at 20% 20%, oklch(0.52 0.15 calc(var(--hue) + 20) / 0.5), transparent 72%),
-          radial-gradient(38% 42% at 84% 16%, oklch(0.45 0.14 calc(var(--hue) - 40) / 0.42), transparent 72%),
-          radial-gradient(54% 46% at 60% 90%, oklch(0.52 0.13 calc(var(--hue) + 10) / 0.34), transparent 74%);
+          radial-gradient(34% 30% at 6% 6%, oklch(0.5 0.17 calc(var(--hue) + 32) / 0.8), transparent 66%),
+          radial-gradient(30% 34% at 38% 0%, oklch(0.44 0.15 calc(var(--hue) - 34) / 0.7), transparent 68%),
+          radial-gradient(34% 32% at 72% 6%, oklch(0.38 0.18 calc(var(--hue) - 56) / 0.75), transparent 66%),
+          radial-gradient(30% 34% at 98% 26%, oklch(0.46 0.16 calc(var(--hue) + 58) / 0.7), transparent 68%),
+          radial-gradient(42% 40% at 22% 38%, oklch(0.56 0.14 calc(var(--hue) - 10) / 0.7), transparent 68%),
+          radial-gradient(46% 44% at 68% 52%, oklch(0.48 0.17 calc(var(--hue) + 16) / 0.7), transparent 68%),
+          radial-gradient(38% 36% at 4% 72%, oklch(0.42 0.17 calc(var(--hue) - 48) / 0.7), transparent 66%),
+          radial-gradient(44% 42% at 42% 86%, oklch(0.52 0.15 calc(var(--hue) + 28) / 0.7), transparent 68%),
+          radial-gradient(48% 46% at 92% 92%, oklch(0.46 0.18 calc(var(--hue) - 20) / 0.75), transparent 68%);
       }
     </style>
 

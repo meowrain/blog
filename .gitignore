@@ -42,3 +42,6 @@ backend/backups/
 
 # git worktrees
 .worktrees/
+
+# claude code local worktrees
+.claude/worktrees/

@@ -1,12 +1,10 @@
 ---
 import SnakeGame from "@/components/game/SnakeGame.svelte";
-import Layout from "@/layouts/Layout.astro";
 import MainGridLayout from "@/layouts/MainGridLayout.astro";
 import { Icon } from "astro-icon/components";
 ---
 
-<Layout title="页面未找到">
-	<MainGridLayout>
+<MainGridLayout title="页面未找到" noCanonical>
 		<div class="mx-auto flex w-full max-w-xl flex-col items-center px-1 pb-12 pt-2 text-center">
 			<!-- 游戏要接管方向键，所以这张卡片别跟着鼠标上下浮 -->
 			<div class="card-base w-full p-6 hover:!translate-y-0 hover:!shadow-none md:p-8">
@@ -51,5 +49,4 @@ import { Icon } from "astro-icon/components";
 				</p>
 			</div>
 		</div>
-	</MainGridLayout>
-</Layout>
+</MainGridLayout>

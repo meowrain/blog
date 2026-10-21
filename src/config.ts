@@ -50,8 +50,8 @@ export const siteConfig: SiteConfig = {
     // 喜欢现在的纯色卡片就把 enable 改成 false。
     enable: true,
     blur: 22, // 卡片背后模糊半径（px）
-    opacity: 0.66, // 亮色模式卡片不透明度（0-1）
-    darkOpacity: 0.58, // 暗色模式卡片不透明度（0-1）
+    opacity: 0.46, // 亮色模式卡片不透明度（0-1），越低越透、背景色越明显
+    darkOpacity: 0.5, // 暗色模式卡片不透明度（0-1）
   },
   toc: {
     enable: true, // Display the table of contents on the right side of the post
