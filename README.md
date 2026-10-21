@@ -87,6 +87,7 @@ pnpm preview
 | `pnpm new-post <path>` | 创建新文章 |
 | `pnpm new-note [slug]` | 创建一条碎碎念 |
 | `pnpm test` | 运行纯函数单元测试 |
+| `pnpm gallery:index` | 扫描图床目录，生成相册索引 `images.json`（`pnpm build` 会自动先跑） |
 | `pnpm clean` | 清理 `src/content/assets` 下未被引用的图片 |
 | `pnpm format` | 使用 Biome 格式化 `src` |
 | `pnpm lint` | 使用 Biome 检查并修复 `src` |
@@ -209,10 +210,18 @@ public/api/i/YYYY/MM/DD/<filename>.<ext>
 生成或更新相册索引：
 
 ```bash
-node scripts/generate-gallery-index.js
+pnpm gallery:index
 ```
 
 脚本会扫描 `public/api/i`，并写入 `public/api/i/images.json`。相册页面读取该索引并生成瀑布流和灯箱预览。
+
+`pnpm build` 会先跑一次这个脚本再 `astro build`，所以本地把图放进目录、直接构建就能看到更新。目录不存在时脚本打印一行提示后跳过（退出码 0），不写空索引——线上 `/api/i/*` 是 EdgeOne Pages Function 代理到 CNB 图床，构建机上没有 `public/api/i` 是正常的。
+
+图床不在默认位置时用 `--dir` 或 `GALLERY_BED_DIR` 指定，两者和 `src/plugins/dev-image-bed.mjs` 的环境变量同名：
+
+```bash
+pnpm gallery:index --dir ../img-bed/public/api/i
+```
 
 
 ## 音乐页

@@ -5,7 +5,7 @@
 	"scripts": {
 		"dev": "astro dev",
 		"start": "astro dev",
-		"build": "astro build",
+		"build": "node scripts/generate-gallery-index.js && astro build",
 		"preview": "astro preview",
 		"astro": "astro",
 		"type-check": "tsc --noEmit --isolatedDeclarations",
@@ -13,6 +13,7 @@
 		"new-post": "node scripts/new-post.js",
 		"new-note": "node scripts/new-note.js",
 		"covers": "node scripts/compress-covers.js",
+		"gallery:index": "node scripts/generate-gallery-index.js",
 		"bangumi:snapshot": "node scripts/bangumi-snapshot.js",
 		"clean": "node scripts/clean-unused-images.js",
 		"format": "biome format --write ./src",
