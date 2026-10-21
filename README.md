@@ -84,10 +84,9 @@ pnpm preview
 | `pnpm build` | 构建生产站点 |
 | `pnpm preview` | 预览生产构建 |
 | `pnpm type-check` | 运行 TypeScript 类型检查 |
-| `pnpm test` | 运行搜索核心、分片倒排索引等 Node 单元测试 |
+| `pnpm test` | 运行搜索核心、分片倒排索引、个人主页等 Node 单元测试 |
 | `pnpm new-post <path>` | 创建新文章 |
 | `pnpm new-note [slug]` | 创建一条碎碎念 |
-| `pnpm test` | 运行纯函数单元测试 |
 | `pnpm gallery:index` | 扫描图床目录，生成相册索引 `images.json`（`pnpm build` 会自动先跑） |
 | `pnpm clean` | 清理 `src/content/assets` 下未被引用的图片 |
 | `pnpm format` | 使用 Biome 格式化 `src` |
