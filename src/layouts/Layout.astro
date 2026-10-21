@@ -1230,3 +1230,20 @@ function disableAnimation() {
     document.addEventListener("swup:enable", bindPages, { once: true });
   }
 </script>
+
+<script>
+  // 继续阅读 / 稍后读：侧栏常驻、首页与正文在 swup 容器内，每次切换都要重新挂载
+  import { mountReadingWidgets } from "../scripts/reading";
+
+  mountReadingWidgets();
+
+  const bindReading = () => {
+    window.swup?.hooks?.on("page:view", mountReadingWidgets);
+  };
+
+  if (window.swup) {
+    bindReading();
+  } else {
+    document.addEventListener("swup:enable", bindReading, { once: true });
+  }
+</script>

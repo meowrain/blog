@@ -1,0 +1,24 @@
+---
+/**
+ * 继续阅读 / 稍后读面板。
+ *
+ * 内容是纯客户端的（localStorage），服务端只渲染一个空壳，
+ * 由 src/scripts/reading.ts 在挂载时填充并监听变化。
+ */
+interface Props {
+	class?: string;
+	/** sidebar：侧栏卡片；home：首页通栏卡片 */
+	variant?: "sidebar" | "home";
+}
+
+const { class: className, variant = "sidebar" } = Astro.props;
+---
+
+<div
+	id={`reading-shelf-${variant}`}
+	data-reading-shelf={variant}
+	data-variant={variant}
+	class:list={[className, "hidden"]}
+	aria-live="polite"
+>
+</div>
