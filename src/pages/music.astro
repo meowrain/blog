@@ -1,12 +1,11 @@
 ---
+import { musicConfig } from "@/config";
 import MusicPlayer from "@components/music/MusicPlayer.svelte";
 import MainGridLayout from "@layouts/MainGridLayout.astro";
 import { Icon } from "astro-icon/components";
-import { musicConfig } from "@/config";
 
 // 线上由 EdgeOne 云函数 cloud-functions/api/music/[[default]].js 提供，
 // 本地 `pnpm dev` 由 src/plugins/dev-music-api.mjs 顶上；想打别的后端就设 PUBLIC_MUSIC_API_BASE
-const apiBase = import.meta.env.PUBLIC_MUSIC_API_BASE || "/api/music";
 const playlists = musicConfig.playlists;
 ---
 
@@ -35,7 +34,7 @@ const playlists = musicConfig.playlists;
 					里填上网易云歌单 ID 就能用了。
 				</section>
 			) : (
-				<MusicPlayer client:only="svelte" apiBase={apiBase} playlists={playlists} />
+				<MusicPlayer client:only="svelte" />
 			)
 		}
 	</div>

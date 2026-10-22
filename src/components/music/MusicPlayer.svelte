@@ -1,426 +1,46 @@
 <script lang="ts">
-	import Icon from "@iconify/svelte";
-	import { onDestroy, onMount } from "svelte";
-	import LyricPanel from "./LyricPanel.svelte";
-	import { parseLrc } from "./lrc";
+import Icon from "@iconify/svelte";
+import LyricPanel from "./LyricPanel.svelte";
+import {
+	MODE_META,
+	activePlaylist,
+	advance,
+	currentTrack,
+	cycleMode,
+	duration,
+	formatTime,
+	loadLibrary,
+	lyrics,
+	player,
+	prepareTrack,
+	progressPercent,
+	progressValue,
+	seekTo,
+	setVolume,
+	switchPlaylist,
+	toggleLyrics,
+	toggleMute,
+	togglePlay,
+	tracks,
+	trialIds,
+} from "./player.svelte";
 
-	type PlaylistRef = { id: string; name?: string };
+// 播放状态和 <audio> 都在 MusicPlayerHost 里（Layout 常驻），
+// 这个组件只负责 /music/ 页面的歌单 UI。
+const SKELETON_ROWS = [1, 2, 3, 4, 5, 6];
 
-	type Track = {
-		id: string;
-		name: string;
-		artists: string;
-		album: string;
-		cover: string;
-		duration: number;
-	};
-
-	type PlaylistMeta = {
-		id: string;
-		name: string;
-		cover: string;
-		description: string;
-		trackCount: number;
-		creator: string;
-	};
-
-	type LoadedPlaylist = {
-		ref: PlaylistRef;
-		meta: PlaylistMeta;
-		tracks: Track[];
-		trialIds: string[];
-		filtered: number;
-		filteredApplied: boolean;
-		truncated: boolean;
-	};
-
-	type Mode = "list" | "single" | "shuffle";
-
-	let { apiBase = "/api/music", playlists = [] }: { apiBase?: string; playlists?: PlaylistRef[] } =
-		$props();
-
-	// 接口 URL 统一带结尾斜杠：站点配的是 trailingSlash: "always"，而 astro dev 里
-	// Astro 的路由会抢先认领不带斜杠的裸路径，本地中间件（src/plugins/dev-music-api.mjs）
-	// 只有收到带斜杠的 URL 才接得住请求。线上云函数两种都认，所以统一带斜杠最省事。
-
-	const STORAGE = {
-		volume: "music:volume",
-		mode: "music:mode",
-		playlist: "music:playlist",
-		track: "music:track",
-	};
-
-	const MODES: Mode[] = ["list", "single", "shuffle"];
-	const MODE_META: Record<Mode, { icon: string; label: string }> = {
-		list: { icon: "material-symbols:repeat-rounded", label: "列表循环" },
-		single: { icon: "material-symbols:repeat-one-rounded", label: "单曲循环" },
-		shuffle: { icon: "material-symbols:shuffle-rounded", label: "随机播放" },
-	};
-
-	// 组件是 client:only 挂载的，这里拿到的必然是浏览器环境；仍然留个兜底，
-	// 免得以后改成 client:load 时在 SSR 阶段炸掉。
-	const store = typeof localStorage === "undefined" ? null : localStorage;
-
-	function readVolume(fallback: number): number {
-		// getItem 没存过时返回 null，而 Number(null) === 0 —— 不挡住就会把「没存过」
-		// 当成「音量为 0」，于是一进页面就是静音。
-		const stored = store?.getItem(STORAGE.volume);
-		if (stored === null || stored === undefined || stored === "") return fallback;
-		const raw = Number(stored);
-		return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : fallback;
-	}
-
-	function readMode(): Mode {
-		const raw = store?.getItem(STORAGE.mode) as Mode | null;
-		return raw && MODES.includes(raw) ? raw : "list";
-	}
-
-	let library = $state<LoadedPlaylist[]>([]);
-	let activeId = $state("");
-	let loading = $state(true);
-	let loadError = $state("");
-	let failedNames = $state<string[]>([]);
-
-	let audio: HTMLAudioElement | undefined = $state();
-	let currentIndex = $state(-1);
-	let playing = $state(false);
-	let pending = $state(false);
-	let currentTime = $state(0);
-	let liveDuration = $state(0);
-	let volume = $state(readVolume(0.7));
-	let muted = $state(false);
-	let mode = $state<Mode>(readMode());
-	let seeking = $state(false);
-	let seekValue = $state(0);
-	let showLyrics = $state(false);
-	let lyric = $state("");
-	let tlyric = $state("");
-	let deadTracks = $state<string[]>([]);
-	let notice = $state("");
-	let noticeTimer: ReturnType<typeof setTimeout> | undefined;
-
-	const activePlaylist = $derived(library.find((item) => item.ref.id === activeId) ?? null);
-	const tracks = $derived(activePlaylist?.tracks ?? []);
-	const trialIds = $derived(new Set(activePlaylist?.trialIds ?? []));
-	const current = $derived(currentIndex >= 0 ? (tracks[currentIndex] ?? null) : null);
-	const duration = $derived(liveDuration || (current ? current.duration / 1000 : 0));
-	const lyrics = $derived(parseLrc(lyric, tlyric));
-	const progressValue = $derived(seeking ? seekValue : currentTime);
-	const progressPercent = $derived(duration > 0 ? (progressValue / duration) * 100 : 0);
-
-	function formatTime(seconds: number): string {
-		if (!Number.isFinite(seconds) || seconds <= 0) return "00:00";
-		const total = Math.floor(seconds);
-		const minutes = String(Math.floor(total / 60)).padStart(2, "0");
-		return `${minutes}:${String(total % 60).padStart(2, "0")}`;
-	}
-
-	function showNotice(message: string) {
-		notice = message;
-		clearTimeout(noticeTimer);
-		noticeTimer = setTimeout(() => {
-			notice = "";
-		}, 4000);
-	}
-
-	async function loadLibrary() {
-		loading = true;
-		loadError = "";
-
-		const results = await Promise.allSettled(
-			playlists.map(async (ref): Promise<LoadedPlaylist> => {
-				const response = await fetch(`${apiBase}/playlist/?id=${encodeURIComponent(ref.id)}`);
-				const data = await response.json().catch(() => null);
-				if (!response.ok) throw new Error(data?.error ?? `HTTP ${response.status}`);
-				return {
-					ref: { id: String(data.playlist.id), name: ref.name || data.playlist.name },
-					meta: data.playlist as PlaylistMeta,
-					tracks: (data.tracks ?? []) as Track[],
-					trialIds: (data.trialIds ?? []) as string[],
-					filtered: Number(data.filtered ?? 0),
-					filteredApplied: Boolean(data.filteredApplied),
-					truncated: Boolean(data.truncated),
-				};
-			}),
-		);
-
-		library = results.flatMap((result) =>
-			result.status === "fulfilled" ? [result.value] : [],
-		);
-		failedNames = playlists.flatMap((ref, index) =>
-			results[index].status === "rejected" ? [ref.name || ref.id] : [],
-		);
-		loading = false;
-
-		if (library.length === 0) {
-			loadError = "歌单没能加载出来，多半是上游接口抽风了。";
-			return;
-		}
-		restoreSession();
-	}
-
-	function restoreSession() {
-		const saved = store?.getItem(STORAGE.playlist);
-		const target = library.find((item) => item.ref.id === saved) ?? library[0];
-		activeId = target.ref.id;
-
-		// 恢复上次听的歌，但绝不自作主张播放：浏览器会拦带声音的自动播放，
-		// 而且刚进页面就被塞一耳朵也不是什么好体验。
-		const savedTrack = store?.getItem(STORAGE.track);
-		const index = target.tracks.findIndex((track) => track.id === savedTrack);
-		currentIndex = index >= 0 ? index : target.tracks.length > 0 ? 0 : -1;
-		if (currentIndex >= 0) void prepareTrack(currentIndex, false);
-	}
-	async function prepareTrack(index: number, autoplay: boolean, depth = 0) {
-		const track = tracks[index];
-		if (!track) return;
-
-		currentIndex = index;
-		pending = true;
-		store?.setItem(STORAGE.track, track.id);
-		if (autoplay) {
-			currentTime = 0;
-			liveDuration = 0;
-		}
-
-		try {
-			const response = await fetch(`${apiBase}/song/?id=${encodeURIComponent(track.id)}`);
-			const data = await response.json().catch(() => null);
-			if (!response.ok) throw new Error(data?.error ?? `HTTP ${response.status}`);
-
-			if (!data?.playable || !data.url) {
-				markDead(track, depth);
-				return;
-			}
-
-			if (audio) {
-				audio.src = data.url;
-				audio.volume = muted ? 0 : volume;
-			}
-			void loadLyric(track.id);
-
-			// 免费账号下的会员曲目只有 30 秒试听，不说明白会以为播放器坏了
-			if (data.trial) {
-				showNotice(`《${track.name}》是会员曲目，只能试听 30 秒`);
-			}
-			updateMediaSession(track);
-
-			if (!autoplay || !audio) {
-				playing = false;
-				return;
-			}
-			try {
-				await audio.play();
-			} catch {
-				playing = false;
-				showNotice("浏览器拦住了自动播放，点一下播放键继续");
-			}
-		} catch (error) {
-			showNotice(`这首歌没取到播放地址：${error instanceof Error ? error.message : "未知错误"}`);
-		} finally {
-			pending = false;
-		}
-	}
-
-	// 歌单可用性在拉取时已经探过一轮，但播放地址会过期、会员状态也会变，
-	// 真播不出来就把这首标记掉并顺着往下跳；depth 保证最多跳完一整圈就停手。
-	function markDead(track: Track, depth: number) {
-		if (!deadTracks.includes(track.id)) deadTracks = [...deadTracks, track.id];
-		showNotice(`《${track.name}》暂时放不了，已跳过`);
-		pending = false;
-		if (depth + 1 < tracks.length) advance(1, depth + 1);
-	}
-
-	function advance(step: 1 | -1, depth = 0) {
-		if (tracks.length === 0) return;
-
-		if (mode === "shuffle" && tracks.length > 1) {
-			let index = currentIndex;
-			for (let i = 0; i < 12 && index === currentIndex; i++) {
-				index = Math.floor(Math.random() * tracks.length);
-			}
-			void prepareTrack(index, true, depth);
-			return;
-		}
-
-		let index = currentIndex;
-		for (let i = 0; i < tracks.length; i++) {
-			index = (index + step + tracks.length) % tracks.length;
-			if (!deadTracks.includes(tracks[index]?.id ?? "")) break;
-		}
-		void prepareTrack(index, true, depth);
-	}
-
-	function togglePlay() {
-		if (currentIndex < 0 && tracks.length > 0) {
-			void prepareTrack(0, true);
-			return;
-		}
-		if (!audio) return;
-		if (audio.paused) {
-			void audio.play().catch(() => showNotice("播放失败，稍后再试"));
-		} else {
-			audio.pause();
-		}
-	}
-
-	function handleEnded() {
-		if (mode === "single") {
-			seekTo(0);
-			void audio?.play();
-			return;
-		}
-		advance(1);
-	}
-
-	function seekTo(time: number) {
-		seekValue = time;
-		seeking = false;
-		currentTime = time;
-		if (audio && Number.isFinite(audio.duration)) audio.currentTime = time;
-	}
-
-	function seekBy(delta: number) {
-		const base = audio?.currentTime ?? currentTime;
-		seekTo(Math.max(0, Math.min(duration || 0, base + delta)));
-	}
-
-	function cycleMode() {
-		mode = MODES[(MODES.indexOf(mode) + 1) % MODES.length];
-	}
-
-	function switchPlaylist(id: string) {
-		if (id === activeId) return;
-		const target = library.find((item) => item.ref.id === id);
-		if (!target) return;
-
-		audio?.pause();
-		activeId = id;
-		store?.setItem(STORAGE.playlist, id);
-		lyric = "";
-		tlyric = "";
-		// 换歌单先把上一首松开，免得它还挂在 audio 上
-		audio?.removeAttribute("src");
-		currentIndex = target.tracks.length > 0 ? 0 : -1;
-		currentTime = 0;
-		liveDuration = 0;
-		if (currentIndex >= 0) void prepareTrack(currentIndex, false);
-	}
-
-	async function loadLyric(id: string) {
-		lyric = "";
-		tlyric = "";
-		try {
-			const response = await fetch(`${apiBase}/lyric/?id=${encodeURIComponent(id)}`);
-			if (!response.ok) return;
-			const data = await response.json();
-			// 切歌够快时晚到的响应不能盖掉新歌的歌词
-			if (tracks[currentIndex]?.id !== id) return;
-			lyric = data.lyric ?? "";
-			tlyric = data.tlyric ?? "";
-		} catch {
-			// 歌词拿不到就不显示，别因此打扰正在播的歌
-		}
-	}
-
-	function updateMediaSession(track: Track) {
-		if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
-		navigator.mediaSession.metadata = new MediaMetadata({
-			title: track.name,
-			artist: track.artists,
-			album: track.album || activePlaylist?.meta.name || "",
-			artwork: track.cover ? [{ src: track.cover, sizes: "500x500" }] : [],
-		});
-	}
-
-	$effect(() => {
-		store?.setItem(STORAGE.volume, String(volume));
-		if (audio) audio.volume = muted ? 0 : volume;
-	});
-
-	$effect(() => {
-		store?.setItem(STORAGE.mode, mode);
-	});
-
-	// 系统媒体面板（锁屏 / 播放控制中心）上的进度条
-	$effect(() => {
-		if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
-		if (!current || !Number.isFinite(duration) || duration <= 0) return;
-		try {
-			navigator.mediaSession.setPositionState({
-				duration,
-				position: Math.min(currentTime, duration),
-				playbackRate: 1,
-			});
-		} catch {
-			// 有的浏览器比较挑参数，出错就算了，不该影响播放本身
-		}
-	});
-
-	onMount(() => {
-		void loadLibrary();
-
-		if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
-			navigator.mediaSession.setActionHandler("play", togglePlay);
-			navigator.mediaSession.setActionHandler("pause", togglePlay);
-			navigator.mediaSession.setActionHandler("previoustrack", () => advance(-1));
-			navigator.mediaSession.setActionHandler("nexttrack", () => advance(1));
-		}
-
-		// 空格播放/暂停，Shift + 左右快进快退；输入框里打字时不抢键
-		const onKeydown = (event: KeyboardEvent) => {
-			const target = event.target as HTMLElement | null;
-			if (
-				target &&
-				(target.isContentEditable ||
-					["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName))
-			) {
-				return;
-			}
-			if (event.code === "Space") {
-				event.preventDefault();
-				togglePlay();
-			} else if (event.shiftKey && event.code === "ArrowRight") {
-				seekBy(5);
-			} else if (event.shiftKey && event.code === "ArrowLeft") {
-				seekBy(-5);
-			}
-		};
-		window.addEventListener("keydown", onKeydown);
-
-		return () => window.removeEventListener("keydown", onKeydown);
-	});
-
-	onDestroy(() => {
-		clearTimeout(noticeTimer);
-		audio?.pause();
-	});
-	const SKELETON_ROWS = [1, 2, 3, 4, 5, 6];
+let active = $derived(activePlaylist());
+let list = $derived(tracks());
+let current = $derived(currentTrack());
+let ids = $derived(trialIds());
+let total = $derived(duration());
+let progress = $derived(progressValue());
+let percent = $derived(progressPercent());
+let lines = $derived(lyrics());
 </script>
 
-<audio
-	bind:this={audio}
-	preload="none"
-	ontimeupdate={() => {
-		if (!seeking && audio) currentTime = audio.currentTime;
-	}}
-	ondurationchange={() => {
-		liveDuration = audio && Number.isFinite(audio.duration) ? audio.duration : 0;
-	}}
-	onplay={() => {
-		playing = true;
-	}}
-	onpause={() => {
-		playing = false;
-	}}
-	onended={handleEnded}
-	onerror={() => {
-		if (audio?.src) showNotice("音频加载失败，换一首试试");
-	}}
-></audio>
-
 <div class="music-shell space-y-4">
-	{#if loading}
+	{#if player.loading}
 		<section class="card-base p-5 md:p-7">
 			<div class="grid gap-5 md:grid-cols-[12rem_1fr] md:gap-7">
 				<div class="music-skeleton mx-auto aspect-square w-40 rounded-xl md:mx-0 md:w-full"></div>
@@ -440,28 +60,28 @@
 				<div class="music-skeleton h-9 w-full rounded-md"></div>
 			{/each}
 		</section>
-	{:else if loadError}
+	{:else if player.loadError}
 		<section class="card-base p-8 text-center">
 			<Icon icon="material-symbols:error-outline-rounded" class="text-[2rem] text-[var(--primary)]" />
 			<p class="mt-3 font-bold text-90">歌单没能加载出来</p>
-			<p class="mt-1 text-sm text-50">{loadError}</p>
+			<p class="mt-1 text-sm text-50">{player.loadError}</p>
 			<button
 				type="button"
 				class="btn-regular mx-auto mt-4 h-10 rounded-lg px-4 text-sm font-bold"
-				onclick={loadLibrary}
+				onclick={() => void loadLibrary()}
 			>
 				重新加载
 			</button>
 		</section>
 	{:else}
-		{#if library.length > 1}
+		{#if player.library.length > 1}
 			<section class="card-base p-2">
 				<div class="hide-scrollbar flex gap-2 overflow-x-auto">
-					{#each library as item (item.ref.id)}
+					{#each player.library as item (item.ref.id)}
 						<button
 							type="button"
 							class="music-tab"
-							class:is-active={item.ref.id === activeId}
+							class:is-active={item.ref.id === player.activeId}
 							onclick={() => switchPlaylist(item.ref.id)}
 						>
 							<img
@@ -490,7 +110,7 @@
 						{:else}
 							<Icon icon="material-symbols:music-note-rounded" class="text-[3rem] text-50" />
 						{/if}
-						{#if playing}
+						{#if player.playing}
 							<span class="music-cover-badge">
 								<i class="music-bar"></i><i class="music-bar"></i><i class="music-bar"></i>
 							</span>
@@ -500,11 +120,11 @@
 					<div class="flex min-w-0 flex-col justify-between gap-4">
 						<header class="min-w-0">
 							<p class="truncate text-xs text-50">
-								{activePlaylist?.meta.name ?? "歌单"}
-								{#if activePlaylist?.meta.creator}
-									<span class="with-divider">{activePlaylist.meta.creator}</span>
+								{active?.meta.name ?? "歌单"}
+								{#if active?.meta.creator}
+									<span class="with-divider">{active.meta.creator}</span>
 								{/if}
-								<span class="with-divider">{tracks.length} 首可播放</span>
+								<span class="with-divider">{list.length} 首可播放</span>
 							</p>
 							<h1 class="mt-1 truncate text-xl font-black text-90 md:text-2xl">
 								{current?.name ?? "选一首开始播放"}
@@ -514,7 +134,7 @@
 								{#if current?.album}
 									<span class="with-divider">{current.album}</span>
 								{/if}
-								{#if current && trialIds.has(current.id)}
+								{#if current && ids.has(current.id)}
 									<span class="music-tag">会员曲目 · 仅 30 秒试听</span>
 								{/if}
 							</p>
@@ -525,24 +145,24 @@
 								type="range"
 								class="music-range w-full"
 								min="0"
-								max={Math.max(duration, 0.1)}
+								max={Math.max(total, 0.1)}
 								step="0.1"
-								value={progressValue}
-								style={`--music-progress: ${progressPercent}%`}
+								value={progress}
+								style={`--music-progress: ${percent}%`}
 								aria-label="播放进度"
 								onpointerdown={() => {
-									seeking = true;
-									seekValue = currentTime;
+									player.seeking = true;
+									player.seekValue = player.currentTime;
 								}}
 								oninput={(event) => {
-									seeking = true;
-									seekValue = Number(event.currentTarget.value);
+									player.seeking = true;
+									player.seekValue = Number(event.currentTarget.value);
 								}}
 								onchange={(event) => seekTo(Number(event.currentTarget.value))}
 							/>
 							<div class="mt-1 flex justify-between text-xs tabular-nums text-50">
-								<span>{formatTime(progressValue)}</span>
-								<span>{formatTime(duration)}</span>
+								<span>{formatTime(progress)}</span>
+								<span>{formatTime(total)}</span>
 							</div>
 						</div>
 
@@ -550,10 +170,10 @@
 							<button
 								type="button"
 								class="music-btn h-10 w-10"
-								title={MODE_META[mode].label}
+								title={MODE_META[player.mode].label}
 								onclick={cycleMode}
 							>
-								<Icon icon={MODE_META[mode].icon} />
+								<Icon icon={MODE_META[player.mode].icon} />
 							</button>
 							<button
 								type="button"
@@ -566,14 +186,14 @@
 							<button
 								type="button"
 								class="music-play"
-								title={playing ? "暂停" : "播放"}
+								title={player.playing ? "暂停" : "播放"}
 								onclick={togglePlay}
 							>
-								{#if pending}
+								{#if player.pending}
 									<Icon icon="svg-spinners:180-ring" />
 								{:else}
 									<Icon
-										icon={playing
+										icon={player.playing
 											? "material-symbols:pause-rounded"
 											: "material-symbols:play-arrow-rounded"}
 									/>
@@ -592,13 +212,11 @@
 								<button
 									type="button"
 									class="music-btn h-9 w-9"
-									title={muted ? "取消静音" : "静音"}
-									onclick={() => {
-										muted = !muted;
-									}}
+									title={player.muted ? "取消静音" : "静音"}
+									onclick={toggleMute}
 								>
 									<Icon
-										icon={muted || volume === 0
+										icon={player.muted || player.volume === 0
 											? "material-symbols:volume-off-rounded"
 											: "material-symbols:volume-up-rounded"}
 									/>
@@ -609,39 +227,34 @@
 									min="0"
 									max="1"
 									step="0.01"
-									value={muted ? 0 : volume}
-									style={`--music-progress: ${(muted ? 0 : volume) * 100}%`}
+									value={player.muted ? 0 : player.volume}
+									style={`--music-progress: ${(player.muted ? 0 : player.volume) * 100}%`}
 									aria-label="音量"
-									oninput={(event) => {
-										volume = Number(event.currentTarget.value);
-										muted = false;
-									}}
+									oninput={(event) => setVolume(Number(event.currentTarget.value))}
 								/>
 							</div>
 
 							<button
 								type="button"
 								class="music-btn h-9 gap-1.5 px-3 text-xs font-bold"
-								onclick={() => {
-									showLyrics = !showLyrics;
-								}}
+								onclick={toggleLyrics}
 							>
 								<Icon icon="material-symbols:lyrics-rounded" />
-								<span>{showLyrics ? "收起歌词" : "歌词"}</span>
+								<span>{player.showLyrics ? "收起歌词" : "歌词"}</span>
 							</button>
 						</div>
 					</div>
 				</div>
 
-				{#if notice}
-					<p class="music-notice">{notice}</p>
+				{#if player.notice}
+					<p class="music-notice">{player.notice}</p>
 				{/if}
 			</div>
 
-			{#if showLyrics}
+			{#if player.showLyrics}
 				<div class="relative border-t border-[var(--line-divider)]">
 					<div class="h-56 md:h-64">
-						<LyricPanel lines={lyrics} currentTime={currentTime} onseek={seekTo} />
+						<LyricPanel lines={lines} currentTime={player.currentTime} onseek={seekTo} />
 					</div>
 				</div>
 			{/if}
@@ -653,10 +266,10 @@
 			>
 				<Icon icon="material-symbols:queue-music-rounded" class="text-[1.25rem] text-[var(--primary)]" />
 				<h2 class="text-base font-bold text-90">曲目</h2>
-				<span class="text-xs text-50">{tracks.length} 首</span>
+				<span class="text-xs text-50">{list.length} 首</span>
 				<a
 					class="link ml-auto text-xs font-bold text-[var(--btn-content)]"
-					href={`https://music.163.com/#/playlist?id=${activePlaylist?.meta.id ?? ""}`}
+					href={`https://music.163.com/#/playlist?id=${active?.meta.id ?? ""}`}
 					target="_blank"
 					rel="noopener noreferrer"
 				>
@@ -664,11 +277,11 @@
 				</a>
 			</header>
 
-			{#if tracks.length === 0}
+			{#if list.length === 0}
 				<p class="px-5 py-10 text-center text-sm text-50">这个歌单里没有能直接播放的歌。</p>
 			{:else}
 				<ol class="max-h-[30rem] overflow-y-auto py-2">
-					{#each tracks as track, index (track.id)}
+					{#each list as track, index (track.id)}
 						{@const isCurrent = track.id === current?.id}
 						<li>
 							<button
@@ -681,7 +294,7 @@
 										? 'text-[var(--primary)]'
 										: 'text-50'}"
 								>
-									{#if isCurrent && playing}
+									{#if isCurrent && player.playing}
 										<span class="music-eq"><i></i><i></i><i></i></span>
 									{:else}
 										{String(index + 1).padStart(2, "0")}
@@ -692,7 +305,7 @@
 										{track.name}
 									</span>
 									<span class="ml-1 text-xs text-50">{track.artists}</span>
-									{#if trialIds.has(track.id)}
+									{#if ids.has(track.id)}
 										<span class="music-tag shrink-0">试听</span>
 									{/if}
 								</span>
@@ -710,25 +323,25 @@
 				</ol>
 			{/if}
 
-			{#if activePlaylist && (activePlaylist.filtered > 0 || activePlaylist.truncated || trialIds.size > 0 || failedNames.length > 0)}
+			{#if active && (active.filtered > 0 || active.truncated || ids.size > 0 || player.failedNames.length > 0)}
 				<footer
 					class="border-t border-[var(--line-divider)] px-4 py-3 text-xs leading-relaxed text-50 md:px-5"
 				>
-					{#if activePlaylist.filteredApplied && activePlaylist.filtered > 0}
-						<p>已自动过滤 {activePlaylist.filtered} 首播不了的歌（无版权或需要会员）。</p>
+					{#if active.filteredApplied && active.filtered > 0}
+						<p>已自动过滤 {active.filtered} 首播不了的歌（无版权或需要会员）。</p>
 					{/if}
-					{#if activePlaylist.truncated}
-						<p>歌单太长，这里只取了前面的 {activePlaylist.tracks.length + activePlaylist.filtered} 首。</p>
+					{#if active.truncated}
+						<p>歌单太长，这里只取了前面的 {active.tracks.length + active.filtered} 首。</p>
 					{/if}
-					{#if trialIds.size > 0}
+					{#if ids.size > 0}
 						<p>
-							其中 {trialIds.size} 首是会员曲目，免费账号只能试听 30 秒；给部署环境配好
+							其中 {ids.size} 首是会员曲目，免费账号只能试听 30 秒；给部署环境配好
 							<code>NETEASE_COOKIE</code> 后即可完整播放。
 						</p>
 					{/if}
 
-					{#if failedNames.length > 0}
-						<p>没加载出来的歌单：{failedNames.join("、")}</p>
+					{#if player.failedNames.length > 0}
+						<p>没加载出来的歌单：{player.failedNames.join("、")}</p>
 					{/if}
 				</footer>
 			{/if}
