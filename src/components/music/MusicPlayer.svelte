@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Icon from "@iconify/svelte";
 	import { onDestroy, onMount } from "svelte";
+	import { publishOgCardData } from "../../utils/og-card";
 	import LyricPanel from "./LyricPanel.svelte";
 	import { parseLrc } from "./lrc";
 
@@ -157,6 +158,51 @@
 			return;
 		}
 		restoreSession();
+		publishCard();
+	}
+
+	/**
+	 * 歌单数据只有浏览器里才拿得到，算好一份精简快照推给分享卡组件。
+	 * 分享卡只是把这些数字排成图，云端不负责再请求网易云。
+	 */
+	function publishCard() {
+		const first = library[0];
+		if (!first) return;
+		const totalTracks = library.reduce((sum, item) => sum + item.tracks.length, 0);
+		const totalMs = library.reduce(
+			(sum, item) =>
+				sum + item.tracks.reduce((acc, track) => acc + (track.duration || 0), 0),
+			0,
+		);
+		const artists = new Set(
+			library.flatMap((item) =>
+				item.tracks.flatMap((track) =>
+					track.artists
+						.split(/[/、,&]/)
+						.map((name) => name.trim())
+						.filter(Boolean),
+				),
+			),
+		);
+		const hours = totalMs / 3_600_000;
+
+		publishOgCardData("playlist", {
+			title: first.ref.name || first.meta.name,
+			subtitle: `${first.meta.creator ? `${first.meta.creator} · ` : ""}来自网易云音乐`,
+			badge: "网易云",
+			stats: [
+				{ label: "曲目", value: `${totalTracks} 首` },
+				{
+					label: "总时长",
+					value:
+						hours >= 1
+							? `${hours.toFixed(1)} 小时`
+							: `${Math.round(totalMs / 60_000)} 分钟`,
+				},
+				{ label: "歌手", value: `${artists.size} 位` },
+			],
+			date: first.meta.creator || "",
+		});
 	}
 
 	function restoreSession() {
@@ -305,6 +351,7 @@
 		currentTime = 0;
 		liveDuration = 0;
 		if (currentIndex >= 0) void prepareTrack(currentIndex, false);
+		publishCard();
 	}
 
 	async function loadLyric(id: string) {

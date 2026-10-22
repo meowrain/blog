@@ -1241,17 +1241,18 @@ function disableAnimation() {
         import("../scripts/bangumi").then((module) => module.initBangumiPage()),
     },
     {
-      marker: "year-card",
-      load: () =>
-        import("../scripts/year-card").then((module) =>
-          module.mountYearCardPage()
-        ),
-    },
-    {
       marker: "article-share",
       load: () =>
         import("../scripts/article-share").then((module) =>
           module.mountArticleShare()
+        ),
+    },
+    {
+      // 歌单 / 追番 / 监控 / 年度报告的数据分享卡；Swup 换页后要重新挂载
+      marker: "og-card",
+      load: () =>
+        import("../scripts/data-share").then((module) =>
+          module.mountDataShareCard()
         ),
     },
   ];

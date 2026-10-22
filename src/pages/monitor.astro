@@ -1,4 +1,5 @@
 ---
+import DataShareCard from "@components/DataShareCard.astro";
 import MainGridLayout from "@layouts/MainGridLayout.astro";
 import { Icon } from "astro-icon/components";
 
@@ -6,8 +7,17 @@ import { Icon } from "astro-icon/components";
 // 所以默认走同源的 EdgeOne Pages Function（functions/api/komari/[[path]].js）。
 // 本地开发时 astro dev 不会挂载 functions/，可把 PUBLIC_KOMARI_API_BASE 指向
 // 一个同源反代，或直接填面板地址（需自行放开 CORS）。
-const komariRpcUrl = import.meta.env.PUBLIC_KOMARI_RPC_URL || "/api/komari/rpc2";
-const komariPanelUrl = import.meta.env.PUBLIC_KOMARI_PANEL_URL || "https://status.acetaffy.mom";
+const komariRpcUrl =
+	import.meta.env.PUBLIC_KOMARI_RPC_URL || "/api/komari/rpc2";
+const komariPanelUrl =
+	import.meta.env.PUBLIC_KOMARI_PANEL_URL || "https://status.acetaffy.mom";
+
+// 首帧先放占位数据；真实数值由 src/scripts/monitor.ts 每轮轮询后推过来（live）。
+const cardParams = {
+	title: "服务器集群",
+	subtitle: "正在连接监控面板…",
+	badge: "Komari",
+};
 ---
 
 <MainGridLayout title="监控" description="服务器集群实时负载、网络吞吐与在线状态">
@@ -80,6 +90,7 @@ const komariPanelUrl = import.meta.env.PUBLIC_KOMARI_PANEL_URL || "https://statu
             <p id="mon-updated" class="mt-1 text-sm text-[var(--btn-content)]">正在连接监控面板…</p>
           </div>
           <div class="flex shrink-0 items-center gap-2">
+            <DataShareCard type="monitor" slug="monitor" params={cardParams} live label="分享状态" />
             <span id="mon-state-pill" class="mon-pill mon-pill--pending">连接中</span>
             <button
               id="mon-autorefresh"

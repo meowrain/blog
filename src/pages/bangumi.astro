@@ -1,4 +1,5 @@
 ---
+import DataShareCard from "@components/DataShareCard.astro";
 import MainGridLayout from "@layouts/MainGridLayout.astro";
 import { Icon } from "astro-icon/components";
 import snapshot from "@/data/bangumi.json";
@@ -79,6 +80,32 @@ const displayName = snapshot.user.nickname || snapshot.username;
 const avatarUrl = snapshot.user.avatar || "";
 const bangumiListUrl = `https://bgm.tv/anime/list/${snapshot.username}`;
 const generatedAt = formatGeneratedAt(snapshot.generatedAt);
+
+// 分享卡：数据都是构建期快照，直接把汇总数字拼进卡片参数，运行时不发请求。
+const watching = items.filter((item) => String(item.type) === "3");
+const watchedCount = countOf("2");
+const rated = items.filter((item) => item.rate > 0);
+const avgRate = rated.length
+  ? rated.reduce((sum, item) => sum + item.rate, 0) / rated.length
+  : 0;
+const featured = watching[0] ?? items[0];
+// 「在看」为 0 时不摆一格「0 部」—— 那是噪声，还会把一行指标挤成两行
+const cardStats = [
+  ...(watching.length > 0 ? [{ label: "在看", value: `${watching.length} 部` }] : []),
+  { label: "看过", value: `${watchedCount} 部` },
+  { label: "收藏总数", value: `${items.length} 部` },
+  ...(avgRate > 0 ? [{ label: "平均评分", value: avgRate.toFixed(1) }] : []),
+];
+const cardParams = {
+  title: displayName ? `${displayName} 的追番` : "我的追番",
+  subtitle: `共收藏 ${items.length} 部动画，看过 ${watchedCount} 部${
+    watching.length ? `，在追 ${watching.length} 部` : ""
+  }`,
+  badge: "Bangumi",
+  stats: cardStats,
+  tags: featured?.tags?.slice(0, 3) ?? [],
+  date: featured?.title ?? "",
+};
 ---
 
 <MainGridLayout title="追番" description="同步 Bangumi 上的动画收藏与观看进度">
@@ -97,15 +124,18 @@ const generatedAt = formatGeneratedAt(snapshot.generatedAt);
           </div>
         </div>
 
-        <a
-          href={bangumiListUrl}
-          target="_blank"
-          rel="noopener"
-          class="btn-regular bangumi-source-link self-start rounded-lg px-3 py-2 text-sm font-medium"
-        >
-          <Icon name="material-symbols:open-in-new-rounded" class="mr-1.5 text-[1rem]" />
-          在 Bangumi 查看
-        </a>
+        <div class="flex flex-wrap items-center gap-2 self-start">
+          <DataShareCard type="bangumi" slug="bangumi" params={cardParams} label="分享追番" />
+          <a
+            href={bangumiListUrl}
+            target="_blank"
+            rel="noopener"
+            class="btn-regular bangumi-source-link rounded-lg px-3 py-2 text-sm font-medium"
+          >
+            <Icon name="material-symbols:open-in-new-rounded" class="mr-1.5 text-[1rem]" />
+            在 Bangumi 查看
+          </a>
+        </div>
       </header>
 
       <div class="mt-4 flex items-start gap-1.5 text-xs leading-5 text-50">

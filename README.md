@@ -23,6 +23,7 @@
 - Swup 页面过渡、目录、阅读时长、代码高亮和复制按钮
 - 移动端目录抽屉与顶部阅读进度条：窄屏下右下角按钮唤出目录，当前章节高亮跟随 IntersectionObserver，页面顶部细条显示正文阅读进度
 - 文章分享卡片：复用文章 OG 图，支持系统分享、复制链接和下载卡片
+- 数据分享卡：歌单、追番、监控、年度报告页复用同一套 resvg 管线生成分享图
 - KaTeX 数学公式、GitHub 风格的提示块和仓库卡片
 - 图片画廊、图片放大预览和渐进图片回退
 - 音乐页：云函数代理网易云歌单接口，直接播放歌单、歌词滚动，支持私有歌单
@@ -241,6 +242,19 @@ pnpm gallery:index --dir ../img-bed/public/api/i
 
 没配 Cookie 时，会员曲目只能拿到 30 秒试听片段：这些歌在页面上会标「试听」，曲目列表底部也会说明有多少首是这种情况。
 
+## 数据分享卡
+
+除了文章 OG 图，歌单、追番、监控和年度报告页也各有分享卡。它们复用同一条 satori + resvg 渲染管线（`cloud-functions/api/og/[[default]].js`），只是换一份 `buildTree`：
+
+```text
+GET /api/og/<slug>?type=playlist|bangumi|monitor|year
+    &title=&subtitle=&badge=&stats=标签:数值|标签:数值&tags=&bars=
+```
+
+- 云函数只排版，不请求任何上游：数据由页面算好后拼进查询参数。歌单和监控的数据要等接口返回才有，页面脚本通过 `publishOgCardData()` 推给 `DataShareCard` 组件，卡片地址随之更新。
+- 布局按高度预算逐级降级：指标超过一行就去掉柱条、收副标题，保证内容不会顶穿底栏（satori 不裁切溢出）。
+- 参数拼装收在 `src/utils/og-card.ts`（纯函数，有单测），不要在页面里手拼查询串。
+
 ## 管理后台
 
 管理后台位于 `backend/`，通过文件 API 直接读写博客文章，不需要数据库。
@@ -295,6 +309,7 @@ API_TOKEN=your-token
 │   ├── src/tags/           # 标签模块
 │   └── src/common/         # 文件、索引、日志等公共模块
 ├── cloud-functions/        # EdgeOne Makers 云函数（图片 OG、历史、音乐代理）
+│   ├── api/og/            # /api/og/* 文章与数据分享卡（satori + resvg）
 │   └── api/music/          # /api/music/* 网易云音乐代理
 ├── scripts/                # 文章、相册和图片清理脚本
 ├── public/                 # 静态资源
