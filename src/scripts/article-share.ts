@@ -17,6 +17,62 @@ let bodyOverflow = "";
 let hooksBound = false;
 let toastHome: { parent: Node; next: Node | null } | null = null;
 
+const EASE_OUT = "cubic-bezier(0.22, 1, 0.36, 1)";
+
+function prefersReducedMotion(): boolean {
+	return (
+		window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false
+	);
+}
+
+/** 进场：遮罩淡入 + 面板从下方轻微弹出 */
+function animateIn(dialog: HTMLElement, panel: HTMLElement | null): void {
+	if (prefersReducedMotion()) return;
+	dialog.animate([{ opacity: 0 }, { opacity: 1 }], {
+		duration: 220,
+		easing: "ease-out",
+	});
+	panel?.animate(
+		[
+			{ opacity: 0, transform: "translateY(14px) scale(0.965)" },
+			{ opacity: 1, transform: "translateY(0) scale(1)" },
+		],
+		{ duration: 300, easing: EASE_OUT },
+	);
+}
+
+/**
+ * 退场：反向收起。返回跑完的动画，调用方先隐藏元素再 cancel，
+ * 否则 cancel 的瞬间元素会以 opacity:1 闪一帧。
+ */
+function animateOut(
+	dialog: HTMLElement,
+	panel: HTMLElement | null,
+): Promise<Animation[]> {
+	if (prefersReducedMotion()) return Promise.resolve([]);
+	const animations = [
+		dialog.animate([{ opacity: 1 }, { opacity: 0 }], {
+			duration: 180,
+			easing: "ease-in",
+			fill: "both",
+		}),
+		...(panel
+			? [
+					panel.animate(
+						[
+							{ opacity: 1, transform: "translateY(0) scale(1)" },
+							{ opacity: 0, transform: "translateY(8px) scale(0.975)" },
+						],
+						{ duration: 150, easing: "ease-in", fill: "both" },
+					),
+				]
+			: []),
+	];
+	return Promise.all(
+		animations.map((animation) => animation.finished.catch(() => undefined)),
+	).then(() => animations);
+}
+
 /** 弹窗打开时预取，系统分享点击时就不必 await fetch（iOS Safari 会丢手势） */
 let prefetchedUrl = "";
 let prefetchedFile: File | null = null;
@@ -176,6 +232,7 @@ async function downloadCard(state: ShareState): Promise<void> {
 	showToast("已打开卡片，可长按保存");
 }
 
+/** Swup 换页时页面节点马上会被替换，不做退场动画，直接收状态 */
 function closeActiveShare(): void {
 	if (activeDialog?.open) {
 		activeDialog.close();
@@ -248,20 +305,32 @@ export function mountArticleShare(): void {
 		"[data-article-share-download]",
 	);
 
+	const panel = dialog.querySelector<HTMLElement>("[data-article-share-panel]");
+
 	const showSkeleton = () => {
 		fallback?.classList.add("hidden");
 		fallback?.classList.remove("flex");
 		image?.classList.add("hidden");
 		skeleton?.classList.remove("hidden");
+		skeleton?.classList.add("flex");
 	};
 	const showImage = () => {
 		skeleton?.classList.add("hidden");
+		skeleton?.classList.remove("flex");
 		fallback?.classList.add("hidden");
 		fallback?.classList.remove("flex");
 		image?.classList.remove("hidden");
+		// 骨架屏直接消失太生硬，图片淡入接上
+		if (image && !prefersReducedMotion()) {
+			image.animate([{ opacity: 0 }, { opacity: 1 }], {
+				duration: 260,
+				easing: "ease-out",
+			});
+		}
 	};
 	const showFallback = () => {
 		skeleton?.classList.add("hidden");
+		skeleton?.classList.remove("flex");
 		image?.classList.add("hidden");
 		fallback?.classList.remove("hidden");
 		fallback?.classList.add("flex");
@@ -277,18 +346,43 @@ export function mountArticleShare(): void {
 	image?.addEventListener("load", showImage);
 	image?.addEventListener("error", showFallback);
 
-	const close = () => {
+	// 退场动画期间挡住重复触发，也避免 Swup 换页时叠加两次关闭。
+	// openToken 用来识别「关到一半又被重新打开」的情况，别让旧动画把新弹窗收走。
+	let closing = false;
+	let openToken = 0;
+
+	const finishClose = (token: number, animations: Animation[]) => {
+		if (token !== openToken) return;
+		// 先让元素隐身，再 cancel 掉 fill:both 的动画，避免闪回不透明的一帧
+		dialog.classList.add("hidden");
+		dialog.classList.remove("flex");
+		for (const animation of animations) animation.cancel();
+		if (activeDialog === dialog) activeDialog = null;
+		unlockScroll();
+		restoreToast();
 		if (dialog.open) dialog.close();
-		else {
-			dialog.classList.add("hidden");
-			dialog.classList.remove("flex");
-			activeDialog = null;
-			unlockScroll();
-			restoreToast();
-		}
+		closing = false;
 	};
 
+	const close = () => {
+		if (closing) return;
+		if (!dialog.open && dialog.classList.contains("hidden")) return;
+		closing = true;
+		const token = ++openToken;
+		void animateOut(dialog, panel).then((animations) =>
+			finishClose(token, animations),
+		);
+	};
+
+	// Esc 默认会立刻 close()，拦下来走统一退场动画
+	dialog.addEventListener("cancel", (event) => {
+		event.preventDefault();
+		close();
+	});
+
+	// 兜底：外部直接 close()（Swup 换页等）时同步状态，避免遮罩残留
 	dialog.addEventListener("close", () => {
+		if (closing) return;
 		dialog.classList.add("hidden");
 		dialog.classList.remove("flex");
 		if (activeDialog === dialog) activeDialog = null;
@@ -310,11 +404,21 @@ export function mountArticleShare(): void {
 		if (!dialog.isConnected) return;
 		if (activeDialog && activeDialog !== dialog) closeActiveShare();
 		activeDialog = dialog;
+		// 退场动画还没跑完就再次打开：作废旧动画，重新进场
+		closing = false;
+		openToken += 1;
+		for (const animation of [
+			...dialog.getAnimations(),
+			...(panel?.getAnimations() ?? []),
+		]) {
+			animation.cancel();
+		}
 		lockScroll();
 		moveToastInto(dialog);
 		dialog.classList.remove("hidden");
 		dialog.classList.add("flex");
 		if (!dialog.open) dialog.showModal();
+		animateIn(dialog, panel);
 		prefetchCard(state);
 		// 重新打开时图片可能早已加载 / 早已失败，骨架屏不能一直挂着
 		showSkeleton();

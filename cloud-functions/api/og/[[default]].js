@@ -36,18 +36,16 @@ const SITE_TITLE = "MeowRain 的技术博客";
 const SITE_DESC = "技术分享与实践";
 const SITE_HOST = "blog.meowrain.cn";
 const THEME = {
-	// hue 340 粉紫系，与博客主题一致；卡片是「光晕 + 玻璃面板」构图
-	bg: "linear-gradient(160deg, #1b0a18 0%, #2d0a1f 55%, #4c1030 100%)",
-	text: "#fdf2f8",
-	accent: "#ec4899",
-	soft: "#f9a8d4",
-	chipText: "#fbcfe8",
-	panel: "rgba(255,255,255,0.055)",
-	panelBorder: "rgba(249,168,212,0.24)",
-	chipBg: "rgba(255,255,255,0.08)",
-	chipBorder: "rgba(249,168,212,0.30)",
-	dim: "rgba(253,242,248,0.5)",
-	dimmer: "rgba(253,242,248,0.36)",
+	// hue 340 粉紫系，与博客主题一致；卡片是「光晕 + 同心圆 + 左侧主题色短线」构图
+	bg: "linear-gradient(150deg, #180710 0%, #25091a 46%, #390f27 100%)",
+	text: "#fff6fb",
+	accent: "#f0559b",
+	soft: "#f7b8d6",
+	chipText: "#f9cfe4",
+	chipBg: "rgba(255,255,255,0.07)",
+	chipBorder: "rgba(249,168,212,0.26)",
+	dim: "rgba(255,246,251,0.56)",
+	dimmer: "rgba(255,246,251,0.34)",
 };
 
 // ---------- 模块级缓存（同实例复用） ----------
@@ -84,12 +82,103 @@ function stripEmoji(s) {
 		.trim();
 }
 
-// 标题越长字号越小；配合玻璃面板的内边距，最长标题控制在 3~4 行
+// 标题越长字号越小；实际字号还会被 fitTitle 按行数与孤字微调
 function titleFontSize(len) {
-	if (len <= 12) return 78;
-	if (len <= 20) return 62;
-	if (len <= 34) return 50;
-	return 42;
+	if (len <= 10) return 86;
+	if (len <= 16) return 72;
+	if (len <= 24) return 62;
+	if (len <= 40) return 50;
+	return 44;
+}
+
+// satori 没有文本溢出裁剪，长标题必须自己折行 + 截断，否则会顶出面板。
+const CJK = /[\u2e80-\u9fff\u3000-\u303f\uf900-\ufaff\uff00-\uffef]/;
+function charWidth(ch) {
+	if (CJK.test(ch)) return 1;
+	if (ch === " ") return 0.3;
+	if (/[A-Z0-9]/.test(ch)) return 0.62;
+	if (/[mwMW]/.test(ch)) return 0.84;
+	if (/[iljt.,:;'!|]/.test(ch)) return 0.3;
+	if (/[a-z]/.test(ch)) return 0.52;
+	return 0.58;
+}
+
+function measureLine(text, fontSize) {
+	let width = 0;
+	for (const ch of text) width += charWidth(ch) * fontSize;
+	return width;
+}
+
+/**
+ * 按估算宽度把标题折成若干行；英文尽量在空格处断开，中文逐字断开。
+ * 超过 maxLines 的部分丢掉并以 … 收尾。
+ */
+function wrapTitle(text, fontSize, maxWidth, maxLines) {
+	const lines = [];
+	let line = "";
+	let lineWidth = 0;
+	let truncated = false;
+
+	const flush = () => {
+		lines.push(line.trimEnd());
+		line = "";
+		lineWidth = 0;
+	};
+
+	for (const ch of text) {
+		const w = charWidth(ch) * fontSize;
+		if (lineWidth + w > maxWidth && line) {
+			// 英文单词被切断时把最后一段挪到下一行，避免出现 "threa / d"
+			const ascii = !CJK.test(ch);
+			const cut = ascii ? line.lastIndexOf(" ") : -1;
+			if (cut > line.length * 0.4) {
+				const carry = line.slice(cut + 1);
+				line = line.slice(0, cut);
+				flush();
+				line = carry;
+				lineWidth = measureLine(carry, fontSize);
+			} else {
+				flush();
+			}
+			if (lines.length >= maxLines) {
+				truncated = true;
+				break;
+			}
+		}
+		line += ch;
+		lineWidth += w;
+	}
+
+	if (truncated) {
+		// 已经超行了，把最后一行收成省略号
+		const last = lines[maxLines - 1] ?? "";
+		lines[maxLines - 1] = `${last.replace(/[，,、\s]+$/, "")}…`;
+		return lines.slice(0, maxLines);
+	}
+	if (line.trim()) lines.push(line.trimEnd());
+	return lines;
+}
+
+/**
+ * 估宽有误差，折行结果可能刚好把末尾一两个字挤到下一行（"优化" -> "优" / "化"）。
+ * 先往下微调字号，找出「不超过 3 行且末行不太短」的排法；实在不行就用原字号截断。
+ */
+function fitTitle(text, maxWidth) {
+	const base = titleFontSize(text.length);
+	const sizes = [];
+	for (let size = base; size >= 40; size -= 2) sizes.push(size);
+
+	let fallback = { fontSize: base, lines: wrapTitle(text, base, maxWidth, 3) };
+	for (const fontSize of sizes) {
+		const lines = wrapTitle(text, fontSize, maxWidth, 3);
+		if (lines.length === 0) continue;
+		const last = lines[lines.length - 1];
+		// 末行只有一个字（或不到行宽 30%）算孤字，宁可缩小一号再试
+		const orphan = lines.length > 1 && measureLine(last, fontSize) < maxWidth * 0.3;
+		if (!orphan && !last.endsWith("…")) return { fontSize, lines };
+		if (fontSize === base) fallback = { fontSize, lines };
+	}
+	return fallback;
 }
 
 function el(type, props = {}, children = undefined) {
@@ -117,7 +206,7 @@ function tagChip(tag) {
 		{
 			style: {
 				display: "flex",
-				padding: "7px 22px",
+				padding: "8px 24px",
 				borderRadius: "999px",
 				background: THEME.chipBg,
 				border: `1px solid ${THEME.chipBorder}`,
@@ -130,7 +219,25 @@ function tagChip(tag) {
 	);
 }
 
+// 同心细圆环：satori 没有 blur，靠描边圆做出层次，比单圈更耐看
+function ring(size, offset, opacity = 0.14) {
+	return el("div", {
+		style: {
+			position: "absolute",
+			width: `${size}px`,
+			height: `${size}px`,
+			borderRadius: `${size / 2}px`,
+			border: `1px solid rgba(249,168,212,${opacity})`,
+			...offset,
+		},
+	});
+}
+
 function buildTree({ title, tags, date }) {
+	const titleWidth = 872;
+	// satori 不会裁剪溢出的文字，长标题必须自己折行、必要时缩字号
+	const { fontSize, lines } = fitTitle(title, titleWidth);
+
 	return el(
 		"div",
 		{
@@ -140,31 +247,35 @@ function buildTree({ title, tags, date }) {
 				boxSizing: "border-box", // 注意：satori 遵循 CSS 默认 content-box，不加这个 padding 会把画布撑爆
 				display: "flex",
 				flexDirection: "column",
-				justifyContent: "space-between",
 				position: "relative",
 				overflow: "hidden",
-				padding: "60px 72px",
+				padding: "64px 76px 56px",
 				background: THEME.bg,
 				color: THEME.text,
 				fontFamily: "Noto Sans SC",
 			},
 		},
 		[
-			// 装饰层：两团渐变光晕 + 一道细圆环（satori 不支持 blur/box-shadow，只能用 radial-gradient 假糊）
-			glow(620, { left: "-200px", bottom: "-260px" }, "rgba(168,85,247,0.34)"),
-			glow(520, { right: "-140px", top: "-200px" }, "rgba(236,72,153,0.32)"),
+			// ---------- 装饰层 ----------
+			glow(760, { left: "-280px", bottom: "-340px" }, "rgba(168,85,247,0.34)"),
+			glow(560, { right: "-170px", top: "-220px" }, "rgba(240,85,155,0.36)"),
+			glow(440, { right: "180px", bottom: "-280px" }, "rgba(236,72,153,0.18)"),
+			ring(420, { right: "56px", top: "-190px" }, 0.16),
+			ring(620, { right: "-30px", top: "-290px" }, 0.09),
+			// 底栏上方一条渐隐分隔线
 			el("div", {
 				style: {
 					position: "absolute",
-					width: "360px",
-					height: "360px",
-					borderRadius: "180px",
-					border: "1px solid rgba(249,168,212,0.16)",
-					right: "120px",
-					top: "-140px",
+					left: "76px",
+					right: "76px",
+					bottom: "132px",
+					height: "1px",
+					background:
+						"linear-gradient(90deg, rgba(249,168,212,0) 0%, rgba(249,168,212,0.20) 14%, rgba(249,168,212,0.20) 86%, rgba(249,168,212,0) 100%)",
 				},
 			}),
-			// 顶栏：站点名 + 日期
+
+			// ---------- 顶栏：站点标识 + 日期 ----------
 			el(
 				"div",
 				{
@@ -178,24 +289,42 @@ function buildTree({ title, tags, date }) {
 				[
 					el(
 						"div",
-						{ style: { display: "flex", alignItems: "center", gap: "14px" } },
+						{ style: { display: "flex", alignItems: "center", gap: "16px" } },
 						[
-							el("div", {
-								style: {
-									width: "16px",
-									height: "16px",
-									borderRadius: "8px",
-									background: THEME.accent,
-								},
-							}),
 							el(
 								"div",
 								{
 									style: {
-										fontSize: "26px",
-										fontWeight: 400,
+										display: "flex",
+										alignItems: "center",
+										justifyContent: "center",
+										width: "38px",
+										height: "38px",
+										borderRadius: "12px",
+										background:
+											"linear-gradient(140deg, rgba(240,85,155,0.95) 0%, rgba(168,85,247,0.9) 100%)",
+									},
+								},
+								[
+									el("div", {
+										style: {
+											width: "13px",
+											height: "13px",
+											borderRadius: "7px",
+											background: "rgba(255,255,255,0.92)",
+										},
+									}),
+								],
+							),
+							el(
+								"div",
+								{
+									style: {
+										display: "flex",
+										fontSize: "27px",
+										fontWeight: 600,
 										color: THEME.soft,
-										letterSpacing: "1px",
+										letterSpacing: "0.5px",
 									},
 								},
 								SITE_TITLE,
@@ -208,6 +337,7 @@ function buildTree({ title, tags, date }) {
 									"div",
 									{
 										style: {
+											display: "flex",
 											fontSize: "23px",
 											fontWeight: 400,
 											color: THEME.dim,
@@ -220,36 +350,54 @@ function buildTree({ title, tags, date }) {
 						: []),
 				],
 			),
-			// 标题：装进半透明玻璃面板
+
+			// ---------- 标题区：主题色短线 + 大标题 ----------
 			el(
 				"div",
 				{
 					style: {
 						display: "flex",
+						flexDirection: "column",
+						justifyContent: "center",
+						flex: 1,
+						gap: "28px",
 						position: "relative",
-						background: THEME.panel,
-						border: `1px solid ${THEME.panelBorder}`,
-						borderRadius: "30px",
-						padding: "46px 52px",
+						paddingRight: "48px",
 					},
 				},
 				[
+					el("div", {
+						style: {
+							display: "flex",
+							width: "72px",
+							height: "6px",
+							borderRadius: "3px",
+							background:
+								"linear-gradient(90deg, #f0559b 0%, rgba(168,85,247,0.85) 100%)",
+						},
+					}),
 					el(
 						"div",
 						{
 							style: {
 								display: "flex",
-								fontSize: `${titleFontSize(title.length)}px`,
+								flexDirection: "column",
+								width: `${titleWidth}px`,
+								fontSize: `${fontSize}px`,
 								fontWeight: 700,
-								lineHeight: 1.3,
+								lineHeight: 1.28,
+								letterSpacing: "0.5px",
 								color: THEME.text,
 							},
 						},
-						title,
+						lines.map((line) =>
+							el("div", { style: { display: "flex" } }, line || " "),
+						),
 					),
 				],
 			),
-			// 底栏：标签 + 域名
+
+			// ---------- 底栏：标签 + 域名 ----------
 			el(
 				"div",
 				{
@@ -258,6 +406,8 @@ function buildTree({ title, tags, date }) {
 						justifyContent: "space-between",
 						alignItems: "center",
 						position: "relative",
+						height: "74px",
+						marginTop: "18px",
 					},
 				},
 				[
@@ -270,13 +420,26 @@ function buildTree({ title, tags, date }) {
 						"div",
 						{
 							style: {
+								display: "flex",
+								alignItems: "center",
+								gap: "10px",
 								fontSize: "22px",
 								fontWeight: 400,
 								color: THEME.dimmer,
 								letterSpacing: "1px",
 							},
 						},
-						SITE_HOST,
+						[
+							el("div", {
+								style: {
+									width: "8px",
+									height: "8px",
+									borderRadius: "4px",
+									background: THEME.accent,
+								},
+							}),
+							SITE_HOST,
+						],
 					),
 				],
 			),
