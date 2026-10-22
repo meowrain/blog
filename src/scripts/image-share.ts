@@ -456,7 +456,7 @@ export function canvasToFile(canvas: HTMLCanvasElement, filename: string) {
 	});
 }
 
-async function fetchAsFile(url: string, filename: string) {
+export async function fetchAsFile(url: string, filename: string) {
 	try {
 		const response = await fetch(url, { cache: "force-cache" });
 		if (!response.ok) return null;

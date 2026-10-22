@@ -1247,6 +1247,13 @@ function disableAnimation() {
           module.mountYearCardPage()
         ),
     },
+    {
+      marker: "article-share",
+      load: () =>
+        import("../scripts/article-share").then((module) =>
+          module.mountArticleShare()
+        ),
+    },
   ];
 
   const mountPages = () => {

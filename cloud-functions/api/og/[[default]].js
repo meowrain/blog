@@ -363,6 +363,8 @@ export async function onRequestGet(context) {
 			headers: {
 				"Content-Type": "image/png",
 				"Cache-Control": "public, max-age=86400", // 同 URL 内容不变（slug 相同则卡片相同），可以放心长缓存
+				// 文章页分享需要跨域 fetch 成 File；HEAD 复用同一份 headers
+				"Access-Control-Allow-Origin": "*",
 				Etag: `"og-${slug.length ? slug : "home"}-${title.length}"`,
 			},
 		});
