@@ -1,0 +1,23 @@
+# NPC 事件流水线：@ 提及 NPC 时，由 npc:go 执行任务。
+# 角色定义见 .cnb/settings.yml；这里只固定运行模型。
+#
+# 注意：issue.comment@npc 与 pull_request.comment@npc 需分别配置，
+# 平台按事件独立合并，只配一个则另一个仍走系统默认。
+$:
+  issue.comment@npc:
+    - docker:
+        image: cnbcool/default-npc:latest
+      stages:
+        - name: npc go
+          type: npc:go
+          options:
+            model: deepseek-v4.1-flash
+
+  pull_request.comment@npc:
+    - docker:
+        image: cnbcool/default-npc:latest
+      stages:
+        - name: npc go
+          type: npc:go
+          options:
+            model: deepseek-v4.1-flash
