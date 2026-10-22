@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Icon from "@iconify/svelte";
 	import { onDestroy, onMount } from "svelte";
+	import { registerShortcut } from "../../scripts/shortcuts";
 	import LyricPanel from "./LyricPanel.svelte";
 	import { parseLrc } from "./lrc";
 
@@ -367,28 +368,46 @@
 			navigator.mediaSession.setActionHandler("nexttrack", () => advance(1));
 		}
 
-		// 空格播放/暂停，Shift + 左右快进快退；输入框里打字时不抢键
-		const onKeydown = (event: KeyboardEvent) => {
+		// 空格播放/暂停，Shift + 左右快进快退；输入框和按钮上不抢键
+		const keysActive = () => Boolean(audio?.isConnected);
+		const ignoreInteractive = (event: KeyboardEvent): boolean => {
 			const target = event.target as HTMLElement | null;
-			if (
-				target &&
-				(target.isContentEditable ||
-					["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName))
-			) {
-				return;
-			}
-			if (event.code === "Space") {
-				event.preventDefault();
-				togglePlay();
-			} else if (event.shiftKey && event.code === "ArrowRight") {
-				seekBy(5);
-			} else if (event.shiftKey && event.code === "ArrowLeft") {
-				seekBy(-5);
-			}
+			return Boolean(
+				target?.closest(
+					"input, textarea, select, button, a, [contenteditable]",
+				),
+			);
 		};
-		window.addEventListener("keydown", onKeydown);
 
-		return () => window.removeEventListener("keydown", onKeydown);
+		const unregisterToggle = registerShortcut({
+			id: "music-player.toggle",
+			key: "space",
+			group: "播放",
+			label: "播放 / 暂停",
+			when: keysActive,
+			priority: 10,
+			handler: (event) => {
+				if (ignoreInteractive(event)) return false;
+				togglePlay();
+			},
+		});
+		const unregisterSeek = registerShortcut({
+			id: "music-player.seek",
+			key: ["Shift+ArrowLeft", "Shift+ArrowRight"],
+			group: "播放",
+			label: "快退 / 快进 5 秒",
+			when: keysActive,
+			priority: 10,
+			handler: (event) => {
+				if (ignoreInteractive(event)) return false;
+				seekBy(event.key === "ArrowRight" ? 5 : -5);
+			},
+		});
+
+		return () => {
+			unregisterToggle();
+			unregisterSeek();
+		};
 	});
 
 	onDestroy(() => {

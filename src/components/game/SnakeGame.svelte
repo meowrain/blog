@@ -8,6 +8,7 @@
  * 键盘只在「正在玩」或「棋盘拿到焦点」时才接管 —— 否则会把页面方向的滚动抢走。
  */
 import { onDestroy, onMount } from "svelte";
+import { registerShortcut } from "../../scripts/shortcuts";
 
 const GRID = 17;
 const COUNT = GRID * GRID;
@@ -192,27 +193,30 @@ function frame(now: number): void {
 	}
 }
 
-function onKeyDown(event: KeyboardEvent): void {
-	if (!rootEl?.isConnected) return;
+function onKeyDown(event: KeyboardEvent): boolean | undefined {
+	if (!rootEl?.isConnected) return false;
 	const target = event.target as HTMLElement | null;
-	if (target?.closest("input, textarea, select, [contenteditable]")) return;
-	if (event.metaKey || event.ctrlKey || event.altKey) return;
+	if (target?.closest("input, textarea, select, [contenteditable]"))
+		return false;
+	if (event.metaKey || event.ctrlKey || event.altKey) return false;
 
 	const focused = rootEl.contains(document.activeElement);
-	if (!focused && status !== "playing") return;
+	if (!focused && status !== "playing") return false;
 
 	const turn = KEY_DIRS[event.key];
 	if (turn) {
 		event.preventDefault();
 		direct(turn);
-		return;
+		return true;
 	}
 	if (event.key === " " || event.key === "Enter") {
 		// 空格/回车落在按钮上时，留给按钮自己响应
-		if (target?.closest("button, a")) return;
+		if (target?.closest("button, a")) return false;
 		event.preventDefault();
 		toggle();
+		return true;
 	}
+	return false;
 }
 
 function onPointerDown(event: PointerEvent): void {
@@ -253,7 +257,6 @@ function destroy(): void {
 	if (typeof window === "undefined") return;
 	if (rafId) cancelAnimationFrame(rafId);
 	rafId = 0;
-	window.removeEventListener("keydown", onKeyDown);
 	window.removeEventListener("blur", onWindowBlur);
 	document.removeEventListener("visibilitychange", onVisibilityChange);
 }
@@ -267,9 +270,35 @@ onMount(() => {
 	reset();
 	lastFrame = performance.now();
 	rafId = requestAnimationFrame(frame);
-	window.addEventListener("keydown", onKeyDown);
 	window.addEventListener("blur", onWindowBlur);
 	document.addEventListener("visibilitychange", onVisibilityChange);
+
+	const unregisterKeys = registerShortcut({
+		id: "snake-game.keys",
+		key: [
+			"ArrowUp",
+			"ArrowDown",
+			"ArrowLeft",
+			"ArrowRight",
+			"w",
+			"a",
+			"s",
+			"d",
+			"Shift+w",
+			"Shift+a",
+			"Shift+s",
+			"Shift+d",
+			"space",
+			"Enter",
+		],
+		group: "游戏",
+		label: "方向键 / WASD 转向 · 空格暂停",
+		when: () => Boolean(rootEl?.isConnected),
+		priority: 50,
+		handler: onKeyDown,
+	});
+
+	return () => unregisterKeys();
 });
 
 onDestroy(destroy);
