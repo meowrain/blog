@@ -1,15 +1,27 @@
-import { downloadBlob, fetchAsFile, shareFile, showToast } from "./image-share";
+import {
+	canvasToFile,
+	downloadBlob,
+	drawArticleCard,
+	fetchAsFile,
+	shareFile,
+	showToast,
+} from "./image-share";
 
 /**
- * 文章分享卡片：直接复用文章 OG 图（云函数实时渲染的 1200x630 PNG），
- * 不再用 canvas 另画一套。文章页在 Swup 容器内，换页后要重新挂载。
+ * 文章分享卡片：优先使用文章 OG 图（云函数实时渲染的 1200x630 PNG），
+ * 远端不可用时用 canvas 本地生成同款卡片兜底。
+ * 文章页在 Swup 容器内，换页后要重新挂载。
  */
 
 type ShareState = {
 	title: string;
 	slug: string;
 	cardUrl: string;
+	tags: string[];
+	date: string;
 };
+
+const REMOTE_CARD_TIMEOUT = 6000;
 
 let activeDialog: HTMLDialogElement | null = null;
 let scrollLocked = false;
@@ -164,25 +176,114 @@ function restoreToast(): void {
 	toastHome = null;
 }
 
+function withTimeout<T>(task: Promise<T>, ms: number, fallback: T): Promise<T> {
+	return new Promise((resolve) => {
+		const timer = setTimeout(() => resolve(fallback), ms);
+		task
+			.then((value) => {
+				clearTimeout(timer);
+				resolve(value);
+			})
+			.catch(() => {
+				clearTimeout(timer);
+				resolve(fallback);
+			});
+	});
+}
+
+function siteInfo(): { title: string; url: string } {
+	const panel = document.getElementById("image-share-panel");
+	return {
+		title: panel?.dataset.siteTitle?.trim() || document.title,
+		url: panel?.dataset.siteUrl?.trim() || window.location.host,
+	};
+}
+
+let localCardKey = "";
+let localCardCanvas: HTMLCanvasElement | null = null;
+let localCardDataUrl = "";
+let localCardFile: File | null = null;
+let localCardTask: Promise<File | null> | null = null;
+
+function localCard(state: ShareState): HTMLCanvasElement | null {
+	if (!localCardCanvas) localCardCanvas = document.createElement("canvas");
+	if (localCardKey === state.cardUrl) return localCardCanvas;
+	const site = siteInfo();
+	const drawn = drawArticleCard(localCardCanvas, {
+		title: state.title,
+		tags: state.tags,
+		date: state.date,
+		siteTitle: site.title,
+		siteUrl: site.url,
+	});
+	if (!drawn) return null;
+	localCardKey = state.cardUrl;
+	localCardDataUrl = "";
+	localCardFile = null;
+	localCardTask = null;
+	return localCardCanvas;
+}
+
+function localCardSnapshot(state: ShareState): string {
+	const canvas = localCard(state);
+	if (!canvas) return "";
+	if (!localCardDataUrl) {
+		try {
+			localCardDataUrl = canvas.toDataURL("image/png");
+		} catch {
+			return "";
+		}
+	}
+	return localCardDataUrl;
+}
+
+function ensureLocalFile(state: ShareState): Promise<File | null> {
+	const canvas = localCard(state);
+	if (!canvas) return Promise.resolve(null);
+	if (localCardFile) return Promise.resolve(localCardFile);
+	if (!localCardTask) {
+		const key = state.cardUrl;
+		localCardTask = canvasToFile(canvas, cardFileName(state.slug)).then(
+			(file) => {
+				if (localCardKey === key) localCardFile = file;
+				return file;
+			},
+		);
+	}
+	return localCardTask;
+}
+
 function prefetchCard(state: ShareState): void {
+	void ensureLocalFile(state);
 	if (prefetchedUrl === state.cardUrl && prefetchedPromise) return;
 	prefetchedUrl = state.cardUrl;
 	prefetchedFile = null;
-	prefetchedPromise = fetchAsFile(state.cardUrl, cardFileName(state.slug)).then(
-		(file) => {
-			if (prefetchedUrl !== state.cardUrl) return null;
-			prefetchedFile = file;
-			return file;
-		},
-	);
+	prefetchedPromise = withTimeout(
+		fetchAsFile(state.cardUrl, cardFileName(state.slug)),
+		REMOTE_CARD_TIMEOUT,
+		null,
+	).then((file) => {
+		if (prefetchedUrl !== state.cardUrl) return null;
+		prefetchedFile = file;
+		return file;
+	});
 }
 
-async function cachedCardFile(state: ShareState): Promise<File | null> {
+async function cachedRemoteCardFile(state: ShareState): Promise<File | null> {
 	if (prefetchedUrl === state.cardUrl) {
 		if (prefetchedFile) return prefetchedFile;
 		if (prefetchedPromise) return prefetchedPromise;
 	}
 	return fetchAsFile(state.cardUrl, cardFileName(state.slug));
+}
+
+async function cachedCardFile(state: ShareState): Promise<File | null> {
+	const remote = await withTimeout(
+		cachedRemoteCardFile(state),
+		REMOTE_CARD_TIMEOUT,
+		null,
+	);
+	return remote ?? (await ensureLocalFile(state));
 }
 
 async function shareWithoutFile(state: ShareState): Promise<void> {
@@ -205,9 +306,10 @@ async function shareWithoutFile(state: ShareState): Promise<void> {
 
 function shareArticle(state: ShareState): void {
 	const url = shareUrl();
-	if (prefetchedFile) {
+	const file = prefetchedFile ?? localCardFile;
+	if (file) {
 		// 先同步调用 navigator.share，保留用户手势；文件不受支持再降级
-		void shareFile(prefetchedFile, `${state.title}\n${url}`).then((shared) => {
+		void shareFile(file, `${state.title}\n${url}`).then((shared) => {
 			if (!shared) void shareWithoutFile(state);
 		});
 		return;
@@ -227,9 +329,7 @@ async function downloadCard(state: ShareState): Promise<void> {
 		showToast("卡片已下载");
 		return;
 	}
-	// 跨域 / 404 / 413 / 500 都拿不到 blob，只能新开标签页让用户自己存
-	window.open(state.cardUrl, "_blank", "noopener");
-	showToast("已打开卡片，可长按保存");
+	showToast("卡片生成失败，请刷新后重试");
 }
 
 /** Swup 换页时页面节点马上会被替换，不做退场动画，直接收状态 */
@@ -281,7 +381,12 @@ export function mountArticleShare(): void {
 	const slug = trigger.dataset.slug?.trim() || "";
 	const cardUrl = trigger.dataset.cardUrl?.trim() || "";
 	if (!cardUrl) return;
-	const state: ShareState = { title, slug, cardUrl };
+	const tags = (trigger.dataset.tags ?? "")
+		.split(",")
+		.map((tag) => tag.trim())
+		.filter(Boolean);
+	const date = trigger.dataset.date?.trim() ?? "";
+	const state: ShareState = { title, slug, cardUrl, tags, date };
 
 	const image = dialog.querySelector<HTMLImageElement>(
 		"[data-article-share-image]",
@@ -335,16 +440,45 @@ export function mountArticleShare(): void {
 		fallback?.classList.remove("hidden");
 		fallback?.classList.add("flex");
 	};
+	let localPreview = false;
+	const showLocalCard = () => {
+		if (localPreview) {
+			showFallback();
+			return;
+		}
+		const dataUrl = localCardSnapshot(state);
+		if (!dataUrl || !image) {
+			showFallback();
+			return;
+		}
+		localPreview = true;
+		image.src = dataUrl;
+		showImage();
+	};
 	const syncPreview = () => {
 		if (!image) return;
 		if (image.complete) {
 			if (image.naturalWidth > 0) showImage();
-			else showFallback();
+			else showLocalCard();
 		}
 	};
 
-	image?.addEventListener("load", showImage);
-	image?.addEventListener("error", showFallback);
+	let remoteTimer: ReturnType<typeof setTimeout> | undefined;
+	const armRemoteTimeout = () => {
+		clearTimeout(remoteTimer);
+		const remoteReady = !!image?.complete && image.naturalWidth > 0;
+		if (localPreview || remoteReady) return;
+		remoteTimer = setTimeout(showLocalCard, REMOTE_CARD_TIMEOUT);
+	};
+
+	image?.addEventListener("load", () => {
+		clearTimeout(remoteTimer);
+		showImage();
+	});
+	image?.addEventListener("error", () => {
+		clearTimeout(remoteTimer);
+		showLocalCard();
+	});
 
 	// 退场动画期间挡住重复触发，也避免 Swup 换页时叠加两次关闭。
 	// openToken 用来识别「关到一半又被重新打开」的情况，别让旧动画把新弹窗收走。
@@ -367,6 +501,7 @@ export function mountArticleShare(): void {
 	const close = () => {
 		if (closing) return;
 		if (!dialog.open && dialog.classList.contains("hidden")) return;
+		clearTimeout(remoteTimer);
 		closing = true;
 		const token = ++openToken;
 		void animateOut(dialog, panel).then((animations) =>
@@ -382,6 +517,7 @@ export function mountArticleShare(): void {
 
 	// 兜底：外部直接 close()（Swup 换页等）时同步状态，避免遮罩残留
 	dialog.addEventListener("close", () => {
+		clearTimeout(remoteTimer);
 		if (closing) return;
 		dialog.classList.add("hidden");
 		dialog.classList.remove("flex");
@@ -423,5 +559,6 @@ export function mountArticleShare(): void {
 		// 重新打开时图片可能早已加载 / 早已失败，骨架屏不能一直挂着
 		showSkeleton();
 		syncPreview();
+		armRemoteTimeout();
 	});
 }

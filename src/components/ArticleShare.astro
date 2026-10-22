@@ -7,10 +7,18 @@ interface Props {
 	slug: string;
 	cardUrl: string;
 	date?: string;
+	tags?: string[];
 	class?: string;
 }
 
-const { title, slug, cardUrl, date = "", class: className } = Astro.props;
+const {
+	title,
+	slug,
+	cardUrl,
+	date = "",
+	tags = [],
+	class: className,
+} = Astro.props;
 
 // 线上 CDN 可能缓存着旧版卡片 / 没有 CORS 头的旧响应，分享用的地址加版本参数换一份缓存
 const shareCardUrl = `${cardUrl}${cardUrl.includes("?") ? "&" : "?"}v=3`;
@@ -23,6 +31,8 @@ const shareCardUrl = `${cardUrl}${cardUrl.includes("?") ? "&" : "?"}v=3`;
 	data-title={title}
 	data-slug={slug}
 	data-card-url={shareCardUrl}
+	data-tags={tags.join(",")}
+	data-date={date}
 	aria-haspopup="dialog"
 	aria-label="分享这篇文章"
 	title="分享"
@@ -178,7 +188,7 @@ const shareCardUrl = `${cardUrl}${cardUrl.includes("?") ? "&" : "?"}v=3`;
 			</div>
 
 			<p class="mt-3 text-center text-xs text-50 sm:text-left">
-				{date ? `卡片生成于 ${date}` : "卡片由文章的 OG 图实时生成"}
+				{date ? `卡片生成于 ${date}` : "卡片由文章信息实时生成"}
 			</p>
 		</div>
 	</div>
