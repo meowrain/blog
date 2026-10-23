@@ -11,6 +11,7 @@ import FallingEffect from "@components/widget/FallingEffect.astro";
 import EmojiCursor from "@components/widget/EmojiCursor.astro";
 import FindAgent from "@components/widget/FindAgent.svelte";
 import MobileTOC from "@components/widget/MobileTOC.astro";
+import ReadingProgress from "@components/widget/ReadingProgress.astro";
 import {
   AUTO_MODE,
   BANNER_HEIGHT,
@@ -225,6 +226,20 @@ const bannerOffset =
       // Load the hue from local storage
       const hue = localStorage.getItem("hue") || configHue;
       document.documentElement.style.setProperty("--hue", hue);
+
+      // 阅读排版设置：先写进 CSS 变量，避免设置面板挂载前字号跳一下
+      const readingFontSize = Number(localStorage.getItem("reading-font-size"));
+      if (readingFontSize > 0) {
+        document.documentElement.style.setProperty("--reading-font-size", `${readingFontSize}rem`);
+      }
+      const readingLineHeight = Number(localStorage.getItem("reading-line-height"));
+      if (readingLineHeight > 0) {
+        document.documentElement.style.setProperty("--reading-line-height", String(readingLineHeight));
+      }
+      const readingContentWidth = Number(localStorage.getItem("reading-content-width"));
+      if (readingContentWidth > 0) {
+        document.documentElement.style.setProperty("--reading-content-width", `${readingContentWidth}rem`);
+      }
 
       // calculate the --banner-height-extend, which needs to be a multiple of 4 to avoid blurry text
       let offset = Math.floor(
@@ -446,8 +461,10 @@ const bannerOffset =
     <ConfigCarrier />
     <!-- 全站「找文章」入口：放在 Swup 容器之外，换页时面板和对话不会被替换 -->
     <FindAgent client:only="svelte" />
-    <!-- 移动端目录 + 阅读进度条：同样必须在 Swup 容器外，切页后由组件自己重建目录 -->
+    <!-- 移动端目录：同样必须在 Swup 容器外，切页后由组件自己重建目录 -->
     <MobileTOC />
+    <!-- 全站阅读进度条：独立于 MobileTOC，2xl 隐藏移动端目录后仍然保留 -->
+    <ReadingProgress />
 
     <!--
       相册图片查看器。必须放在 Swup 容器（main/#toc）和 z-30 的正文容器之外：
@@ -812,6 +829,14 @@ const bannerOffset =
     .navbar-hidden {
       @apply opacity-0 -translate-y-16;
     }
+  }
+
+  /* 阅读排版：DisplaySettings 的三个滑杆写入这些 CSS 变量 */
+  #post-container .markdown-content {
+    font-size: var(--reading-font-size, 1rem);
+    line-height: var(--reading-line-height, 1.75);
+    max-width: var(--reading-content-width, 50rem) !important;
+    margin-inline: auto;
   }
 </style>
 

@@ -23,6 +23,12 @@ import {
 	getFallingEffect,
 	setFallingEffect,
 	FALLING_EFFECT_OPTIONS,
+	getReadingFontSize,
+	setReadingFontSize,
+	getReadingLineHeight,
+	setReadingLineHeight,
+	getReadingContentWidth,
+	setReadingContentWidth,
 } from "@utils/setting-utils";
 import { AUTO_MODE, DARK_MODE, LIGHT_MODE } from "@constants/constants";
 import type { FallingEffectType } from "@utils/setting-utils";
@@ -36,6 +42,10 @@ let hideBg = getHideBg();
 let isDevMode = getDevMode();
 let devServer = getDevServer();
 let fallingEffect: FallingEffectType = getFallingEffect();
+let readingFontSize = getReadingFontSize();
+let readingLineHeight = getReadingLineHeight();
+let readingContentWidth = getReadingContentWidth();
+let rootFontSize = 16;
 let animationId: number;
 let lastUpdate = 0;
 let rainbowHue = 0; // Independent hue for background rotation
@@ -111,17 +121,39 @@ function onSpeedChange() {
 	setRainbowSpeed(rainbowSpeed);
 }
 
+function onReadingFontSizeChange() {
+	setReadingFontSize(readingFontSize);
+}
+
+function onReadingLineHeightChange() {
+	setReadingLineHeight(readingLineHeight);
+}
+
+function onReadingContentWidthChange() {
+	setReadingContentWidth(readingContentWidth);
+}
+
+function updateRootFontSize() {
+	rootFontSize =
+		Number.parseFloat(getComputedStyle(document.documentElement).fontSize) ||
+		16;
+}
+
 onMount(() => {
+	updateRootFontSize();
+	window.addEventListener("resize", updateRootFontSize);
 	if (isRainbowMode) {
 		updateRainbow();
 	}
     return () => {
+        window.removeEventListener("resize", updateRootFontSize);
         if (animationId) cancelAnimationFrame(animationId);
     }
 });
 </script>
 
-<div id="display-setting" class="float-panel float-panel-closed absolute transition-all w-80 right-4 px-4 py-4">
+<div id="display-setting" class="float-panel float-panel-closed absolute transition-all w-80 right-4 px-4 py-4"
+     style="max-height: calc(100vh - 6rem); overflow-y: auto;">
     <div class="flex flex-row gap-2 mb-3 items-center justify-between">
         <div class="flex gap-2 font-bold text-lg text-neutral-900 dark:text-neutral-100 transition relative ml-3
             before:w-1 before:h-4 before:rounded-md before:bg-[var(--primary)]
@@ -176,6 +208,46 @@ onMount(() => {
     <div class="w-full h-6 px-1 bg-[oklch(0.80_0.10_0)] dark:bg-[oklch(0.70_0.10_0)] rounded select-none mb-3">
         <input aria-label="主题色彩" type="range" min="0" max="360" bind:value={hue} disabled={isRainbowMode}
                class="slider" id="colorSlider" step="1" style="width: 100%">
+    </div>
+
+    <div class="flex flex-row gap-2 mb-2 items-center justify-between">
+        <div class="flex gap-2 font-bold text-lg text-neutral-900 dark:text-neutral-100 transition relative ml-3
+            before:w-1 before:h-4 before:rounded-md before:bg-[var(--primary)]
+            before:absolute before:-left-3 before:top-[0.33rem]"
+        >
+            阅读排版
+        </div>
+        <span class="text-xs text-black/40 dark:text-white/40">正文</span>
+    </div>
+
+    <div class="flex items-center justify-between mb-1 ml-3">
+        <span class="text-sm font-bold text-black/75 dark:text-white/75">字号</span>
+        <span class="text-xs tabular-nums text-black/40 dark:text-white/40">{Math.round(readingFontSize * rootFontSize)}px</span>
+    </div>
+    <div class="w-full h-6 px-1 bg-[var(--btn-regular-bg)] rounded select-none mb-2">
+        <input aria-label="正文字号" type="range" min="0.875" max="1.35" step="0.0625"
+               bind:value={readingFontSize} on:input={onReadingFontSizeChange}
+               class="slider" style="width: 100%">
+    </div>
+
+    <div class="flex items-center justify-between mb-1 ml-3">
+        <span class="text-sm font-bold text-black/75 dark:text-white/75">行距</span>
+        <span class="text-xs tabular-nums text-black/40 dark:text-white/40">{readingLineHeight.toFixed(2)}</span>
+    </div>
+    <div class="w-full h-6 px-1 bg-[var(--btn-regular-bg)] rounded select-none mb-2">
+        <input aria-label="正文行距" type="range" min="1.4" max="2.2" step="0.05"
+               bind:value={readingLineHeight} on:input={onReadingLineHeightChange}
+               class="slider" style="width: 100%">
+    </div>
+
+    <div class="flex items-center justify-between mb-1 ml-3">
+        <span class="text-sm font-bold text-black/75 dark:text-white/75">正文宽度</span>
+        <span class="text-xs tabular-nums text-black/40 dark:text-white/40">{Math.round(readingContentWidth * rootFontSize)}px</span>
+    </div>
+    <div class="w-full h-6 px-1 bg-[var(--btn-regular-bg)] rounded select-none mb-3">
+        <input aria-label="正文宽度" type="range" min="34" max="50" step="1"
+               bind:value={readingContentWidth} on:input={onReadingContentWidthChange}
+               class="slider" style="width: 100%">
     </div>
 
     <div class="flex flex-row gap-2 mb-3 items-center justify-between">
