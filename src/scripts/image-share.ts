@@ -394,6 +394,240 @@ function drawCard(
 	}
 }
 
+/* -------------------------------- 文章分享卡 -------------------------------- */
+
+const ARTICLE_CARD_WIDTH = 1200;
+const ARTICLE_CARD_HEIGHT = 630;
+const ARTICLE_CARD_PADDING_X = 76;
+const ARTICLE_TITLE_WIDTH = 872;
+
+export type ArticleCardData = {
+	title: string;
+	tags?: string[];
+	date?: string;
+	siteTitle?: string;
+	siteUrl?: string;
+};
+
+function articleTitleSize(length: number) {
+	if (length <= 10) return 86;
+	if (length <= 16) return 72;
+	if (length <= 24) return 62;
+	if (length <= 40) return 50;
+	return 44;
+}
+
+function fitArticleTitle(
+	ctx: CanvasRenderingContext2D,
+	text: string,
+	maxWidth: number,
+) {
+	const base = articleTitleSize(text.length);
+	let fallback = { fontSize: base, lines: [] as string[] };
+	for (let size = base; size >= 40; size -= 2) {
+		ctx.font = cardFont(size, 700);
+		const lines = wrapCardText(ctx, text, maxWidth, 3);
+		if (size === base) fallback = { fontSize: size, lines };
+		if (lines.length === 0) continue;
+		const last = lines[lines.length - 1];
+		const orphan =
+			lines.length > 1 && ctx.measureText(last).width < maxWidth * 0.3;
+		if (!orphan && !last.endsWith("…")) return { fontSize: size, lines };
+	}
+	return fallback;
+}
+
+function ellipsizeLine(
+	ctx: CanvasRenderingContext2D,
+	text: string,
+	maxWidth: number,
+) {
+	if (ctx.measureText(text).width <= maxWidth) return text;
+	let result = text;
+	while (result.length > 1 && ctx.measureText(`${result}…`).width > maxWidth) {
+		result = result.slice(0, -1);
+	}
+	return `${result}…`;
+}
+
+function paintArticleGlow(
+	ctx: CanvasRenderingContext2D,
+	x: number,
+	y: number,
+	radius: number,
+	color: string,
+) {
+	const glow = ctx.createRadialGradient(x, y, 0, x, y, radius);
+	glow.addColorStop(0, color);
+	glow.addColorStop(0.7, "rgba(0, 0, 0, 0)");
+	ctx.fillStyle = glow;
+	ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+}
+
+function paintArticleRing(
+	ctx: CanvasRenderingContext2D,
+	x: number,
+	y: number,
+	radius: number,
+	opacity: number,
+) {
+	ctx.beginPath();
+	ctx.arc(x, y, radius, 0, Math.PI * 2);
+	ctx.strokeStyle = `rgba(249, 168, 212, ${opacity})`;
+	ctx.lineWidth = 1;
+	ctx.stroke();
+}
+
+export function drawArticleCard(
+	canvas: HTMLCanvasElement,
+	data: ArticleCardData,
+): boolean {
+	canvas.width = ARTICLE_CARD_WIDTH;
+	canvas.height = ARTICLE_CARD_HEIGHT;
+	canvas.style.aspectRatio = `${ARTICLE_CARD_WIDTH} / ${ARTICLE_CARD_HEIGHT}`;
+
+	const ctx = canvas.getContext("2d");
+	if (!ctx) return false;
+
+	const siteTitle = data.siteTitle?.trim() || document.title;
+	const siteUrl = data.siteUrl?.trim() || window.location.host;
+	const title = data.title.trim() || siteTitle;
+	const date = data.date?.trim() ?? "";
+	const tags = (data.tags ?? []).map((tag) => tag.trim()).filter(Boolean);
+
+	const background = ctx.createLinearGradient(
+		0,
+		0,
+		ARTICLE_CARD_WIDTH,
+		ARTICLE_CARD_HEIGHT,
+	);
+	background.addColorStop(0, "#180710");
+	background.addColorStop(0.46, "#25091a");
+	background.addColorStop(1, "#390f27");
+	ctx.fillStyle = background;
+	ctx.fillRect(0, 0, ARTICLE_CARD_WIDTH, ARTICLE_CARD_HEIGHT);
+
+	paintArticleGlow(ctx, 100, 590, 380, "rgba(168, 85, 247, 0.34)");
+	paintArticleGlow(ctx, 1090, 60, 280, "rgba(240, 85, 155, 0.36)");
+	paintArticleGlow(ctx, 800, 690, 220, "rgba(236, 72, 153, 0.18)");
+	paintArticleRing(ctx, 934, 20, 210, 0.16);
+	paintArticleRing(ctx, 920, 20, 310, 0.09);
+
+	const divider = ctx.createLinearGradient(
+		ARTICLE_CARD_PADDING_X,
+		0,
+		ARTICLE_CARD_WIDTH - ARTICLE_CARD_PADDING_X,
+		0,
+	);
+	divider.addColorStop(0, "rgba(249, 168, 212, 0)");
+	divider.addColorStop(0.14, "rgba(249, 168, 212, 0.2)");
+	divider.addColorStop(0.86, "rgba(249, 168, 212, 0.2)");
+	divider.addColorStop(1, "rgba(249, 168, 212, 0)");
+	ctx.fillStyle = divider;
+	ctx.fillRect(ARTICLE_CARD_PADDING_X, 498, ARTICLE_CARD_WIDTH - 152, 1);
+
+	const iconX = ARTICLE_CARD_PADDING_X;
+	const iconY = 64;
+	const icon = ctx.createLinearGradient(iconX, iconY, iconX + 38, iconY + 38);
+	icon.addColorStop(0, "rgba(240, 85, 155, 0.95)");
+	icon.addColorStop(1, "rgba(168, 85, 247, 0.9)");
+	roundRectPath(ctx, iconX, iconY, 38, 38, 12);
+	ctx.fillStyle = icon;
+	ctx.fill();
+	roundRectPath(ctx, iconX + 12.5, iconY + 12.5, 13, 13, 6.5);
+	ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+	ctx.fill();
+
+	ctx.textBaseline = "middle";
+	ctx.textAlign = "left";
+	ctx.font = cardFont(27, 600);
+	ctx.fillStyle = "#f7b8d6";
+	ctx.fillText(siteTitle, iconX + 54, iconY + 19);
+
+	if (date) {
+		ctx.font = cardFont(23, 400);
+		ctx.fillStyle = "rgba(255, 246, 251, 0.56)";
+		ctx.textAlign = "right";
+		ctx.fillText(date, ARTICLE_CARD_WIDTH - ARTICLE_CARD_PADDING_X, iconY + 19);
+	}
+
+	const { fontSize, lines } = fitArticleTitle(ctx, title, ARTICLE_TITLE_WIDTH);
+	const lineHeight = Math.round(fontSize * 1.28);
+	const blockHeight = 6 + 28 + lines.length * lineHeight;
+	const areaTop = 102;
+	const areaBottom = 482;
+	const blockTop = Math.max(
+		areaTop,
+		areaTop + (areaBottom - areaTop - blockHeight) / 2,
+	);
+
+	const dash = ctx.createLinearGradient(
+		ARTICLE_CARD_PADDING_X,
+		blockTop,
+		ARTICLE_CARD_PADDING_X + 72,
+		blockTop,
+	);
+	dash.addColorStop(0, "#f0559b");
+	dash.addColorStop(1, "rgba(168, 85, 247, 0.85)");
+	roundRectPath(ctx, ARTICLE_CARD_PADDING_X, blockTop, 72, 6, 3);
+	ctx.fillStyle = dash;
+	ctx.fill();
+
+	ctx.font = cardFont(fontSize, 700);
+	ctx.fillStyle = "#fff6fb";
+	ctx.textAlign = "left";
+	ctx.textBaseline = "top";
+	const titleTop = blockTop + 6 + 28;
+	lines.forEach((line, index) => {
+		ctx.fillText(line, ARTICLE_CARD_PADDING_X, titleTop + index * lineHeight);
+	});
+
+	const footerCenterY = 537;
+	ctx.font = cardFont(22, 400);
+	const urlWidth = ctx.measureText(siteUrl).width;
+	const dotX = ARTICLE_CARD_WIDTH - ARTICLE_CARD_PADDING_X - urlWidth - 14;
+	const chipsMaxRight = dotX - 20;
+
+	if (tags.length > 0) {
+		ctx.font = cardFont(23, 400);
+		let x = ARTICLE_CARD_PADDING_X;
+		for (const tag of tags.slice(0, 4)) {
+			const remaining = chipsMaxRight - x - 48;
+			if (remaining < 60) break;
+			const label = ellipsizeLine(ctx, tag, Math.min(220, remaining));
+			const width = Math.ceil(ctx.measureText(label).width) + 48;
+			roundRectPath(ctx, x, footerCenterY - 22, width, 44, 22);
+			ctx.fillStyle = "rgba(255, 255, 255, 0.07)";
+			ctx.fill();
+			ctx.strokeStyle = "rgba(249, 168, 212, 0.26)";
+			ctx.lineWidth = 1;
+			ctx.stroke();
+			ctx.fillStyle = "#f9cfe4";
+			ctx.textAlign = "left";
+			ctx.textBaseline = "middle";
+			ctx.fillText(label, x + 24, footerCenterY + 1);
+			x += width + 12;
+		}
+	}
+
+	ctx.beginPath();
+	ctx.arc(dotX, footerCenterY, 4, 0, Math.PI * 2);
+	ctx.fillStyle = "#f0559b";
+	ctx.fill();
+
+	ctx.font = cardFont(22, 400);
+	ctx.fillStyle = "rgba(255, 246, 251, 0.34)";
+	ctx.textAlign = "right";
+	ctx.textBaseline = "middle";
+	ctx.fillText(
+		siteUrl,
+		ARTICLE_CARD_WIDTH - ARTICLE_CARD_PADDING_X,
+		footerCenterY,
+	);
+
+	return true;
+}
+
 function renderCard() {
 	const { canvas, text, textCount, watermark } = els();
 	if (textCount) textCount.textContent = `${text?.value.length ?? 0} / 140`;
