@@ -1,11 +1,16 @@
 ---
+import DataShareCard from "@components/DataShareCard.astro";
 import YearCharts from "@components/year/YearCharts.astro";
 import YearRankings from "@components/year/YearRankings.astro";
-import YearShareCard from "@components/year/YearShareCard.astro";
 import YearSummary from "@components/year/YearSummary.astro";
 import MainGridLayout from "@layouts/MainGridLayout.astro";
 import { url } from "@utils/url-utils";
-import { formatWords, getYearReports } from "@utils/year-stats";
+import {
+	formatDuration,
+	formatNumber,
+	formatWords,
+	getYearReports,
+} from "@utils/year-stats";
 import type { GetStaticPaths } from "astro";
 import { Icon } from "astro-icon/components";
 
@@ -24,6 +29,36 @@ const reports = await getYearReports();
 const { report } = Astro.props;
 const newer = reports.find((item) => item.year === report.year + 1);
 const older = reports.find((item) => item.year === report.year - 1);
+
+// 分享卡：年度数据在构建期就齐了，直接把汇总数字拼进卡片参数。
+// 月度柱条取每月篇数，和页面上的「月度节奏」是同一份数据。
+// 指标只放 4 格：超过一行时卡片会为了腾地方去掉月度柱条，
+// 而柱条是年度卡最有辨识度的部分，宁可把次要数字挪到副标题第二行。
+const summaryLine = `这一年写下 ${formatNumber(report.postCount)} 篇文章，共 ${formatWords(report.words)}`;
+const detailParts = [
+	`活跃 ${report.activeDays} 天`,
+	`最长连续 ${report.longestStreak} 天`,
+];
+if (report.comparison) {
+	const { year, postDelta } = report.comparison;
+	detailParts.push(
+		`比 ${year} 年${postDelta >= 0 ? "多" : "少"} ${Math.abs(postDelta)} 篇`,
+	);
+}
+
+const cardParams = {
+	title: `${report.year} 年度报告`,
+	subtitle: `${summaryLine}|${detailParts.join(" · ")}`,
+	badge: String(report.year),
+	stats: [
+		{ label: "篇文章", value: formatNumber(report.postCount) },
+		{ label: "总字数", value: formatWords(report.words) },
+		{ label: "阅读时长", value: formatDuration(report.minutes) },
+		{ label: "平均每篇", value: formatWords(report.averageWords) },
+	],
+	bars: report.months.map((item) => item.count),
+	tags: report.topTags.slice(0, 4).map((tag) => tag.name),
+};
 ---
 
 <MainGridLayout
@@ -40,7 +75,12 @@ const older = reports.find((item) => item.year === report.year - 1);
 				全部年份
 			</a>
 			<div class="flex items-center gap-2">
-				<YearShareCard report={report} />
+				<DataShareCard
+					type="year"
+					slug={`year-${report.year}`}
+					params={cardParams}
+					label="生成分享卡"
+				/>
 				{
 					older && (
 						<a href={url(`/year/${older.year}/`)} class="btn-regular h-8 px-3 text-sm">

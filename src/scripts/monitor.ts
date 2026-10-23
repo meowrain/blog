@@ -1,3 +1,5 @@
+import { publishOgCardData } from "../utils/og-card";
+
 interface NodeConfig {
 	uuid: string;
 	name: string;
@@ -677,6 +679,33 @@ function renderGreeting() {
 	}
 }
 
+/**
+ * 把当前集群概览推给分享卡。监控数据只存在于浏览器里（实时轮询），
+ * 卡片渲染在云端拿不到，所以页面每轮刷新都推一份最新快照。
+ */
+function publishCard() {
+	const totals = clusterTotals();
+	const total = visibleUuids().length;
+	if (total === 0) return;
+	const up = rate(totals.up);
+	const down = rate(totals.down);
+	const ram = formatBytes(totals.ramUsed);
+	const disk = formatBytes(totals.diskUsed);
+	publishOgCardData("monitor", {
+		title: "服务器集群",
+		subtitle: `在线 ${totals.online} / ${total} 台节点|上行 ${up.value} ${up.unit} · 下行 ${down.value} ${down.unit}`,
+		badge: totals.online === total ? "全部在线" : "部分离线",
+		stats: [
+			{ label: "节点在线", value: `${totals.online} / ${total}` },
+			{ label: "平均 CPU", value: `${formatPercent(totals.cpuAvg)}%` },
+			{ label: "内存", value: `${ram.value} ${ram.unit}` },
+			{ label: "硬盘", value: `${disk.value} ${disk.unit}` },
+		],
+		tags: ["Komari", "探针"],
+		date: `更新于 ${clockOf(Date.now())}`,
+	});
+}
+
 function renderAll() {
 	renderGreeting();
 	renderTiles();
@@ -684,6 +713,7 @@ function renderAll() {
 	renderGroups();
 	renderNodes();
 	renderStatusPill();
+	publishCard();
 }
 
 function renderStatusPill() {

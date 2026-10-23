@@ -1,5 +1,6 @@
 ---
 import { musicConfig } from "@/config";
+import DataShareCard from "@components/DataShareCard.astro";
 import MusicPlayer from "@components/music/MusicPlayer.svelte";
 import MainGridLayout from "@layouts/MainGridLayout.astro";
 import { Icon } from "astro-icon/components";
@@ -7,23 +8,38 @@ import { Icon } from "astro-icon/components";
 // 线上由 EdgeOne 云函数 cloud-functions/api/music/[[default]].js 提供，
 // 本地 `pnpm dev` 由 src/plugins/dev-music-api.mjs 顶上；想打别的后端就设 PUBLIC_MUSIC_API_BASE
 const playlists = musicConfig.playlists;
+
+// 首帧卡片先用配置里的歌单名占位；真实曲目数 / 时长要等接口返回，
+// MusicPlayer 拿到数据后会推一份新的参数过来（live）。
+const cardParams = {
+	title: playlists[0]?.name || "我喜欢的音乐",
+	subtitle: "来自网易云音乐",
+	badge: "网易云",
+};
 ---
 
 <MainGridLayout title="音乐" description="我喜欢的网易云歌单，在这儿直接播放。">
 	<div id="music-page" class="space-y-4">
 		<header class="card-base p-6 md:p-8">
-			<div class="flex items-center gap-3">
-				<div
-					class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--primary)] text-white dark:text-black/70"
-				>
-					<Icon name="material-symbols:music-note-rounded" class="text-[1.6rem]" />
+			<div class="flex items-center justify-between gap-3">
+				<div class="flex items-center gap-3">
+					<div
+						class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--primary)] text-white dark:text-black/70"
+					>
+						<Icon name="material-symbols:music-note-rounded" class="text-[1.6rem]" />
+					</div>
+					<div class="min-w-0">
+						<h1 class="text-2xl font-black text-90">音乐</h1>
+						<p class="mt-1 text-sm leading-relaxed text-50">
+							我喜欢的歌单，直接在这儿播。歌单和歌词来自网易云音乐，仅供个人收听。
+						</p>
+					</div>
 				</div>
-				<div class="min-w-0">
-					<h1 class="text-2xl font-black text-90">音乐</h1>
-					<p class="mt-1 text-sm leading-relaxed text-50">
-						我喜欢的歌单，直接在这儿播。歌单和歌词来自网易云音乐，仅供个人收听。
-					</p>
-				</div>
+				{
+					playlists.length > 0 && (
+						<DataShareCard type="playlist" slug="music" params={cardParams} live label="分享歌单" />
+					)
+				}
 			</div>
 		</header>
 

@@ -1,5 +1,6 @@
 <script lang="ts">
 import Icon from "@iconify/svelte";
+import { publishOgCardData } from "../../utils/og-card";
 import LyricPanel from "./LyricPanel.svelte";
 import {
 	MODE_META,
@@ -24,6 +25,7 @@ import {
 	tracks,
 	trialIds,
 } from "./player.svelte";
+import type { LoadedPlaylist } from "./player.svelte";
 
 // 播放状态和 <audio> 都在 MusicPlayerHost 里（Layout 常驻），
 // 这个组件只负责 /music/ 页面的歌单 UI。
@@ -37,6 +39,56 @@ let total = $derived(duration());
 let progress = $derived(progressValue());
 let percent = $derived(progressPercent());
 let lines = $derived(lyrics());
+
+/**
+ * 歌单数据只有浏览器里才拿得到，算好一份精简快照推给分享卡组件。
+ * 分享卡只是把这些数字排成图，云端不负责再请求网易云。
+ */
+function publishCard(library: LoadedPlaylist[], activeId: string): void {
+	const first = library.find((item) => item.ref.id === activeId) ?? library[0];
+	if (!first) return;
+	const totalTracks = library.reduce((sum, item) => sum + item.tracks.length, 0);
+	const totalMs = library.reduce(
+		(sum, item) =>
+			sum + item.tracks.reduce((acc, track) => acc + (track.duration || 0), 0),
+		0,
+	);
+	const artists = new Set(
+		library.flatMap((item) =>
+			item.tracks.flatMap((track) =>
+				track.artists
+					.split(/[/、,&]/)
+					.map((name) => name.trim())
+					.filter(Boolean),
+			),
+		),
+	);
+	const hours = totalMs / 3_600_000;
+
+	publishOgCardData("playlist", {
+		title: first.ref.name || first.meta.name,
+		subtitle: `${first.meta.creator ? `${first.meta.creator} · ` : ""}来自网易云音乐`,
+		badge: "网易云",
+		stats: [
+			{ label: "曲目", value: `${totalTracks} 首` },
+			{
+				label: "总时长",
+				value:
+					hours >= 1
+						? `${hours.toFixed(1)} 小时`
+						: `${Math.round(totalMs / 60_000)} 分钟`,
+			},
+			{ label: "歌手", value: `${artists.size} 位` },
+		],
+		date: first.meta.creator || "",
+	});
+}
+
+// 歌单加载完成或切换歌单时更新分享卡；library 为空时先不推，等接口回来
+$effect(() => {
+	if (player.library.length === 0) return;
+	publishCard(player.library, player.activeId);
+});
 </script>
 
 <div class="music-shell space-y-4">

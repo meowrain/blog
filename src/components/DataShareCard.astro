@@ -1,0 +1,169 @@
+---
+import { Icon } from "astro-icon/components";
+import { ogImageBase } from "../config";
+import type { OgCardParams, OgCardType } from "../utils/og-card";
+
+/**
+ * 数据分享卡入口（歌单 / 追番 / 监控 / 年度报告）。
+ *
+ * 卡片本身由云函数的 satori + resvg 管线实时渲染，这里只放触发按钮、预览
+ * 弹窗与初始参数。歌单和监控的数据要等接口返回，页面脚本算好后通过
+ * publishOgCardData() 推过来，组件设成 live 才会跟着换图。
+ */
+interface Props {
+	type: OgCardType;
+	/** 卡片路径段，决定 ETag 与缓存键，同一页面内唯一即可 */
+	slug: string;
+	params: OgCardParams;
+	/** 数据是否来自运行时接口（歌单 / 监控），为 true 时监听数据更新事件 */
+	live?: boolean;
+	label?: string;
+	class?: string;
+}
+
+const {
+	type,
+	slug,
+	params,
+	live = false,
+	label = "分享卡",
+	class: className,
+} = Astro.props;
+
+// 初始参数只用于首帧，后续更新由脚本推事件；JSON 里出现 </script> 会提前掐断脚本
+const initialJson = JSON.stringify(params).replace(/</g, "\\u003c");
+const title = params.title || label;
+---
+
+<div
+	id="og-card"
+	data-og-card
+	data-og-card-type={type}
+	data-og-card-slug={slug}
+	data-og-card-base={ogImageBase}
+	data-og-card-live={live ? "true" : "false"}
+>
+	<button
+		type="button"
+		data-og-card-open
+		aria-haspopup="dialog"
+		aria-label={`生成${title}分享卡`}
+		class:list={[
+			className,
+			"group inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium text-50 transition",
+			"hover:bg-[var(--btn-plain-bg-hover)] hover:text-[var(--primary)] active:bg-[var(--btn-plain-bg-active)]",
+			"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]",
+		]}
+	>
+		<Icon
+			name="material-symbols:share"
+			class="text-[1rem] transition-transform group-hover:scale-110"
+		/>
+		<span>{label}</span>
+	</button>
+
+	<dialog
+		data-og-card-dialog
+		aria-label={`${title} 分享卡`}
+		class="fixed inset-0 z-[10000] hidden h-full w-full max-h-none max-w-none items-center justify-center overflow-hidden border-0 bg-black/70 p-3 backdrop-blur-sm sm:p-6"
+	>
+		<div
+			class="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-neutral-900"
+		>
+			<div
+				class="flex items-center justify-between gap-2 border-b border-[var(--line-divider)] px-4 py-3"
+			>
+				<div class="flex min-w-0 items-center gap-2">
+					<Icon
+						name="material-symbols:auto-awesome-outline-rounded"
+						class="shrink-0 text-[1.25rem] text-[var(--primary)]"
+					/>
+					<span class="truncate text-base font-semibold text-90">{title} 分享卡</span>
+				</div>
+				<button
+					type="button"
+					data-og-card-close
+					title="关闭"
+					aria-label="关闭分享卡片"
+					class="shrink-0 rounded-lg p-1.5 text-50 transition-colors hover:bg-black/5 hover:text-90 dark:hover:bg-white/10"
+				>
+					<Icon name="material-symbols:close-rounded" class="text-[1.5rem]" />
+				</button>
+			</div>
+
+			<div class="flex-1 overflow-y-auto p-4">
+				<div
+					data-og-card-frame
+					class="relative aspect-[1200/630] overflow-hidden rounded-xl border border-[var(--line-divider)] bg-black/5 dark:bg-white/5"
+				>
+					<div
+						data-og-card-loading
+						class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[var(--card-bg)] text-xs text-50"
+					>
+						<Icon
+							name="material-symbols:progress-activity"
+							class="animate-spin text-[1.75rem] text-[var(--primary)]"
+						/>
+						正在生成卡片…
+					</div>
+
+					<img
+						data-og-card-image
+						alt={`${title} 的分享卡片`}
+						loading="eager"
+						decoding="async"
+						class="absolute inset-0 hidden h-full w-full object-contain"
+					/>
+
+					<div
+						data-og-card-fallback
+						class="absolute inset-0 hidden flex-col justify-between overflow-hidden border border-[var(--line-divider)] bg-[var(--card-bg)] p-5 sm:p-7"
+					>
+						<div
+							class="relative flex items-center gap-2 text-xs font-medium text-50"
+						>
+							<span class="inline-block h-1.5 w-1.5 rounded-full bg-[var(--primary)]"></span>
+							<span class="truncate">{title}</span>
+						</div>
+						<div
+							class="relative line-clamp-3 text-xl font-bold leading-snug text-90 sm:text-2xl"
+						>
+							{params.subtitle || params.title}
+						</div>
+						<div class="relative text-xs text-50">卡片暂时生成失败，可稍后重试</div>
+					</div>
+				</div>
+
+				<div class="mt-4 flex flex-wrap gap-2">
+					<button
+						type="button"
+						data-og-card-share
+						class="inline-flex min-w-[6.5rem] flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-[var(--primary)] px-3 py-2 text-sm font-medium text-white transition hover:opacity-90 active:scale-95 dark:text-black/70"
+					>
+						<Icon name="material-symbols:share" class="text-[1.125rem]" />
+						系统分享
+					</button>
+					<button
+						type="button"
+						data-og-card-download
+						class="inline-flex min-w-[6.5rem] flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-[var(--btn-regular-bg)] px-3 py-2 text-sm font-medium text-[var(--btn-content)] transition hover:bg-[var(--btn-regular-bg-hover)] active:scale-95 active:bg-[var(--btn-regular-bg-active)]"
+					>
+						<Icon name="material-symbols:download-rounded" class="text-[1.125rem]" />
+						下载卡片
+					</button>
+				</div>
+			</div>
+		</div>
+	</dialog>
+
+	<script type="application/json" data-og-card-data is:inline set:html={initialJson}>
+	</script>
+</div>
+
+<script>
+	import { mountDataShareCard } from "../scripts/data-share";
+
+	// 首次进入时组件脚本可能比布局的 page:view 钩子先跑，这里先挂一次；
+	// Swup 换页由 Layout 的 pages 列表兜底。
+	mountDataShareCard();
+</script>
