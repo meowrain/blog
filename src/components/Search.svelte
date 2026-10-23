@@ -2,57 +2,104 @@
 import Icon from "@iconify/svelte";
 import {
 	type FilterOptions,
+	type HighlightPart,
 	type SearchDoc,
 	type SearchHit,
 	type SearchResponse,
 	collectFilterOptions,
+	highlightTokens,
+	parseIndexVersion,
 	parseSearchIndex,
+	rankFullText,
 	searchDocs,
+	snippetFromChunks,
+	tokenize,
 } from "@utils/search-core.ts";
+import {
+	type ChunkGroup,
+	type QueryPostings,
+	type ShardPayload,
+	chunkGroupOf,
+	collectQueryPostings,
+	shardsForTokens,
+} from "@utils/search-index.ts";
 import { url } from "@utils/url-utils.ts";
 import { onMount, tick } from "svelte";
 
 /**
  * 站内搜索面板。
  *
- * 数据源是构建期端点 `/posts-index.json`（标题 / 分类 / 标签 / 小节标题 / 首段），
- * 不再拉整份 `/rss.xml` 做 includes。索引第一次打开搜索时才加载，之后走模块级缓存。
- * 匹配规则见 `src/utils/search-core.ts`：中文 bigram + 多关键词 AND + 字段加权。
+ * 数据分两层，都只在真正搜索时加载：
+ * - `/posts-index.json`：标题 / 分类 / 标签 / 小节标题 / 首段，一次拿全；
+ * - `/search-index/shard/<n>.json`：正文倒排表分片，按查询词的哈希只拉需要的几片；
+ * - `/search-index/body/<doc>/<group>.json`：命中结果所在的正文块，用来生成摘要。
+ *
+ * 这样既不像旧实现那样拉整份 `/rss.xml`，也不会把 1MB 正文一次性交给浏览器。
+ * 匹配与排序规则见 `src/utils/search-core.ts`。
  */
 
 const RESULT_LIMIT = 20;
+/**
+ * 打开面板时先给前几条拉正文摘要，其余的等鼠标移上去再拉。
+ * 每条摘要都要一个正文块文件（几 KB 到十几 KB），一次全拉会白白多几十 KB。
+ */
+const SNIPPET_LIMIT = 6;
 const EMPTY_RESPONSE: SearchResponse = { hits: [], total: 0 };
 const EMPTY_FILTERS: FilterOptions = { categories: [], tags: [] };
+const DEBOUNCE_MS = 120;
 
-/** 组件可能随导航重挂载，索引在模块级只拉一次。 */
+/** 组件可能随 swup 导航重挂载，这些缓存放模块级，只拉一次。 */
 let indexPromise: Promise<SearchDoc[]> | null = null;
+const shardCache = new Map<number, Promise<ShardPayload>>();
+const bodyCache = new Map<string, Promise<ChunkGroup>>();
+/**
+ * 索引版本（构建时间）。文档号是排序后的下标，加一篇文章就会整体位移，
+ * 所以分片/正文块请求都带 `?v=`：重新构建后旧缓存自然失效，不会串到别的文章。
+ */
+let indexVersion = "";
 
 let keyword = "";
 let category = "";
 let tag = "";
 let panelOpen = false;
 let loading = false;
+let searching = false;
 let loadError = "";
 let docs: SearchDoc[] = [];
 let filterOptions: FilterOptions = EMPTY_FILTERS;
 let response: SearchResponse = EMPTY_RESPONSE;
 let hits: SearchHit[] = [];
+let snippets: Record<number, HighlightPart[]> = {};
 let total = 0;
 let activeIndex = -1;
 let desktopInput: HTMLInputElement | undefined;
 let mobileInput: HTMLInputElement | undefined;
 let shortcutLabel = "Ctrl K";
 
+/** 异步检索的代次：输入变动会 +1，旧结果回来时直接丢掉。 */
+let generation = 0;
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
 $: hasCriteria = keyword.trim().length > 0 || category !== "" || tag !== "";
 $: filterOptions = docs.length > 0 ? collectFilterOptions(docs) : EMPTY_FILTERS;
-$: response = docs.length
-	? searchDocs(docs, keyword, { category, tag, limit: RESULT_LIMIT })
-	: EMPTY_RESPONSE;
 $: hits = response.hits;
 $: total = response.total;
 $: if (hits) {
 	// 结果集变化时把键盘焦点拉回第一条
 	activeIndex = hits.length > 0 ? 0 : -1;
+}
+$: criteriaKey = `${keyword}|${category}|${tag}`;
+$: if (docs.length > 0) {
+	criteriaKey;
+	void queueSearch();
+}
+
+async function fetchJson<T>(path: string): Promise<T> {
+	const res = await fetch(url(path), {
+		headers: { Accept: "application/json" },
+	});
+	if (!res.ok) throw new Error(`HTTP ${res.status}`);
+	return (await res.json()) as T;
 }
 
 async function ensureIndex(): Promise<void> {
@@ -61,14 +108,10 @@ async function ensureIndex(): Promise<void> {
 	loadError = "";
 	try {
 		if (!indexPromise) {
-			indexPromise = fetch(url("/posts-index.json"), {
-				headers: { Accept: "application/json" },
-			})
-				.then((res) => {
-					if (!res.ok) throw new Error(`HTTP ${res.status}`);
-					return res.json();
-				})
-				.then(parseSearchIndex);
+			indexPromise = fetchJson<unknown>("/posts-index.json").then((payload) => {
+				indexVersion = parseIndexVersion(payload);
+				return parseSearchIndex(payload);
+			});
 		}
 		const loaded = await indexPromise;
 		if (loaded.length === 0) {
@@ -84,6 +127,174 @@ async function ensureIndex(): Promise<void> {
 	} finally {
 		loading = false;
 	}
+}
+
+function versionQuery(): string {
+	return indexVersion ? `?v=${indexVersion}` : "";
+}
+
+function shardPromise(shard: number): Promise<ShardPayload> {
+	let promise = shardCache.get(shard);
+	if (!promise) {
+		promise = fetchJson<ShardPayload>(
+			`/search-index/shard/${shard}.json${versionQuery()}`,
+		).catch((error) => {
+			// 失败的请求不留缓存，下次输入重试
+			shardCache.delete(shard);
+			throw error;
+		});
+		shardCache.set(shard, promise);
+	}
+	return promise;
+}
+
+async function loadPostings(tokens: string[]): Promise<QueryPostings> {
+	const shardIds = shardsForTokens(tokens);
+	const entries = await Promise.all(
+		shardIds.map(async (shard) => [shard, await shardPromise(shard)] as const),
+	);
+	return collectQueryPostings(tokens, new Map(entries));
+}
+
+function chunkGroupPromise(docId: number, group: number): Promise<ChunkGroup> {
+	const key = `${docId}/${group}`;
+	let promise = bodyCache.get(key);
+	if (!promise) {
+		promise = fetchJson<ChunkGroup>(
+			`/search-index/body/${docId}/${group}.json${versionQuery()}`,
+		).catch((error) => {
+			bodyCache.delete(key);
+			throw error;
+		});
+		bodyCache.set(key, promise);
+	}
+	return promise;
+}
+
+/**
+ * 摘要按需拉取：只取每条结果第一个命中块所在的正文文件。
+ * `only` 为空表示只处理前 SNIPPET_LIMIT 条，其余由 hover 触发。
+ */
+async function loadSnippets(
+	result: SearchHit[],
+	tokens: string[],
+	gen: number,
+	only: number[] = [],
+): Promise<void> {
+	const targets = result
+		.map((hit, index) => ({ hit, index }))
+		.filter(({ index }) =>
+			only.length === 0 ? index < SNIPPET_LIMIT : only.includes(index),
+		)
+		.map(({ hit, index }) => {
+			const chunk = hit.chunks?.[0];
+			if (chunk === undefined || snippets[hit.doc.id]) return null;
+			return { docId: hit.doc.id, chunk, index };
+		})
+		.filter(
+			(item): item is { docId: number; chunk: number; index: number } =>
+				item !== null,
+		);
+	if (targets.length === 0) return;
+
+	const loaded = await Promise.all(
+		targets.map(async ({ docId, chunk }) => {
+			try {
+				const group = await chunkGroupPromise(docId, chunkGroupOf(chunk));
+				const text = group.chunks[chunk - group.start];
+				if (!text) return null;
+				return [docId, snippetFromChunks([text], tokens)] as const;
+			} catch (error) {
+				console.warn("正文块加载失败:", error);
+				return null;
+			}
+		}),
+	);
+	if (gen !== generation) return;
+
+	const next = { ...snippets };
+	for (const item of loaded) {
+		if (item) next[item[0]] = item[1];
+	}
+	snippets = next;
+}
+
+/** 鼠标移到某条结果上时才补它的摘要，避免一次性拉满 20 个正文块。 */
+function onResultHover(item: SearchHit, index: number): void {
+	activeIndex = index;
+	if (snippets[item.doc.id] || !item.chunks?.length) return;
+	void loadSnippets(hits, highlightTokens(keyword), generation, [index]);
+}
+
+async function runSearch(gen: number): Promise<void> {
+	const query = keyword;
+	const activeCategory = category;
+	const activeTag = tag;
+	const hasQuery = query.trim().length > 0;
+
+	// 换了关键词就把旧摘要清掉：同一个文档在新结果里出现时，
+	// 不能让它继续显示上一次查询的高亮片段。
+	snippets = {};
+
+	if (!hasQuery && !activeCategory && !activeTag) {
+		response = EMPTY_RESPONSE;
+		searching = false;
+		return;
+	}
+
+	const tokens = tokenize(query);
+
+	// 只有筛选条件时不需要正文倒排表，直接按发布时间列出
+	if (tokens.length === 0) {
+		response = searchDocs(docs, "", {
+			category: activeCategory,
+			tag: activeTag,
+			limit: RESULT_LIMIT,
+		});
+		searching = false;
+		return;
+	}
+
+	searching = true;
+	let postings: QueryPostings | null = null;
+	try {
+		postings = await loadPostings(tokens);
+	} catch (error) {
+		// 分片拿不到时退回到元信息检索，至少有标题/标签能搜
+		console.warn("正文索引加载失败，退回元信息检索:", error);
+	}
+	if (gen !== generation) return;
+
+	if (postings) {
+		response = rankFullText(docs, query, postings, {
+			category: activeCategory,
+			tag: activeTag,
+			limit: RESULT_LIMIT,
+		});
+	} else {
+		response = searchDocs(docs, query, {
+			category: activeCategory,
+			tag: activeTag,
+			limit: RESULT_LIMIT,
+		});
+	}
+	searching = false;
+
+	if (postings && response.hits.length > 0) {
+		void loadSnippets(response.hits, highlightTokens(query), gen);
+	} else {
+		snippets = {};
+	}
+}
+
+function queueSearch(): void {
+	generation += 1;
+	const gen = generation;
+	if (debounceTimer) clearTimeout(debounceTimer);
+	debounceTimer = setTimeout(() => {
+		debounceTimer = null;
+		void runSearch(gen);
+	}, DEBOUNCE_MS);
 }
 
 function openPanel(): void {
@@ -206,6 +417,7 @@ onMount(() => {
 	return () => {
 		document.removeEventListener("keydown", onDocumentKeydown);
 		document.removeEventListener("click", onDocumentClick);
+		if (debounceTimer) clearTimeout(debounceTimer);
 	};
 });
 </script>
@@ -312,6 +524,8 @@ top-20 left-4 md:left-[unset] right-4 shadow-2xl rounded-2xl p-2">
             {loadError}
         {:else if !hasCriteria}
             输入关键词，或按分类 / 标签筛选 · 共 {docs.length} 篇文章
+        {:else if searching}
+            正在检索正文…
         {:else if total === 0}
             没有找到匹配的文章
         {:else}
@@ -328,7 +542,7 @@ top-20 left-4 md:left-[unset] right-4 shadow-2xl rounded-2xl p-2">
                 role="option"
                 aria-selected={index === activeIndex}
                 on:click={closePanel}
-                on:mouseenter={() => (activeIndex = index)}
+                on:mouseenter={() => onResultHover(item, index)}
                 class="search-result transition first-of-type:mt-2 lg:first-of-type:mt-0 group block
        rounded-xl text-lg px-3 py-2 hover:bg-[var(--btn-plain-bg-hover)] active:bg-[var(--btn-plain-bg-active)]"
             >
@@ -348,7 +562,11 @@ top-20 left-4 md:left-[unset] right-4 shadow-2xl rounded-2xl p-2">
                         {/each}
                     </div>
                 {/if}
-                {#if item.snippet.length > 0}
+                {#if snippets[item.doc.id]?.length}
+                    <div class="transition text-sm text-50">
+                        {#each snippets[item.doc.id] as part}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}
+                    </div>
+                {:else if item.snippet.length > 0}
                     <div class="transition text-sm text-50">
                         {#each item.snippet as part}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}
                     </div>

@@ -17,7 +17,7 @@
 - 个人主页化：`/about/` 自我介绍、`/projects/` 项目卡片（含详情页）、`/notes/` 碎碎念时间线，首页顶部也有入口
 - 年度报告页与归档页「那年今天」卡片：按年聚合写作统计，回看往年同一天发布的文章
 - Markdown/MDX 内容集合，带 frontmatter 校验
-- 站内搜索：复用 `posts-index.json` 索引，中文 bigram 分词、多关键词 AND、字段加权排序，支持 ⌘K 快捷键及分类/标签筛选
+- 站内搜索：正文分片倒排索引（中文 bigram + 单字），按查询词只拉命中的分片与正文块，中文多关键词 AND、字段加权排序，支持 ⌘K 快捷键及分类/标签筛选
 - 系列（合集）导航：用 `series` frontmatter 把同一主题的文章串成系列，正文顶部给出上一章 / 下一章和阅读进度条，`/series/` 汇总全部系列
 - 响应式布局、深色/浅色主题和主题色自定义
 - Swup 页面过渡、目录、阅读时长、代码高亮和复制按钮
@@ -85,10 +85,9 @@ pnpm preview
 | `pnpm build` | 构建生产站点 |
 | `pnpm preview` | 预览生产构建 |
 | `pnpm type-check` | 运行 TypeScript 类型检查 |
-| `pnpm test` | 运行搜索核心等 Node 单元测试 |
+| `pnpm test` | 运行搜索核心、分片倒排索引、个人主页等 Node 单元测试 |
 | `pnpm new-post <path>` | 创建新文章 |
 | `pnpm new-note [slug]` | 创建一条碎碎念 |
-| `pnpm test` | 运行纯函数单元测试 |
 | `pnpm gallery:index` | 扫描图床目录，生成相册索引 `images.json`（`pnpm build` 会自动先跑） |
 | `pnpm clean` | 清理 `src/content/assets` 下未被引用的图片 |
 | `pnpm format` | 使用 Biome 格式化 `src` |
