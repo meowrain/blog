@@ -4,6 +4,7 @@ import {
 	isShareSheetOpen,
 	openShareSheet,
 } from "./image-share";
+import { registerShortcut } from "./shortcuts";
 
 type GalleryImage = {
 	url: string;
@@ -835,14 +836,7 @@ function initLightboxEvents() {
 	const zoomOutHandler = () => setZoom(zoomScale / 1.6);
 	const zoomResetHandler = () => resetZoom();
 
-	const keyHandler = (event: KeyboardEvent) => {
-		const { lightbox: box } = getElements();
-		if (!box || box.classList.contains("hidden")) return;
-		// 分享面板自己是 modal dialog，Esc 由它先处理
-		if (isShareSheetOpen()) return;
-		const tag = (event.target as HTMLElement | null)?.tagName;
-		if (tag === "TEXTAREA" || tag === "INPUT") return;
-
+	const keyHandler = (event: KeyboardEvent): boolean | undefined => {
 		switch (event.key) {
 			case "Escape":
 				closeLightbox();
@@ -865,9 +859,22 @@ function initLightboxEvents() {
 				resetZoom();
 				break;
 			default:
-				break;
+				return false;
 		}
 	};
+
+	// 只在查看器打开、分享面板收起时接管按键
+	const unregisterKeys = registerShortcut({
+		id: "gallery.lightbox-keys",
+		key: ["Escape", "ArrowLeft", "ArrowRight", "+", "=", "-", "_", "0"],
+		priority: 100,
+		whenLayerOpen: true,
+		when: () => {
+			const box = getElements().lightbox;
+			return !!box && !box.classList.contains("hidden") && !isShareSheetOpen();
+		},
+		handler: keyHandler,
+	});
 
 	// 点空白关闭：只有按下时就在背景上（不是图片、不是按钮）才算
 	const bgClickHandler = (event: MouseEvent) => {
@@ -898,9 +905,9 @@ function initLightboxEvents() {
 	stage?.addEventListener("pointermove", handlePointerMove);
 	stage?.addEventListener("pointerup", handlePointerUp);
 	stage?.addEventListener("pointercancel", handlePointerUp);
-	document.addEventListener("keydown", keyHandler);
 
 	cleanups.push(() => {
+		unregisterKeys();
 		closeBtn?.removeEventListener("click", closeHandler);
 		prevBtn?.removeEventListener("click", prevHandler);
 		nextBtn?.removeEventListener("click", nextHandler);
@@ -916,7 +923,6 @@ function initLightboxEvents() {
 		stage?.removeEventListener("pointermove", handlePointerMove);
 		stage?.removeEventListener("pointerup", handlePointerUp);
 		stage?.removeEventListener("pointercancel", handlePointerUp);
-		document.removeEventListener("keydown", keyHandler);
 	});
 }
 

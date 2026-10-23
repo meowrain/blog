@@ -343,6 +343,8 @@ const tocEnabled = siteConfig.toc.enable;
 </style>
 
 <script>
+	import { registerShortcut } from "../../scripts/shortcuts";
+
 	type TocHeading = { id: string; text: string; depth: number };
 
 	const HEADING_SELECTOR = "h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]";
@@ -367,6 +369,7 @@ const tocEnabled = siteConfig.toc.enable;
 		private refreshTimer: number | null = null;
 		private contentEl: HTMLElement | null = null;
 		private signature = "";
+		private unregisterShortcuts: (() => void)[] = [];
 
 		connectedCallback(): void {
 			if (this.initialized || !this.isConnected) return;
@@ -396,7 +399,8 @@ const tocEnabled = siteConfig.toc.enable;
 			this.observer = null;
 			window.removeEventListener("scroll", this.onScroll);
 			window.removeEventListener("resize", this.onScroll);
-			document.removeEventListener("keydown", this.onKeydown);
+			for (const unregister of this.unregisterShortcuts) unregister();
+			this.unregisterShortcuts = [];
 			this.overlay?.removeEventListener("touchmove", this.blockBackgroundScroll);
 			if (this.rafId) {
 				cancelAnimationFrame(this.rafId);
@@ -430,7 +434,29 @@ const tocEnabled = siteConfig.toc.enable;
 
 			window.addEventListener("scroll", this.onScroll, { passive: true });
 			window.addEventListener("resize", this.onScroll, { passive: true });
-			document.addEventListener("keydown", this.onKeydown);
+
+			// 抽屉打开时接管 Esc 和 Tab；关闭时中心不会把这些键分给它们
+			this.unregisterShortcuts.push(
+				registerShortcut({
+					id: "mobile-toc.escape",
+					key: "Escape",
+					when: () => this.isOpen,
+					whenLayerOpen: true,
+					allowInEditable: true,
+					priority: 150,
+					handler: this.onKeydown,
+				}),
+				registerShortcut({
+					id: "mobile-toc.tab-trap",
+					key: "Tab",
+					when: () => this.isOpen,
+					whenLayerOpen: true,
+					allowInEditable: true,
+					priority: 150,
+					preventDefault: false,
+					handler: this.onKeydown,
+				}),
+			);
 		}
 
 		/**

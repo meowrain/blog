@@ -25,6 +25,7 @@ import {
 } from "@utils/search-index.ts";
 import { url } from "@utils/url-utils.ts";
 import { onMount, tick } from "svelte";
+import { registerShortcut } from "../scripts/shortcuts";
 
 /**
  * 站内搜索面板。
@@ -366,12 +367,6 @@ async function scrollActiveIntoView(): Promise<void> {
 }
 
 function onSearchKeydown(event: KeyboardEvent): void {
-	if (event.key === "Escape") {
-		event.preventDefault();
-		closePanel();
-		(event.currentTarget as HTMLElement | null)?.blur();
-		return;
-	}
 	if (!panelOpen || hits.length === 0) return;
 
 	if (event.key === "ArrowDown") {
@@ -390,13 +385,6 @@ function onSearchKeydown(event: KeyboardEvent): void {
 	}
 }
 
-function onDocumentKeydown(event: KeyboardEvent): void {
-	if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-		event.preventDefault();
-		void focusSearch();
-	}
-}
-
 function onDocumentClick(event: MouseEvent): void {
 	const target = event.target;
 	if (!(target instanceof Node)) return;
@@ -411,11 +399,35 @@ onMount(() => {
 	const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
 	shortcutLabel = isMac ? "⌘K" : "Ctrl K";
 
-	document.addEventListener("keydown", onDocumentKeydown);
+	// ⌘K / Ctrl K、/ 由快捷键中心统一分发，这里只负责聚焦输入框
+	const onFocusSearchShortcut = () => void focusSearch();
+	document.addEventListener("site:focus-search", onFocusSearchShortcut);
+
+	// 面板打开时 Esc 无论焦点在不在输入框里都能关闭
+	const unregisterEscape = registerShortcut({
+		id: "search.escape",
+		key: "Escape",
+		when: () => panelOpen,
+		whenLayerOpen: true,
+		allowInEditable: true,
+		priority: 200,
+		handler: () => {
+			closePanel();
+			const active = document.activeElement;
+			if (
+				active instanceof HTMLInputElement &&
+				(active === desktopInput || active === mobileInput)
+			) {
+				active.blur();
+			}
+		},
+	});
+
 	document.addEventListener("click", onDocumentClick);
 
 	return () => {
-		document.removeEventListener("keydown", onDocumentKeydown);
+		unregisterEscape();
+		document.removeEventListener("site:focus-search", onFocusSearchShortcut);
 		document.removeEventListener("click", onDocumentClick);
 		if (debounceTimer) clearTimeout(debounceTimer);
 	};

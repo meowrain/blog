@@ -6,6 +6,8 @@
  * 实现的 Fancybox。
  */
 
+import { registerShortcut } from "./shortcuts";
+
 const CARD_WIDTH = 1080;
 const CARD_PADDING = 64;
 const CARD_TEXT_SIZE = 40;
@@ -830,13 +832,18 @@ function bindShareSheet() {
 		panel?.classList.remove("flex");
 		target = null;
 	};
-	const keyHandler = (event: KeyboardEvent) => {
-		if (event.key !== "Escape" || !isShareSheetOpen()) return;
-		// Esc 只收面板：Fancybox / 相册查看器在 document.body 上挂着 keydown，得先拦下来
-		event.preventDefault();
-		event.stopPropagation();
-		closeShareSheet();
-	};
+
+	// 分享面板是 top layer 的 dialog，Esc 要抢在 Fancybox / 相册查看器之前处理
+	registerShortcut({
+		id: "image-share.escape",
+		key: "Escape",
+		when: isShareSheetOpen,
+		whenLayerOpen: true,
+		allowInEditable: true,
+		priority: 400,
+		stopPropagation: true,
+		handler: closeShareSheet,
+	});
 
 	panel?.addEventListener("click", backdropHandler);
 	panel?.addEventListener("close", closeSyncHandler);
@@ -848,5 +855,4 @@ function bindShareSheet() {
 	shareOriginalBtn?.addEventListener("click", shareOriginalHandler);
 	downloadOriginalBtn?.addEventListener("click", downloadOriginalHandler);
 	copyLinkBtn?.addEventListener("click", copyLinkHandler);
-	document.addEventListener("keydown", keyHandler, { capture: true });
 }

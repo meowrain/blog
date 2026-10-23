@@ -1,6 +1,7 @@
 <script lang="ts">
 import Icon from "@iconify/svelte";
 import { onDestroy, onMount } from "svelte";
+import { registerShortcut } from "../../scripts/shortcuts";
 import {
 	advance,
 	attachAudio,
@@ -107,29 +108,42 @@ onMount(() => {
 	}
 
 	// 只在音乐页接管空格 / Shift + 左右：文章页里空格还得留给滚动
-	const onKeydown = (event: KeyboardEvent) => {
-		if (!onMusicPage) return;
+	const keysActive = () => onMusicPage;
+	const ignoreInteractive = (event: KeyboardEvent): boolean => {
 		const target = event.target as HTMLElement | null;
-		if (
-			target &&
-			(target.isContentEditable ||
-				["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName))
-		) {
-			return;
-		}
-		if (event.code === "Space") {
-			event.preventDefault();
-			togglePlay();
-		} else if (event.shiftKey && event.code === "ArrowRight") {
-			seekTo(Math.min(total || 0, progress + 5));
-		} else if (event.shiftKey && event.code === "ArrowLeft") {
-			seekTo(Math.max(0, progress - 5));
-		}
+		return Boolean(
+			target?.closest("input, textarea, select, button, a, [contenteditable]"),
+		);
 	};
-	window.addEventListener("keydown", onKeydown);
+
+	const unregisterToggle = registerShortcut({
+		id: "music-player.toggle",
+		key: "space",
+		group: "播放",
+		label: "播放 / 暂停",
+		when: keysActive,
+		priority: 10,
+		handler: (event) => {
+			if (ignoreInteractive(event)) return false;
+			togglePlay();
+		},
+	});
+	const unregisterSeek = registerShortcut({
+		id: "music-player.seek",
+		key: ["Shift+ArrowLeft", "Shift+ArrowRight"],
+		group: "播放",
+		label: "快退 / 快进 5 秒",
+		when: keysActive,
+		priority: 10,
+		handler: (event) => {
+			if (ignoreInteractive(event)) return false;
+			seekTo(event.key === "ArrowRight" ? Math.min(total || 0, progress + 5) : Math.max(0, progress - 5));
+		},
+	});
 
 	return () => {
-		window.removeEventListener("keydown", onKeydown);
+		unregisterToggle();
+		unregisterSeek();
 		detachAudio();
 	};
 });
