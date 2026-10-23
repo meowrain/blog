@@ -34,19 +34,20 @@ const tocEnabled = siteConfig.toc.enable;
 		aria-label="文章目录"
 	>
 		<div class="mobile-toc-header">
-			<div class="flex min-w-0 items-center gap-2">
-				<Icon
-					name="material-symbols:format-list-bulleted-rounded"
-					class="text-[1.125rem] text-[var(--primary)]"
-				/>
+			<div class="mobile-toc-heading">
 				<span class="mobile-toc-title">目录</span>
+				<span class="mobile-toc-count">—</span>
 			</div>
-			<div class="flex shrink-0 items-center gap-1">
+			<div class="mobile-toc-actions">
 				<span class="mobile-toc-percent">0%</span>
 				<button type="button" class="mobile-toc-close" aria-label="关闭文章目录">
 					<Icon name="material-symbols:close-rounded" class="text-[1.25rem]" />
 				</button>
 			</div>
+		</div>
+
+		<div class="mobile-toc-progress" aria-hidden="true">
+			<span class="mobile-toc-progress-bar"></span>
 		</div>
 
 		<nav class="mobile-toc-list" aria-label="文章目录"></nav>
@@ -63,6 +64,7 @@ const tocEnabled = siteConfig.toc.enable;
 	}
 
 	.mobile-toc-toggle {
+		--toc-progress: 0;
 		position: fixed;
 		right: 1rem;
 		bottom: 5.5rem;
@@ -80,6 +82,29 @@ const tocEnabled = siteConfig.toc.enable;
 		transition:
 			transform 0.2s ease,
 			box-shadow 0.2s ease;
+	}
+
+	/* 按钮外圈兼职阅读进度环：沿圆周填充，不额外占地方 */
+	.mobile-toc-toggle::before {
+		content: "";
+		position: absolute;
+		inset: -3px;
+		border-radius: inherit;
+		padding: 2px;
+		background: conic-gradient(
+			var(--primary) calc(var(--toc-progress) * 1%),
+			rgba(0, 0, 0, 0.08) 0
+		);
+		-webkit-mask:
+			linear-gradient(#000 0 0) content-box,
+			linear-gradient(#000 0 0);
+		-webkit-mask-composite: xor;
+		mask:
+			linear-gradient(#000 0 0) content-box,
+			linear-gradient(#000 0 0);
+		mask-composite: exclude;
+		pointer-events: none;
+		transition: background 0.25s ease;
 	}
 
 	.mobile-toc-toggle[hidden] {
@@ -157,19 +182,67 @@ const tocEnabled = siteConfig.toc.enable;
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.75rem;
-		padding: calc(env(safe-area-inset-top, 0px) + 1rem) 0.75rem 0.75rem 1rem;
-		border-bottom: 1px solid var(--line-divider);
+		padding: calc(env(safe-area-inset-top, 0px) + 1.125rem) 0.75rem 0.75rem 1.125rem;
+	}
+
+	.mobile-toc-heading {
+		display: flex;
+		min-width: 0;
+		align-items: center;
+		gap: 0.5rem;
 	}
 
 	.mobile-toc-title {
+		font-size: 0.9375rem;
 		font-weight: 700;
-		color: rgba(0, 0, 0, 0.9);
+		letter-spacing: 0.02em;
+		color: rgba(0, 0, 0, 0.88);
+	}
+
+	/* 条目计数：和桌面端目录的头部呼应 */
+	.mobile-toc-count {
+		font-size: 0.6875rem;
+		line-height: 1;
+		font-variant-numeric: tabular-nums;
+		letter-spacing: 0.06em;
+		color: rgba(0, 0, 0, 0.35);
+		padding: 0.1875rem 0.375rem;
+		border-radius: 9999px;
+		background: rgba(0, 0, 0, 0.045);
+	}
+
+	.mobile-toc-actions {
+		display: flex;
+		flex-shrink: 0;
+		align-items: center;
+		gap: 0.25rem;
 	}
 
 	.mobile-toc-percent {
 		font-size: 0.75rem;
 		font-variant-numeric: tabular-nums;
-		color: rgba(0, 0, 0, 0.45);
+		letter-spacing: 0.02em;
+		color: var(--primary);
+		font-weight: 600;
+	}
+
+	/* 头部下方的细进度条，和右上角的百分比是同一个数据 */
+	.mobile-toc-progress {
+		position: relative;
+		height: 2px;
+		margin: 0 1.125rem;
+		border-radius: 9999px;
+		background: rgba(0, 0, 0, 0.06);
+		overflow: hidden;
+	}
+
+	.mobile-toc-progress-bar {
+		display: block;
+		width: 0%;
+		height: 100%;
+		border-radius: inherit;
+		background: var(--primary);
+		transition: width 0.2s ease;
 	}
 
 	.mobile-toc-close {
@@ -207,72 +280,191 @@ const tocEnabled = siteConfig.toc.enable;
 	}
 
 	/* 类名由脚本生成，用 :global 避免被 scope 掉 */
+	/* 导轨 + 编号 + 圆点：和桌面端侧栏目录同一套语言，只是间距放大一档 */
+	:global(.mobile-toc-page) {
+		position: relative;
+		padding-left: 0.875rem;
+	}
+
+	:global(.mobile-toc-rail) {
+		position: absolute;
+		top: 0.5rem;
+		bottom: 0.5rem;
+		left: 0;
+		width: 2px;
+		border-radius: 9999px;
+		background: rgba(0, 0, 0, 0.07);
+		-webkit-mask-image: linear-gradient(
+			to bottom,
+			transparent 0,
+			black 0.75rem,
+			black calc(100% - 0.75rem),
+			transparent 100%
+		);
+		mask-image: linear-gradient(
+			to bottom,
+			transparent 0,
+			black 0.75rem,
+			black calc(100% - 0.75rem),
+			transparent 100%
+		);
+		pointer-events: none;
+	}
+
 	:global(.mobile-toc-link) {
+		position: relative;
+		z-index: 1;
 		display: flex;
 		align-items: flex-start;
-		gap: 0.625rem;
-		padding: 0.55rem 0.75rem;
-		border-radius: 0.75rem;
+		gap: 0.5rem;
+		padding: 0.5rem 0.625rem;
+		border-radius: 0.625rem;
 		font-size: 0.875rem;
-		line-height: 1.35;
+		line-height: 1.4;
 		color: rgba(0, 0, 0, 0.62);
 		transition:
 			background 0.2s ease,
 			color 0.2s ease;
 	}
 
-	:global(.mobile-toc-link:hover) {
-		background: var(--toc-btn-hover);
+	/* 每个顶层章节前留一段，长目录不会糊成一片 */
+	:global(.mobile-toc-link[data-depth="0"]) {
+		margin-top: 0.5rem;
+		font-weight: 500;
+		color: rgba(0, 0, 0, 0.8);
 	}
 
-	:global(.mobile-toc-link[data-active="true"]) {
-		background: var(--toc-btn-hover);
-		color: var(--primary);
-		font-weight: 700;
+	:global(.mobile-toc-link[data-depth="0"]:first-of-type) {
+		margin-top: 0;
+	}
+
+	/* 和桌面端一致：hover 只提亮文字，底色留给当前章节 */
+	:global(.mobile-toc-link:not([data-active="true"]):hover) {
+		color: rgba(0, 0, 0, 0.85);
+	}
+
+	:global(.mobile-toc-link:active) {
+		background: rgba(0, 0, 0, 0.06);
 	}
 
 	:global(.mobile-toc-link[data-depth="1"]) {
-		padding-left: 1.75rem;
+		padding-left: 1rem;
 		font-size: 0.8125rem;
 	}
 
 	:global(.mobile-toc-link[data-depth="2"]) {
-		padding-left: 2.5rem;
+		padding-left: 1.625rem;
 		font-size: 0.78125rem;
+	}
+
+	:global(.mobile-toc-marker) {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 1rem;
+		height: calc(1em * 1.4);
+		color: rgba(0, 0, 0, 0.34);
+	}
+
+	:global(.mobile-toc-index) {
+		font-size: 0.625rem;
+		line-height: 1;
+		font-variant-numeric: tabular-nums;
+		letter-spacing: 0.02em;
 	}
 
 	:global(.mobile-toc-dot) {
 		flex-shrink: 0;
-		width: 0.375rem;
-		height: 0.375rem;
-		margin-top: 0.45rem;
+		width: 0.3125rem;
+		height: 0.3125rem;
 		border-radius: 9999px;
 		background: currentColor;
-		opacity: 0.4;
+		opacity: 0.65;
 		transition:
 			transform 0.2s ease,
 			opacity 0.2s ease;
 	}
 
-	:global(.mobile-toc-link[data-active="true"] .mobile-toc-dot) {
-		opacity: 1;
-		transform: scale(1.35);
+	:global(.mobile-toc-link[data-depth="2"] .mobile-toc-dot) {
+		width: 0.25rem;
+		height: 0.25rem;
+		opacity: 0.5;
 	}
 
 	:global(.mobile-toc-text) {
+		min-width: 0;
 		word-break: break-word;
+	}
+
+	/* 当前章节：整块浅底 + 左侧主题色指示条，和桌面端一致 */
+	:global(.mobile-toc-link[data-active="true"]) {
+		color: var(--primary);
+		font-weight: 600;
+	}
+
+	:global(.mobile-toc-link[data-active="true"] .mobile-toc-marker) {
+		color: var(--primary);
+	}
+
+	:global(.mobile-toc-link[data-active="true"] .mobile-toc-dot) {
+		opacity: 1;
+		transform: scale(1.2);
+	}
+
+	:global(.mobile-toc-indicator) {
+		position: absolute;
+		z-index: 0;
+		left: 0;
+		right: 0;
+		border-radius: 0.625rem;
+		background: var(--toc-btn-hover);
+		pointer-events: none;
+		opacity: 0;
+		transition:
+			top 0.28s cubic-bezier(0.22, 0.61, 0.36, 1),
+			height 0.28s cubic-bezier(0.22, 0.61, 0.36, 1),
+			opacity 0.2s ease;
+	}
+
+	:global(.mobile-toc-indicator.is-visible) {
+		opacity: 1;
+	}
+
+	:global(.mobile-toc-indicator)::before {
+		content: "";
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: 0;
+		width: 2px;
+		border-radius: 9999px;
+		background: var(--primary);
+		box-shadow: 0 0 10px color-mix(in oklch, var(--primary) 55%, transparent);
 	}
 
 	:global(.dark) .mobile-toc-toggle {
 		border-color: rgba(255, 255, 255, 0.1);
 	}
 
+	:global(.dark) .mobile-toc-toggle::before {
+		background: conic-gradient(
+			var(--primary) calc(var(--toc-progress) * 1%),
+			rgba(255, 255, 255, 0.12) 0
+		);
+	}
+
 	:global(.dark) .mobile-toc-title {
 		color: rgba(255, 255, 255, 0.9);
 	}
 
-	:global(.dark) .mobile-toc-percent {
-		color: rgba(255, 255, 255, 0.45);
+	:global(.dark) .mobile-toc-count {
+		background: rgba(255, 255, 255, 0.08);
+		color: rgba(255, 255, 255, 0.4);
+	}
+
+	:global(.dark) .mobile-toc-progress {
+		background: rgba(255, 255, 255, 0.1);
 	}
 
 	:global(.dark) .mobile-toc-close {
@@ -280,13 +472,41 @@ const tocEnabled = siteConfig.toc.enable;
 	}
 
 	/* 目录项由脚本运行时创建，拿不到 Astro 的 scope 属性，整条选择器都要 global */
+	:global(.dark .mobile-toc-page) :global(.mobile-toc-rail) {
+		background: rgba(255, 255, 255, 0.09);
+	}
+
 	:global(.dark .mobile-toc-link) {
-		color: rgba(255, 255, 255, 0.62);
+		color: rgba(255, 255, 255, 0.56);
+	}
+
+	:global(.dark .mobile-toc-link[data-depth="0"]) {
+		color: rgba(255, 255, 255, 0.84);
+	}
+
+	:global(.dark .mobile-toc-link:not([data-active="true"]):hover) {
+		color: rgba(255, 255, 255, 0.9);
+	}
+
+	:global(.dark .mobile-toc-link:active) {
+		background: rgba(255, 255, 255, 0.07);
+	}
+
+	:global(.dark .mobile-toc-marker) {
+		color: rgba(255, 255, 255, 0.34);
 	}
 
 	/* 深色下当前章节同样用主题色，别被上面的深色文字规则盖掉 */
 	:global(.dark .mobile-toc-link[data-active="true"]) {
 		color: var(--primary);
+	}
+
+	:global(.dark .mobile-toc-link[data-active="true"] .mobile-toc-marker) {
+		color: var(--primary);
+	}
+
+	:global(.dark .mobile-toc-indicator) {
+		background: rgba(255, 255, 255, 0.07);
 	}
 
 	/* AI 助手面板打开时让开它，避免按钮压在面板上 */
@@ -304,7 +524,9 @@ const tocEnabled = siteConfig.toc.enable;
 	@media (prefers-reduced-motion: reduce) {
 		.mobile-toc-overlay,
 		.mobile-toc-drawer,
-		:global(.mobile-toc-dot) {
+		.mobile-toc-progress-bar,
+		:global(.mobile-toc-dot),
+		:global(.mobile-toc-indicator) {
 			transition: none;
 		}
 	}
@@ -325,6 +547,9 @@ const tocEnabled = siteConfig.toc.enable;
 		private closeButton: HTMLButtonElement | null = null;
 		private listEl: HTMLElement | null = null;
 		private percentEl: HTMLElement | null = null;
+		private countEl: HTMLElement | null = null;
+		private progressBarEl: HTMLElement | null = null;
+		private indicatorEl: HTMLElement | null = null;
 		private links: HTMLAnchorElement[] = [];
 		private headingIndex = new Map<Element, number>();
 		private observer: IntersectionObserver | null = null;
@@ -349,6 +574,10 @@ const tocEnabled = siteConfig.toc.enable;
 				this.querySelector<HTMLButtonElement>(".mobile-toc-close");
 			this.listEl = this.querySelector<HTMLElement>(".mobile-toc-list");
 			this.percentEl = this.querySelector<HTMLElement>(".mobile-toc-percent");
+			this.countEl = this.querySelector<HTMLElement>(".mobile-toc-count");
+			this.progressBarEl = this.querySelector<HTMLElement>(
+				".mobile-toc-progress-bar",
+			);
 
 			this.bindEvents();
 			this.bindSwup();
@@ -459,7 +688,11 @@ const tocEnabled = siteConfig.toc.enable;
 					: null;
 			this.classList.add("is-open");
 			this.toggle?.setAttribute("aria-expanded", "true");
-			this.scrollActiveIntoView(false);
+			// 抽屉滑入的过渡里字体会重排，等一帧再量位置更稳
+			requestAnimationFrame(() => {
+				this.positionIndicator(this.activeIndex);
+				this.scrollActiveIntoView(false);
+			});
 			// 抽屉打开前是 visibility:hidden，焦点要等样式生效后才放得进去
 			requestAnimationFrame(() => {
 				if (this.isOpen) this.closeButton?.focus({ preventScroll: true });
@@ -560,6 +793,9 @@ const tocEnabled = siteConfig.toc.enable;
 			}
 
 			this.hidden = false;
+			// renderLinks 时组件还是 hidden（display:none），量到的尺寸都是 0，
+			// 显示出来之后要按真实布局重新摆一次指示条
+			this.positionIndicator(this.activeIndex);
 			this.updateProgress();
 		}
 
@@ -569,9 +805,11 @@ const tocEnabled = siteConfig.toc.enable;
 			this.activeIndex = -1;
 			this.links = [];
 			this.headingIndex.clear();
+			this.indicatorEl = null;
 			this.observer?.disconnect();
 			this.observer = null;
 			if (this.listEl) this.listEl.replaceChildren();
+			if (this.countEl) this.countEl.textContent = "—";
 			this.toggle?.setAttribute("hidden", "");
 		}
 
@@ -613,6 +851,15 @@ const tocEnabled = siteConfig.toc.enable;
 			this.headingIndex.clear();
 			this.activeIndex = -1;
 
+			const page = document.createElement("div");
+			page.className = "mobile-toc-page";
+
+			const rail = document.createElement("div");
+			rail.className = "mobile-toc-rail";
+
+			const indicator = document.createElement("div");
+			indicator.className = "mobile-toc-indicator";
+
 			const fragment = document.createDocumentFragment();
 			this.links = [];
 
@@ -620,25 +867,47 @@ const tocEnabled = siteConfig.toc.enable;
 				? Math.min(...headings.map((heading) => heading.depth))
 				: 0;
 
+			// 顶层标题从 01 开始编号，和桌面端侧栏目录保持一致
+			let topIndex = 0;
+
 			for (const heading of headings) {
+				const depth = heading.depth - minDepth;
+
 				const link = document.createElement("a");
 				link.href = `#${heading.id}`;
 				link.className = "mobile-toc-link";
-				link.dataset.depth = String(heading.depth - minDepth);
+				link.dataset.depth = String(depth);
 				link.addEventListener("click", () => this.close());
 
-				const dot = document.createElement("span");
-				dot.className = "mobile-toc-dot";
+				const marker = document.createElement("span");
+				marker.className = "mobile-toc-marker";
+				if (depth === 0) {
+					const index = document.createElement("span");
+					index.className = "mobile-toc-index";
+					index.textContent = String(++topIndex).padStart(2, "0");
+					marker.append(index);
+				} else {
+					const dot = document.createElement("span");
+					dot.className = "mobile-toc-dot";
+					marker.append(dot);
+				}
+
 				const text = document.createElement("span");
 				text.className = "mobile-toc-text";
 				text.textContent = heading.text;
-				link.append(dot, text);
+				link.append(marker, text);
 
 				fragment.appendChild(link);
 				this.links.push(link);
 			}
 
-			this.listEl?.replaceChildren(fragment);
+			page.append(rail, fragment, indicator);
+			this.listEl?.replaceChildren(page);
+			this.indicatorEl = indicator;
+
+			if (this.countEl) {
+				this.countEl.textContent = String(this.links.length).padStart(2, "0");
+			}
 
 			if (!this.links.length) {
 				this.toggle?.setAttribute("hidden", "");
@@ -699,7 +968,29 @@ const tocEnabled = siteConfig.toc.enable;
 				else link.removeAttribute("data-active");
 			});
 
+			this.positionIndicator(index);
+
 			if (this.isOpen) this.scrollActiveIntoView(true);
+		}
+
+		/**
+		 * 指示条的位置以列表自身为参考系算（offsetTop 相对最近定位祖先），
+		 * 抽屉滚动时不会跟着漂；列表滚动后重新算一次即可。
+		 */
+		private positionIndicator(index: number): void {
+			const indicator = this.indicatorEl;
+			const link = this.links[index];
+			if (!indicator) return;
+
+			if (!link || index < 0) {
+				indicator.classList.remove("is-visible");
+				return;
+			}
+
+			// 相对 .mobile-toc-page 定位，page 是 link 的直接父级
+			indicator.style.top = `${link.offsetTop}px`;
+			indicator.style.height = `${link.offsetHeight}px`;
+			indicator.classList.add("is-visible");
 		}
 
 		private scrollActiveIntoView(smooth: boolean): void {
@@ -724,6 +1015,9 @@ const tocEnabled = siteConfig.toc.enable;
 
 			const percent = Math.round(measureReadingProgress(content) * 100);
 			if (this.percentEl) this.percentEl.textContent = `${percent}%`;
+			if (this.progressBarEl) this.progressBarEl.style.width = `${percent}%`;
+			// 悬浮按钮外圈的进度环
+			this.toggle?.style.setProperty("--toc-progress", String(percent));
 		}
 	}
 

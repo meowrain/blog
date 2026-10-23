@@ -27,37 +27,287 @@ const removeTailingHash = (text: string) => {
 	return text.substring(0, lastIndexOfHash);
 };
 
-let heading1Count = 1;
-
 const maxLevel = siteConfig.toc.depth;
+
+// 顶层标题从 01 开始编号；层级由 depth 与当前文章最小标题深度的差值决定
+let topLevelIndex = 0;
+const tocItems = headings
+	.filter((heading) => heading.depth < minDepth + maxLevel)
+	.map((heading) => {
+		const level = heading.depth - minDepth;
+		return {
+			slug: heading.slug,
+			level,
+			index: level === 0 ? ++topLevelIndex : null,
+			text: removeTailingHash(heading.text),
+		};
+	});
 ---
 {isPostsRoute &&
-<table-of-contents class:list={[className, "group"]}>
-    {headings.filter((heading) => heading.depth < minDepth + maxLevel).map((heading) =>
-            <a href={`#${heading.slug}`} class="px-2 flex gap-2 relative transition w-full min-h-9 rounded-xl
-        hover:bg-[var(--toc-btn-hover)] active:bg-[var(--toc-btn-active)] py-2
-    ">
-                <div class:list={["transition w-5 h-5 shrink-0 rounded-lg text-xs flex items-center justify-center font-bold",
-                    {
-                        "bg-[var(--toc-badge-bg)] text-[var(--btn-content)]": heading.depth == minDepth,
-                        "ml-4": heading.depth == minDepth + 1,
-                        "ml-8": heading.depth == minDepth + 2,
-                    }
-                ]}
-                >
-                    {heading.depth == minDepth && heading1Count++}
-                    {heading.depth == minDepth + 1 && <div class="transition w-2 h-2 rounded-[0.1875rem] bg-[var(--toc-badge-bg)]"></div>}
-                    {heading.depth == minDepth + 2 && <div class="transition w-1.5 h-1.5 rounded-sm bg-black/5 dark:bg-white/10"></div>}
-                </div>
-                <div class:list={["transition text-sm", {
-                    "text-50": heading.depth == minDepth || heading.depth == minDepth + 1,
-                    "text-30": heading.depth == minDepth + 2,
-                }]}>{removeTailingHash(heading.text)}</div>
+<table-of-contents class:list={[className]}>
+    {tocItems.length > 0 && <div class="toc-head">
+        <span class="toc-head-title">目录</span>
+        <span class="toc-head-count">{String(tocItems.length).padStart(2, "0")}</span>
+    </div>}
+    <div class="toc-list">
+        <div class="toc-track" aria-hidden="true"></div>
+        {tocItems.map((item) =>
+            <a href={`#${item.slug}`} data-level={item.level}
+                class:list={["toc-link", {
+                    "toc-link--sub": item.level === 1,
+                    "toc-link--deep": item.level > 1,
+                }]}
+            >
+                <span class="toc-marker" aria-hidden="true">
+                    {item.index !== null
+                        ? <span class="toc-index">{String(item.index).padStart(2, "0")}</span>
+                        : <span class="toc-dot"></span>}
+                </span>
+                <span class="toc-label">{item.text}</span>
             </a>
-    )}
-    <div id="active-indicator" class:list={[{'hidden': headings.length == 0}, "-z-10 absolute bg-[var(--toc-btn-hover)] left-0 right-0 rounded-xl transition-all " +
-        "group-hover:bg-transparent border-2 border-[var(--toc-btn-hover)] group-hover:border-[var(--toc-btn-active)] border-dashed"]}></div>
+        )}
+        <div id="active-indicator" class:list={[{ "hidden": headings.length === 0 }]} aria-hidden="true"></div>
+    </div>
 </table-of-contents>}
+
+<style>
+    table-of-contents {
+        --toc-ink: rgba(0, 0, 0, 0.74);
+        --toc-ink-soft: rgba(0, 0, 0, 0.52);
+        --toc-ink-faint: rgba(0, 0, 0, 0.34);
+        --toc-rail: rgba(0, 0, 0, 0.07);
+        --toc-accent: oklch(0.55 0.15 var(--hue));
+        --toc-active-bg: rgba(255, 255, 255, 0.72);
+        /* 指示条和导轨都以组件左边缘为基准 */
+        position: relative;
+        display: block;
+    }
+
+    :global(.dark) table-of-contents {
+        --toc-ink: rgba(255, 255, 255, 0.84);
+        --toc-ink-soft: rgba(255, 255, 255, 0.56);
+        --toc-ink-faint: rgba(255, 255, 255, 0.34);
+        --toc-rail: rgba(255, 255, 255, 0.09);
+        --toc-accent: var(--primary);
+        /* 暗色下别用实心深底，半透明提亮才不会糊成一块黑条 */
+        --toc-active-bg: rgba(255, 255, 255, 0.075);
+    }
+
+    /* 顶部小标题：左侧一个小色点，右侧条目计数，给整块目录一个"起点" */
+    .toc-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        padding: 0 0.375rem 0.5rem 0.75rem;
+        font-size: 0.6875rem;
+        line-height: 1;
+        color: var(--toc-ink-faint);
+    }
+
+    .toc-head-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        letter-spacing: 0.14em;
+    }
+
+    .toc-head-title::before {
+        content: "";
+        width: 0.3125rem;
+        height: 0.3125rem;
+        border-radius: 9999px;
+        background: var(--toc-accent);
+        box-shadow: 0 0 8px color-mix(in oklch, var(--toc-accent) 60%, transparent);
+    }
+
+    .toc-head-count {
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.06em;
+        opacity: 0.75;
+    }
+
+    /* 导轨两端渐隐，别在首尾截出生硬的方块端头 */
+    .toc-track {
+        position: absolute;
+        top: 0.25rem;
+        bottom: 0.25rem;
+        left: 0;
+        width: 2px;
+        border-radius: 9999px;
+        background: var(--toc-rail);
+        -webkit-mask-image: linear-gradient(
+            to bottom,
+            transparent 0,
+            black 0.75rem,
+            black calc(100% - 0.75rem),
+            transparent 100%
+        );
+        mask-image: linear-gradient(
+            to bottom,
+            transparent 0,
+            black 0.75rem,
+            black calc(100% - 0.75rem),
+            transparent 100%
+        );
+        pointer-events: none;
+    }
+
+    .toc-list {
+        position: relative;
+        padding-left: 0.75rem;
+        isolation: isolate;
+    }
+
+    .toc-link {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.375rem;
+        padding: 0.3125rem 0.375rem;
+        border-radius: 0.5rem;
+        color: var(--toc-ink-soft);
+        font-size: 0.8125rem;
+        line-height: 1.4;
+        transition: color 0.2s ease, background 0.2s ease;
+    }
+
+    /* 每个顶层章节前留一口气，长目录不会糊成一整片 */
+    .toc-link:not(.toc-link--sub):not(.toc-link--deep) {
+        margin-top: 0.4375rem;
+    }
+
+    /* hover 只提亮文字：底色专属于"当前章节"，避免两种高亮抢注意力 */
+    .toc-link:not(.visible):hover {
+        color: var(--toc-ink);
+    }
+
+    .toc-link:active {
+        background: var(--toc-btn-active);
+    }
+
+    .toc-link:focus-visible {
+        outline: 2px solid var(--toc-accent);
+        outline-offset: 1px;
+    }
+
+    .toc-link--sub {
+        font-size: 0.75rem;
+    }
+
+    .toc-link--deep {
+        padding-left: 1.125rem;
+        font-size: 0.71875rem;
+    }
+
+    .toc-marker {
+        flex: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 0.9375rem;
+        /* 与首行文字居中对齐；多行标题时不跟着下沉 */
+        height: calc(1em * 1.4);
+        color: var(--toc-ink-faint);
+        transition: color 0.2s ease;
+    }
+
+    .toc-index {
+        font-size: 0.625rem;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.02em;
+        transition: color 0.2s ease, opacity 0.2s ease;
+    }
+
+    .toc-dot {
+        width: 0.3125rem;
+        height: 0.3125rem;
+        border-radius: 9999px;
+        background: currentColor;
+        opacity: 0.65;
+        transition: background 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    .toc-link--deep .toc-dot {
+        width: 0.25rem;
+        height: 0.25rem;
+        opacity: 0.45;
+    }
+
+    .toc-label {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        text-wrap: pretty;
+    }
+
+    /* 顶层标题文字稍重，和二级拉开层级 */
+    .toc-link:not(.toc-link--sub):not(.toc-link--deep) {
+        color: var(--toc-ink);
+        font-weight: 500;
+    }
+
+    /* 当前章节：脚本在滚动时给可视范围内的条目加 .visible */
+    .toc-link.visible {
+        color: var(--toc-accent);
+        font-weight: 500;
+    }
+
+    .toc-link.visible .toc-marker {
+        color: var(--toc-accent);
+    }
+
+    .toc-link.visible .toc-index {
+        opacity: 1;
+    }
+
+    .toc-link.visible .toc-dot {
+        opacity: 1;
+        transform: scale(1.2);
+    }
+
+    /* 指示条同时承担高亮背景：当前章节共用一块，避免逐行胶囊叠在一起 */
+    #active-indicator {
+        position: absolute;
+        z-index: 0;
+        left: 0;
+        right: 0;
+        border-radius: 0.5rem;
+        background: var(--toc-active-bg);
+        pointer-events: none;
+        transition: top 0.28s cubic-bezier(0.22, 0.61, 0.36, 1),
+            height 0.28s cubic-bezier(0.22, 0.61, 0.36, 1),
+            opacity 0.2s ease;
+        will-change: top, height;
+    }
+
+    #active-indicator::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--toc-accent) 14%, transparent);
+    }
+
+    #active-indicator::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 2px;
+        border-radius: 9999px;
+        background: var(--toc-accent);
+        box-shadow: 0 0 10px color-mix(in oklch, var(--toc-accent) 55%, transparent);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        #active-indicator {
+            transition: none;
+        }
+    }
+</style>
 
 <script>
 class TableOfContents extends HTMLElement {
@@ -90,37 +340,41 @@ class TableOfContents extends HTMLElement {
                 this.anchorNavTarget = null;
         });
 
-        if (!this.active.includes(true)) {
-            // 当没有任何标题在视窗中时，隐藏 active-indicator
-            this.activeIndicator?.setAttribute("style", "display: none;");
-            this.fallback();
-            return;
-        }
+        // 页首、长段落或图片还没撑开布局时可能一个标题都不在视口里，
+        // 这时按位置兜底选一个最近的章节，别让目录整块失去高亮
+        if (!this.active.includes(true)) this.fallback();
         this.update();
     };
 
     toggleActiveHeading = () => {
-        let i = this.active.length - 1;
-        let min = this.active.length - 1, max = 0;
-        while (i >= 0 && !this.active[i]) {
-            this.tocEntries[i].classList.remove(this.visibleClass);
-            i--;
+        // 一项里可能同时有好几个标题落在视口内（长段落 + 大图），
+        // 只把最靠后的那个当成当前章节，否则指示条会拉成一大块
+        let current = -1;
+        for (let i = this.active.length - 1; i >= 0; i--) {
+            if (this.active[i]) {
+                current = i;
+                break;
+            }
         }
-        while (i >= 0 && this.active[i]) {
-            this.tocEntries[i].classList.add(this.visibleClass);
-            min = Math.min(min, i);
-            max = Math.max(max, i);
-            i--;
+
+        this.tocEntries.forEach((entry, i) => {
+            entry.classList.toggle(this.visibleClass, i === current);
+        });
+
+        if (current === -1) {
+            this.activeIndicator?.setAttribute("style", "display: none;");
+            return;
         }
-        while (i >= 0) {
-            this.tocEntries[i].classList.remove(this.visibleClass);
-            i--;
-        }
-        let parentOffset = this.tocEl?.getBoundingClientRect().top || 0;
-        let scrollOffset = this.tocEl?.scrollTop || 0;
-        let top = this.tocEntries[min].getBoundingClientRect().top - parentOffset + scrollOffset;
-        let bottom = this.tocEntries[max].getBoundingClientRect().bottom - parentOffset + scrollOffset;
-        this.activeIndicator?.setAttribute("style", `display: block; top: ${top}px; height: ${bottom - top}px`);
+
+        // offsetTop 相对最近的定位祖先（table-of-contents），
+        // 不受目录自身滚动影响，比 getBoundingClientRect 换算更稳
+        const active = this.tocEntries[current];
+        const top = active.offsetTop;
+        const height = active.offsetHeight;
+        this.activeIndicator?.setAttribute(
+            "style",
+            `display: block; top: ${top}px; height: ${height}px`,
+        );
     };
 
     scrollToActiveHeading = () => {
@@ -137,12 +391,18 @@ class TableOfContents extends HTMLElement {
         const bottommost = activeHeading[activeHeading.length - 1];
         const tocHeight = this.tocEl.clientHeight;
 
+        // offsetTop 是相对 table-of-contents 的，换算成相对滚动容器才和 scrollTop 同系
+        const wrapperTop = this.tocEl.getBoundingClientRect().top;
+        const scrollTop = this.tocEl.scrollTop;
+        const offsetOf = (el: Element) =>
+            el.getBoundingClientRect().top - wrapperTop + scrollTop;
+
         let top;
         if (bottommost.getBoundingClientRect().bottom -
             topmost.getBoundingClientRect().top < 0.9 * tocHeight)
-            top = topmost.offsetTop - 32;
+            top = offsetOf(topmost) - 32;
         else
-            top = bottommost.offsetTop - tocHeight * 0.8;
+            top = offsetOf(bottommost) - tocHeight * 0.8;
 
         this.tocEl.scrollTo({
             top,
@@ -160,24 +420,21 @@ class TableOfContents extends HTMLElement {
         });
     };
 
+    // 没有标题落在视口里时的兜底：取已越过激活线（视口 25%）的最后一个标题
     fallback = () => {
-        if (!this.sections.length) return;
+        if (!this.headings.length) return;
 
-        for (let i = 0; i < this.sections.length; i++) {
-            let offsetTop = this.sections[i].getBoundingClientRect().top;
-            let offsetBottom = this.sections[i].getBoundingClientRect().bottom;
+        const cutoff = window.innerHeight * 0.25;
+        let current = 0;
 
-            if (this.isInRange(offsetTop, 0, window.innerHeight)
-                || this.isInRange(offsetBottom, 0, window.innerHeight)
-                || (offsetTop < 0 && offsetBottom > window.innerHeight)) {                    
-                this.markActiveHeading(i);
-            }
-            else if (offsetTop > window.innerHeight) break;
+        for (let i = 0; i < this.headings.length; i++) {
+            const heading = this.headings[i];
+            if (!heading) continue;
+            if (heading.getBoundingClientRect().top <= cutoff) current = i;
+            else break;
         }
-    };
 
-    markActiveHeading = (idx: number)=> {
-        this.active[idx] = true;
+        this.active = this.active.map((_, i) => i === current);
     };
 
     handleAnchorClick = (event: Event) => {
@@ -194,10 +451,6 @@ class TableOfContents extends HTMLElement {
                 this.anchorNavTarget = null;
             }
         }
-    };
-
-    isInRange(value: number, min: number, max: number) {
-        return min < value && value < max;
     };
 
     connectedCallback() {
