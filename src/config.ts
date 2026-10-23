@@ -8,6 +8,7 @@ import type {
   ProfileConfig,
   SiteConfig,
   UmamiConfig,
+  WikiLinkConfig,
 } from "./types/config";
 import { LinkPreset } from "./types/config";
 
@@ -203,6 +204,17 @@ export const licenseConfig: LicenseConfig = {
   enable: true,
   name: "CC BY-NC-SA 4.0",
   url: "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+};
+
+// 双链（wikilink）：正文里写 `[[slug]]` / `[[slug|文字]]` / `[[slug#小节标题]]`
+// 会生成站内链接，并在被引用文章底部自动出「反向链接」卡片。
+// enable: false 时双链完全不生效（原样显示成文本），适合临时排查渲染问题。
+export const wikiLinkConfig: WikiLinkConfig = {
+  enable: true,
+  backlinks: true,
+  outlinks: false, // 本期先不做「本文引用了」，留开关
+  maxBacklinks: 20,
+  brokenLinkWarn: true,
 };
 
 export const imageFallbackConfig: ImageFallbackConfig = {

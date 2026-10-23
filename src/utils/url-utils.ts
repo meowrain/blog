@@ -9,11 +9,14 @@ function joinUrl(...parts: string[]): string {
 	return joined.replace(/\/+/g, "/");
 }
 
-export function getPostUrlBySlug(slug: string): string {
-	return url(`/posts/${slug}/`);
+/** 拼文章路径，纯字符串处理：不碰 `import.meta.env`，所以 Node 里能直接测。 */
+export function postPathBySlug(slug: string): string {
+	return `/posts/${slug}/`;
 }
 
-
+export function getPostUrlBySlug(slug: string): string {
+	return url(postPathBySlug(slug));
+}
 
 export function getDir(path: string): string {
 	const lastSlashIndex = path.lastIndexOf("/");

@@ -12,7 +12,7 @@ import remarkDirective from "remark-directive"; /* Handle directives */
 import remarkGithubAdmonitionsToDirectives from "remark-github-admonitions-to-directives";
 import remarkMath from "remark-math";
 import remarkSectionize from "remark-sectionize";
-import { imageFallbackConfig, siteConfig } from "./src/config.ts";
+import { imageFallbackConfig, siteConfig, wikiLinkConfig } from "./src/config.ts";
 import { AdmonitionComponent } from "./src/plugins/rehype-component-admonition.mjs";
 import { GithubCardComponent } from "./src/plugins/rehype-component-github-card.mjs";
 import rehypeImageFallback from "./src/plugins/rehype-image-fallback.mjs";
@@ -29,6 +29,8 @@ import { pluginCustomCopyButton } from "./src/plugins/expressive-code/custom-cop
 import { devImageBed } from "./src/plugins/dev-image-bed.mjs";
 import { devMusicApi } from "./src/plugins/dev-music-api.mjs";
 import { devSearchIndex } from "./src/plugins/dev-search-index.mjs";
+import { remarkWikiLink } from "./src/plugins/remark-wikilink.js";
+import { scanWikiTargets } from "./src/utils/wikilink-targets.ts";
 import { defineConfig, passthroughImageService } from "astro/config";
 
 // https://astro.build/config
@@ -139,6 +141,19 @@ export default defineConfig({
   ],
   markdown: {
     remarkPlugins: [
+      // 双链 [[slug]]：换成真实的 link 节点，顺手把出链清单写进 frontmatter。
+      // 标题表在这里同步扫目录得到：配置求值时 astro:content 还不可用，
+      // 而 remark 插件是同步注册的，不能 await 集合。
+      [
+        remarkWikiLink,
+        {
+          enable: wikiLinkConfig.enable,
+          brokenLinkWarn: wikiLinkConfig.brokenLinkWarn,
+          posts: wikiLinkConfig.enable
+            ? scanWikiTargets("./src/content/posts")
+            : new Map(),
+        },
+      ],
       remarkMath,
       remarkReadingTime,
       remarkExcerpt,

@@ -149,6 +149,20 @@ export type GitHubEditConfig = {
 	baseUrl: string;
 };
 
+/** 双链（wikilink）：正文里写 `[[slug]]` 生成站内链接 + 文末反向链接面板。 */
+export type WikiLinkConfig = {
+	/** 关掉后 `[[slug]]` 原样显示成文本，不生成任何节点 */
+	enable: boolean;
+	/** 文章底部展示「反向链接」卡片 */
+	backlinks: boolean;
+	/** 文章底部展示「本文引用了」卡片（本期先不做，只留开关） */
+	outlinks: boolean;
+	/** 反向链接最多展示几条 */
+	maxBacklinks: number;
+	/** 构建时对不存在的 slug / 锚点打印 `console.warn` */
+	brokenLinkWarn: boolean;
+};
+
 // Category types
 export type CategoryPath = string[];
 export type CategoryPathString = string;

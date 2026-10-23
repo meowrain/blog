@@ -4,18 +4,20 @@ import License from "@components/misc/License.astro";
 import Markdown from "@components/misc/Markdown.astro";
 
 import MainGridLayout from "@layouts/MainGridLayout.astro";
+import { getBacklinks } from "@utils/backlinks-utils";
 import { getSortedPosts } from "@utils/content-utils";
 import { getSeriesInfo } from "@utils/series-utils";
 import { getDir, getPostUrlBySlug } from "@utils/url-utils";
 import { Icon } from "astro-icon/components";
 import { gitHubEditConfig, licenseConfig, ogImageBase } from "src/config";
+import Backlinks from "../../components/Backlinks.astro";
 import PostMetadata from "../../components/PostMeta.astro";
 import ReadLaterButton from "../../components/ReadLaterButton.astro";
 import ImageWrapper from "../../components/misc/ImageWrapper.astro";
 import RelatedPosts from "../../components/RelatedPosts.astro";
 import SeriesNav from "../../components/SeriesNav.astro";
 import ArticleShare from "../../components/ArticleShare.astro";
-import { profileConfig, siteConfig } from "../../config";
+import { profileConfig, siteConfig, wikiLinkConfig } from "../../config";
 import { formatDateToYYYYMMDD } from "../../utils/date-utils";
 import { getRelatedPosts } from "../../utils/related-utils";
 
@@ -37,6 +39,12 @@ const seriesInfo = await getSeriesInfo(entry);
 
 // 文末推荐：构建期按 series > tags 重合度 > category 打分
 const relatedPosts = await getRelatedPosts(entry, 3);
+
+// 反向链接：哪些文章在正文里用 [[slug]] 指向了本文，构建期反转出链索引
+const backlinks =
+	wikiLinkConfig.enable && wikiLinkConfig.backlinks
+		? await getBacklinks(entry, wikiLinkConfig.maxBacklinks)
+		: [];
 
 const jsonLd = {
 	"@context": "https://schema.org",
@@ -214,7 +222,11 @@ const ogImage =
             {licenseConfig.enable && <License title={entry.data.title} slug={entry.slug} pubDate={entry.data.published} class="mb-6 rounded-xl license-container onload-animation"></License>}
 
             <RelatedPosts posts={relatedPosts} />
-            
+
+            {wikiLinkConfig.enable && wikiLinkConfig.backlinks && (
+                <Backlinks backlinks={backlinks} />
+            )}
+
 
             
             <!-- Giscus 评论区 -->
@@ -331,6 +343,28 @@ const ogImage =
 </script>
 
 <style is:global>
+    /* 双链：正常双链沿用正文链接色，后面跟一个小箭头提示「跳到别处」 */
+    .markdown-content a.wikilink::after {
+        content: "↗";
+        margin-left: 0.15em;
+        font-size: 0.85em;
+        opacity: 0.55;
+    }
+
+    /* 断链：灰一点、划掉，深浅主题都要看得清 */
+    .markdown-content .wikilink-broken {
+        color: var(--primary);
+        opacity: 0.6;
+        text-decoration: line-through;
+        text-decoration-style: dotted;
+        text-underline-offset: 0.2em;
+        cursor: help;
+    }
+
+    .markdown-content .wikilink-broken:hover {
+        opacity: 0.8;
+    }
+
     @keyframes loading-progress {
         0% {
             transform: translateX(-100%);
