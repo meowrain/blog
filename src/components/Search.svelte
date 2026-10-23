@@ -614,4 +614,21 @@ top-20 left-4 md:left-[unset] right-4 shadow-2xl rounded-2xl p-2">
   .search-result[aria-selected="true"] {
     background-color: var(--btn-plain-bg-hover);
   }
+
+  /* 原生下拉弹层由系统渲染，不声明 color-scheme 时深色模式仍是白底，
+     选项文字继承 dark:text-white/60 会变成白底白字 */
+  select {
+    color-scheme: light;
+  }
+  select option {
+    background-color: #fff;
+    color: rgb(0 0 0 / 0.75);
+  }
+  :global(.dark) select {
+    color-scheme: dark;
+  }
+  :global(.dark) select option {
+    background-color: var(--float-panel-bg-opaque);
+    color: rgb(255 255 255 / 0.75);
+  }
 </style>
