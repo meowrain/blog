@@ -403,6 +403,11 @@ onMount(() => {
 	const onFocusSearchShortcut = () => void focusSearch();
 	document.addEventListener("site:focus-search", onFocusSearchShortcut);
 
+	// 切到宽屏 / 沉浸模式时导航会收起，搜索面板得跟着关，
+	// 否则它虽然看不见，快捷键中心仍会把后续按键判成「弹层里按的」
+	const onCloseSearch = () => closePanel();
+	document.addEventListener("site:close-search", onCloseSearch);
+
 	// 面板打开时 Esc 无论焦点在不在输入框里都能关闭
 	const unregisterEscape = registerShortcut({
 		id: "search.escape",
@@ -428,6 +433,7 @@ onMount(() => {
 	return () => {
 		unregisterEscape();
 		document.removeEventListener("site:focus-search", onFocusSearchShortcut);
+		document.removeEventListener("site:close-search", onCloseSearch);
 		document.removeEventListener("click", onDocumentClick);
 		if (debounceTimer) clearTimeout(debounceTimer);
 	};

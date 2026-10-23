@@ -7,22 +7,22 @@ import { Icon } from "astro-icon/components";
 
 import { musicConfig, ogImageBase, profileConfig, siteConfig } from "@/config";
 import ConfigCarrier from "@components/ConfigCarrier.astro";
-import MusicPlayerHost from "@components/music/MusicPlayerHost.svelte";
 import ShortcutsHelp from "@components/ShortcutsHelp.astro";
+import MusicPlayerHost from "@components/music/MusicPlayerHost.svelte";
 import EmojiCursor from "@components/widget/EmojiCursor.astro";
 import FallingEffect from "@components/widget/FallingEffect.astro";
 import FindAgent from "@components/widget/FindAgent.svelte";
 import MobileTOC from "@components/widget/MobileTOC.astro";
 import ReadingProgress from "@components/widget/ReadingProgress.astro";
 import {
-  AUTO_MODE,
-  BANNER_HEIGHT,
-  BANNER_HEIGHT_EXTEND,
-  BANNER_HEIGHT_HOME,
-  DARK_MODE,
-  DEFAULT_THEME,
-  LIGHT_MODE,
-  PAGE_WIDTH,
+	AUTO_MODE,
+	BANNER_HEIGHT,
+	BANNER_HEIGHT_EXTEND,
+	BANNER_HEIGHT_HOME,
+	DARK_MODE,
+	DEFAULT_THEME,
+	LIGHT_MODE,
+	PAGE_WIDTH,
 } from "../constants/constants";
 import { defaultFavicons } from "../constants/icon";
 import type { Favicon } from "../types/config";
@@ -30,31 +30,31 @@ import { url, pathsEqual } from "../utils/url-utils";
 import "katex/dist/katex.css";
 
 interface Props {
-  title?: string;
-  banner?: string;
-  description?: string;
-  lang?: string;
-  setOGTypeArticle?: boolean;
-  ogImage?: string;
-  // 404 这类不该被收录的页面，不输出 canonical
-  noCanonical?: boolean;
+	title?: string;
+	banner?: string;
+	description?: string;
+	lang?: string;
+	setOGTypeArticle?: boolean;
+	ogImage?: string;
+	// 404 这类不该被收录的页面，不输出 canonical
+	noCanonical?: boolean;
 }
 
 let {
-  title,
-  banner,
-  description,
-  lang,
-  setOGTypeArticle,
-  ogImage,
-  noCanonical,
+	title,
+	banner,
+	description,
+	lang,
+	setOGTypeArticle,
+	ogImage,
+	noCanonical,
 } = Astro.props;
 
 // OG 分享图：文章页会传入动态卡片 URL，其他页面默认渲染站点卡片（不带 title 的默认卡）
 if (!ogImage) {
-  // 必须带一段路径：EO 的 catch-all 只映射 /api/og/*，
-  // 空路径的 /api/og 与 /api/og/ 不命中路由，会直接 404。
-  ogImage = `${ogImageBase}/api/og/home`;
+	// 必须带一段路径：EO 的 catch-all 只映射 /api/og/*，
+	// 空路径的 /api/og 与 /api/og/ 不命中路由，会直接 404。
+	ogImage = `${ogImageBase}/api/og/home`;
 }
 
 // apply a class to the body element to decide the height of the banner, only used for initial page load
@@ -69,7 +69,7 @@ const musicApiBase = import.meta.env.PUBLIC_MUSIC_API_BASE || "/api/music";
 // why doing this in Layout instead of GlobalStyles: https://github.com/withastro/astro/issues/6728#issuecomment-1502203757
 const configHue = siteConfig.themeColor.hue;
 if (!banner || typeof banner !== "string" || banner.trim() === "") {
-  banner = siteConfig.banner.src;
+	banner = siteConfig.banner.src;
 }
 
 // TODO don't use post cover as banner for now
@@ -86,26 +86,26 @@ const glassDarkOpacity = glass?.darkOpacity ?? 0.58;
 
 let pageTitle: string;
 if (title) {
-  pageTitle = `${title} - ${siteConfig.title}`;
+	pageTitle = `${title} - ${siteConfig.title}`;
 } else {
-  if (siteConfig.subtitle && siteConfig.subtitle.trim() !== "") {
-    pageTitle = `${siteConfig.title} - ${siteConfig.subtitle}`;
-  } else {
-    pageTitle = siteConfig.title;
-  }
+	if (siteConfig.subtitle && siteConfig.subtitle.trim() !== "") {
+		pageTitle = `${siteConfig.title} - ${siteConfig.subtitle}`;
+	} else {
+		pageTitle = siteConfig.title;
+	}
 }
 
 // Use siteConfig.description as fallback for meta description when no description is provided
 if (!description) {
-  description = siteConfig.description || pageTitle;
+	description = siteConfig.description || pageTitle;
 }
 
 const favicons: Favicon[] =
-  siteConfig.favicon.length > 0 ? siteConfig.favicon : defaultFavicons;
+	siteConfig.favicon.length > 0 ? siteConfig.favicon : defaultFavicons;
 
 // const siteLang = siteConfig.lang.replace('_', '-')
 if (!lang) {
-  lang = `${siteConfig.lang}`;
+	lang = `${siteConfig.lang}`;
 }
 const siteLang = lang.replace("_", "-");
 
@@ -114,12 +114,12 @@ const siteLang = lang.replace("_", "-");
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site).href;
 
 const bannerOffsetByPosition = {
-  top: `${BANNER_HEIGHT_EXTEND}vh`,
-  center: `${BANNER_HEIGHT_EXTEND / 2}vh`,
-  bottom: "0",
+	top: `${BANNER_HEIGHT_EXTEND}vh`,
+	center: `${BANNER_HEIGHT_EXTEND / 2}vh`,
+	bottom: "0",
 };
 const bannerOffset =
-  bannerOffsetByPosition[siteConfig.banner.position || "center"];
+	bannerOffsetByPosition[siteConfig.banner.position || "center"];
 ---
 
 <!doctype html>
@@ -244,6 +244,12 @@ const bannerOffset =
       const readingContentWidth = Number(localStorage.getItem("reading-content-width"));
       if (readingContentWidth > 0) {
         document.documentElement.style.setProperty("--reading-content-width", `${readingContentWidth}rem`);
+      }
+
+      // 阅读布局模式挂在 <html> 上，渲染前先写好，避免先出标准布局再跳成宽屏 / 沉浸
+      const readingLayout = localStorage.getItem("reading-layout");
+      if (readingLayout === "wide" || readingLayout === "focus") {
+        document.documentElement.setAttribute("data-reading-layout", readingLayout);
       }
 
       // calculate the --banner-height-extend, which needs to be a multiple of 4 to avoid blurry text
@@ -476,6 +482,16 @@ const bannerOffset =
     <MobileTOC />
     <!-- 全站阅读进度条：独立于 MobileTOC，2xl 隐藏移动端目录后仍然保留 -->
     <ReadingProgress />
+    <!-- 宽屏 / 沉浸模式的退出入口：沉浸模式下导航和侧栏都收起，只剩它 -->
+    <button
+      id="reading-layout-exit"
+      type="button"
+      aria-label="退出阅读模式"
+      title="退出阅读模式（Esc）"
+    >
+      <Icon name="material-symbols:close-fullscreen-rounded" class="text-[1.125rem]" />
+      <span class="reading-layout-exit-text">退出阅读模式</span>
+    </button>
     <!-- 全站键盘快捷键中心 + ? 帮助面板，常驻在 Swup 容器外 -->
     <ShortcutsHelp />
 
@@ -851,6 +867,139 @@ const bannerOffset =
     max-width: var(--reading-content-width, 50rem) !important;
     margin-inline: auto;
   }
+
+  /* ---------------- 阅读布局：标准 / 宽屏 / 沉浸 ----------------
+     模式写在 <html data-reading-layout> 上（setting-utils.applyReadingLayout），
+     这里只做纯 CSS 的收纳，切换不需要重渲染组件。 */
+
+  /* 宽屏：页面容器放宽，侧栏整块收起，正文占满中间一列。
+     --page-width 由 Astro 的 define:vars 内联写在 <html style> 上，
+     行内声明只能用 !important 盖掉；--toc-width 是 calc(var(--page-width))，
+     会跟着自动重算。 */
+  html[data-reading-layout="wide"] {
+    --page-width: 84rem !important;
+  }
+
+  /* 目录宽度是 (视口 - 页面宽度) / 2，页面一放宽就会先被挤没；
+     窄一点的 2xl 屏上干脆不显示，避免目录只剩几十像素 */
+  @media (max-width: 1799px) {
+    html[data-reading-layout="wide"] #toc-wrapper {
+      display: none;
+    }
+  }
+
+  /* 沉浸模式所有断点都只留一列：侧栏、目录、导航一起收掉 */
+  html[data-reading-layout="focus"] #main-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html[data-reading-layout="focus"] #swup-container {
+    grid-column: 1 / -1;
+  }
+
+  html[data-reading-layout="focus"] #sidebar {
+    display: none;
+  }
+
+  /* 宽屏在窄屏上本来就没有侧栏可收（正文早就占满整行），只处理 lg 以上，
+     这样手机上切到宽屏不会把侧栏弄没 */
+  @media (min-width: 1024px) {
+    html[data-reading-layout="wide"] #main-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    html[data-reading-layout="wide"] #swup-container {
+      grid-column: 1 / -1;
+    }
+
+    html[data-reading-layout="wide"] #sidebar {
+      display: none;
+    }
+  }
+
+  /* 宽屏下正文列跟着放大，但仍受“正文宽度”滑杆控制（×1.35） */
+  html[data-reading-layout="wide"] #post-container .markdown-content {
+    max-width: min(100%, calc(var(--reading-content-width, 50rem) * 1.35)) !important;
+  }
+
+  /* 沉浸：导航、横幅、目录、侧栏全部收起，正文从屏幕顶部开始 */
+  html[data-reading-layout="focus"] {
+    --page-width: 60rem !important;
+  }
+
+  html[data-reading-layout="focus"] #top-row,
+  html[data-reading-layout="focus"] #banner-wrapper,
+  html[data-reading-layout="focus"] #banner-credit,
+  html[data-reading-layout="focus"] #toc-wrapper,
+  html[data-reading-layout="focus"] mobile-toc,
+  html[data-reading-layout="focus"] #back-to-top-btn {
+    display: none !important;
+  }
+
+  /* MainGridLayout 把 top 写成了行内样式，收掉横幅之后要强制顶上去 */
+  html[data-reading-layout="focus"] #main-panel {
+    top: 1rem !important;
+  }
+
+  /* 首页横幅会让 #main-grid 下沉，沉浸模式下同样抵消 */
+  html[data-reading-layout="focus"] #main-grid {
+    transform: none !important;
+  }
+
+  /* 退出入口：默认不存在，只有宽屏 / 沉浸模式才浮出来 */
+  #reading-layout-exit {
+    display: none;
+    position: fixed;
+    left: 1.25rem;
+    bottom: 1.25rem;
+    z-index: 70;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    background: var(--float-panel-bg, var(--card-bg));
+    color: var(--primary);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    box-shadow: 0 12px 30px -14px rgba(0, 0, 0, 0.45);
+    transition: transform 0.2s ease, opacity 0.2s ease;
+    cursor: pointer;
+  }
+
+  :root.dark #reading-layout-exit {
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  #reading-layout-exit:hover {
+    transform: translateY(-1px);
+  }
+
+  #reading-layout-exit:active {
+    transform: scale(0.96);
+  }
+
+  html[data-reading-layout="wide"] #reading-layout-exit,
+  html[data-reading-layout="focus"] #reading-layout-exit {
+    display: inline-flex;
+  }
+
+  /* 窄屏收不了侧栏，宽屏等于标准布局，不摆一个点了没反应的按钮 */
+  @media (max-width: 1023px) {
+    html[data-reading-layout="wide"] #reading-layout-exit {
+      display: none;
+    }
+
+    .reading-layout-exit-text {
+      display: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #reading-layout-exit {
+      transition: none;
+    }
+  }
 </style>
 
 <script>
@@ -870,6 +1019,8 @@ const bannerOffset =
     setBgBlur,
     getHideBg,
     setHideBg,
+    getReadingLayout,
+    setReadingLayout,
   } from "../utils/setting-utils";
   import { pathsEqual, url } from "../utils/url-utils";
   import {
@@ -966,6 +1117,31 @@ function disableAnimation() {
     setHideBg(getHideBg());
   }
 
+  // 宽屏 / 沉浸会连同导航一起收起，浮层如果还停在「打开」状态，
+  // 快捷键中心会把 Esc 当成「弹层里按的」而拦掉，退出模式就按不出去了。
+  // 搜索面板的开关状态在 Search.svelte 里，只能走事件让它自己关。
+  function closeFloatingPanels() {
+    for (const id of ["display-setting", "nav-menu-panel"]) {
+      document.getElementById(id)?.classList.add("float-panel-closed");
+    }
+    document.dispatchEvent(new CustomEvent("site:close-search"));
+  }
+
+  function loadReadingLayout() {
+    // 内联脚本已经在 <head> 里写过一次属性，这里补上归一化与退出按钮
+    setReadingLayout(getReadingLayout());
+
+    document
+      .getElementById("reading-layout-exit")
+      ?.addEventListener("click", () => setReadingLayout("standard"));
+
+    window.addEventListener("reading-layout-change", (event) => {
+      if ((event as CustomEvent<string>).detail !== "standard") {
+        closeFloatingPanels();
+      }
+    });
+  }
+
   function initCustomScrollbar() {
     const bodyElement = document.querySelector("body");
     if (!bodyElement) return;
@@ -1017,6 +1193,7 @@ function disableAnimation() {
     loadTheme();
     loadHue();
     loadBgBlur();
+    loadReadingLayout();
     initCustomScrollbar();
     showBanner();
   }

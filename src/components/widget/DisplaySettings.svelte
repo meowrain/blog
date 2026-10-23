@@ -1,37 +1,43 @@
 <script lang="ts">
-import { onMount } from "svelte";
+import { AUTO_MODE, DARK_MODE, LIGHT_MODE } from "@constants/constants";
 import Icon from "@iconify/svelte";
 import {
-	getDefaultHue,
-	getHue,
-	setHue,
-	getStoredTheme,
-	setTheme,
-	getRainbowMode,
-	setRainbowMode,
-	getRainbowSpeed,
-	setRainbowSpeed,
-	getBgBlur,
-	setBgBlur,
-    setBgHueRotate,
-    getHideBg,
-    setHideBg,
-	getDevMode,
-	setDevMode,
-	getDevServer,
-	setDevServer,
-	getFallingEffect,
-	setFallingEffect,
+	READING_LAYOUT_OPTIONS,
+	type ReadingLayout,
+} from "@utils/reading-layout-core";
+import {
 	FALLING_EFFECT_OPTIONS,
-	getReadingFontSize,
-	setReadingFontSize,
-	getReadingLineHeight,
-	setReadingLineHeight,
+	getBgBlur,
+	getDefaultHue,
+	getDevMode,
+	getDevServer,
+	getFallingEffect,
+	getHideBg,
+	getHue,
+	getRainbowMode,
+	getRainbowSpeed,
 	getReadingContentWidth,
+	getReadingFontSize,
+	getReadingLayout,
+	getReadingLineHeight,
+	getStoredTheme,
+	setBgBlur,
+	setBgHueRotate,
+	setDevMode,
+	setDevServer,
+	setFallingEffect,
+	setHideBg,
+	setHue,
+	setRainbowMode,
+	setRainbowSpeed,
 	setReadingContentWidth,
+	setReadingFontSize,
+	setReadingLayout,
+	setReadingLineHeight,
+	setTheme,
 } from "@utils/setting-utils";
-import { AUTO_MODE, DARK_MODE, LIGHT_MODE } from "@constants/constants";
 import type { FallingEffectType } from "@utils/setting-utils";
+import { onMount } from "svelte";
 
 let hue = getHue();
 let theme = getStoredTheme();
@@ -45,6 +51,7 @@ let fallingEffect: FallingEffectType = getFallingEffect();
 let readingFontSize = getReadingFontSize();
 let readingLineHeight = getReadingLineHeight();
 let readingContentWidth = getReadingContentWidth();
+let readingLayout: ReadingLayout = getReadingLayout();
 let rootFontSize = 16;
 let animationId: number;
 let lastUpdate = 0;
@@ -61,7 +68,7 @@ $: if ((hue || hue === 0) && !isRainbowMode) {
 }
 
 $: {
-    setBgBlur(bgBlur);
+	setBgBlur(bgBlur);
 }
 
 function switchTheme(newTheme: string) {
@@ -84,12 +91,12 @@ function toggleRainbow() {
 
 	if (isRainbowMode) {
 		lastUpdate = performance.now();
-        rainbowHue = 0; // Reset rotation start
+		rainbowHue = 0; // Reset rotation start
 		animationId = requestAnimationFrame(updateRainbow);
 	} else {
 		cancelAnimationFrame(animationId);
-        // Reset background rotation to 0 when stopped
-        setBgHueRotate(0);
+		// Reset background rotation to 0 when stopped
+		setBgHueRotate(0);
 	}
 }
 
@@ -108,7 +115,9 @@ function toggleFallingEffect() {
 	setFallingEffect(fallingEffect);
 }
 
-function selectFallingEffect(value: (typeof FALLING_EFFECT_OPTIONS)[number]["value"]) {
+function selectFallingEffect(
+	value: (typeof FALLING_EFFECT_OPTIONS)[number]["value"],
+) {
 	fallingEffect = value;
 	setFallingEffect(value);
 }
@@ -133,6 +142,17 @@ function onReadingContentWidthChange() {
 	setReadingContentWidth(readingContentWidth);
 }
 
+function selectReadingLayout(layout: ReadingLayout) {
+	readingLayout = layout;
+	setReadingLayout(layout);
+}
+
+function onLayoutChange(event: Event) {
+	// 退出按钮 / Esc 快捷键也能改布局，面板里的选中态要跟着走
+	readingLayout =
+		(event as CustomEvent<ReadingLayout>).detail ?? getReadingLayout();
+}
+
 function updateRootFontSize() {
 	rootFontSize =
 		Number.parseFloat(getComputedStyle(document.documentElement).fontSize) ||
@@ -142,13 +162,15 @@ function updateRootFontSize() {
 onMount(() => {
 	updateRootFontSize();
 	window.addEventListener("resize", updateRootFontSize);
+	window.addEventListener("reading-layout-change", onLayoutChange);
 	if (isRainbowMode) {
 		updateRainbow();
 	}
-    return () => {
-        window.removeEventListener("resize", updateRootFontSize);
-        if (animationId) cancelAnimationFrame(animationId);
-    }
+	return () => {
+		window.removeEventListener("resize", updateRootFontSize);
+		window.removeEventListener("reading-layout-change", onLayoutChange);
+		if (animationId) cancelAnimationFrame(animationId);
+	};
 });
 </script>
 
@@ -218,6 +240,19 @@ onMount(() => {
             阅读排版
         </div>
         <span class="text-xs text-black/40 dark:text-white/40">正文</span>
+    </div>
+
+    <div class="grid grid-cols-3 gap-1 mb-3 ml-3 mr-1">
+        {#each READING_LAYOUT_OPTIONS as opt (opt.value)}
+        <button aria-label={opt.label} title={opt.description}
+            class="flex flex-col items-center justify-center gap-1 h-14 rounded-md transition active:scale-95
+            {readingLayout === opt.value ? 'bg-[var(--primary)] text-white' : 'bg-[var(--btn-regular-bg)] text-[var(--btn-content)] hover:bg-[var(--btn-regular-bg-hover)]'}"
+            on:click={() => selectReadingLayout(opt.value)}
+        >
+            <Icon icon={opt.icon} class="text-[1.125rem]"></Icon>
+            <span class="text-xs font-bold leading-none">{opt.label}</span>
+        </button>
+        {/each}
     </div>
 
     <div class="flex items-center justify-between mb-1 ml-3">

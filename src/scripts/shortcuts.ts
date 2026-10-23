@@ -1,3 +1,4 @@
+import { getReadingLayout, setReadingLayout } from "../utils/setting-utils";
 import {
 	type ParsedShortcut,
 	formatShortcutTokens,
@@ -279,6 +280,17 @@ function focusSearch(): void {
 	document.dispatchEvent(new CustomEvent("site:focus-search"));
 }
 
+function toggleFocusLayout(): void {
+	setReadingLayout(getReadingLayout() === "focus" ? "standard" : "focus");
+}
+
+/** 标准布局下不接管 Esc，让弹层 / 浏览器默认行为照常 */
+function exitReadingLayout(): boolean | undefined {
+	if (getReadingLayout() === "standard") return false;
+	setReadingLayout("standard");
+	return undefined;
+}
+
 function registerGlobals(state: ShortcutCenter): void {
 	if (state.globalsMounted) return;
 	state.globalsMounted = true;
@@ -339,6 +351,23 @@ function registerGlobals(state: ShortcutCenter): void {
 		label: "向上滚动",
 		priority: 20,
 		handler: () => scrollPage(-1),
+	});
+	registerShortcut({
+		id: "site.focus-layout",
+		key: "f",
+		group: "阅读",
+		label: "切换沉浸阅读模式",
+		priority: 20,
+		handler: toggleFocusLayout,
+	});
+	registerShortcut({
+		id: "site.exit-layout",
+		key: "Escape",
+		group: "阅读",
+		label: "退出宽屏 / 沉浸模式",
+		// 弹层打开时普通快捷键本来就不分发，弹层自己的 Esc 也在更高优先级
+		priority: 5,
+		handler: exitReadingLayout,
 	});
 }
 

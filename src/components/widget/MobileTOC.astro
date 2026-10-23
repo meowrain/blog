@@ -581,6 +581,7 @@ const tocEnabled = siteConfig.toc.enable;
 
 			this.bindEvents();
 			this.bindSwup();
+			this.bindReadingLayout();
 
 			// 首屏时正文容器可能还在做进场动画
 			requestAnimationFrame(() => this.refresh());
@@ -591,6 +592,10 @@ const tocEnabled = siteConfig.toc.enable;
 			this.observer = null;
 			window.removeEventListener("scroll", this.onScroll);
 			window.removeEventListener("resize", this.onScroll);
+			window.removeEventListener(
+				"reading-layout-change",
+				this.onReadingLayoutChange,
+			);
 			for (const unregister of this.unregisterShortcuts) unregister();
 			this.unregisterShortcuts = [];
 			this.overlay?.removeEventListener("touchmove", this.blockBackgroundScroll);
@@ -608,6 +613,19 @@ const tocEnabled = siteConfig.toc.enable;
 		private get isOpen(): boolean {
 			return this.classList.contains("is-open");
 		}
+
+		/**
+		 * 切到宽屏 / 沉浸模式时抽屉会被 CSS 收起，但 is-open 还留着：
+		 * 一来目录按钮本身也藏起来了，用户没法关；二来快捷键中心会把
+		 * 「抽屉打开中」当成弹层，连 Esc 退出模式都拦掉。所以这里主动关掉。
+		 */
+		private bindReadingLayout(): void {
+			window.addEventListener("reading-layout-change", this.onReadingLayoutChange);
+		}
+
+		private onReadingLayoutChange = (): void => {
+			if (this.isOpen) this.close();
+		};
 
 		private bindEvents(): void {
 			this.toggle?.addEventListener("click", () => {
