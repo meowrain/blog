@@ -1,28 +1,29 @@
 ---
-import { getSortedPosts } from "@utils/content-utils";
+import type { CategoryNode } from "@/types/config";
 import { buildCategoryTree } from "@utils/category-utils";
+import { getSortedPosts } from "@utils/content-utils";
 import { Icon } from "astro-icon/components";
 import CategoryDrawer from "./CategoryDrawer.astro";
 
 const allPosts = await getSortedPosts();
 const categoryTree = await buildCategoryTree(allPosts);
 
-function getTotalCount(cat: any): number {
-  let count = cat.count;
-  if (cat.children) {
-    for (const child of cat.children) {
-      count += getTotalCount(child);
-    }
-  }
-  return count;
+function getTotalCount(cat: CategoryNode): number {
+	let count = cat.count;
+	if (cat.children) {
+		for (const child of cat.children) {
+			count += getTotalCount(child);
+		}
+	}
+	return count;
 }
 
 // Get only top-level categories, sort by total post count (including children), max 15
 const topCategories = Object.values(categoryTree)
-  .filter((cat) => cat.path.length === 1)
-  .map((cat) => ({ ...cat, totalCount: getTotalCount(cat) }))
-  .sort((a, b) => b.totalCount - a.totalCount)
-  .slice(0, 15);
+	.filter((cat) => cat.path.length === 1)
+	.map((cat) => ({ ...cat, totalCount: getTotalCount(cat) }))
+	.sort((a, b) => b.totalCount - a.totalCount)
+	.slice(0, 15);
 ---
 
 <div class="card-base px-6 py-5">
