@@ -176,3 +176,50 @@ export function setTheme(theme: LIGHT_DARK_MODE): void {
 export function getStoredTheme(): LIGHT_DARK_MODE {
 	return (localStorage.getItem("theme") as LIGHT_DARK_MODE) || DEFAULT_THEME;
 }
+
+export const DEFAULT_READING_FONT_SIZE = 1;
+export const DEFAULT_READING_LINE_HEIGHT = 1.75;
+export const DEFAULT_READING_CONTENT_WIDTH = 50;
+
+function getStoredNumber(key: string, fallback: number): number {
+	const raw = localStorage.getItem(key);
+	if (raw === null) return fallback;
+	const value = Number.parseFloat(raw);
+	return Number.isFinite(value) ? value : fallback;
+}
+
+export function getReadingFontSize(): number {
+	return getStoredNumber("reading-font-size", DEFAULT_READING_FONT_SIZE);
+}
+
+export function setReadingFontSize(size: number): void {
+	localStorage.setItem("reading-font-size", String(size));
+	document.documentElement.style.setProperty(
+		"--reading-font-size",
+		`${size}rem`,
+	);
+}
+
+export function getReadingLineHeight(): number {
+	return getStoredNumber("reading-line-height", DEFAULT_READING_LINE_HEIGHT);
+}
+
+export function setReadingLineHeight(height: number): void {
+	localStorage.setItem("reading-line-height", String(height));
+	document.documentElement.style.setProperty(
+		"--reading-line-height",
+		String(height),
+	);
+}
+
+export function getReadingContentWidth(): number {
+	return getStoredNumber("reading-content-width", DEFAULT_READING_CONTENT_WIDTH);
+}
+
+export function setReadingContentWidth(width: number): void {
+	localStorage.setItem("reading-content-width", String(width));
+	document.documentElement.style.setProperty(
+		"--reading-content-width",
+		`${width}rem`,
+	);
+}
