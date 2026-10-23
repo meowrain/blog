@@ -2,6 +2,8 @@
 import Icon from "@iconify/svelte";
 import MarkdownIt from "markdown-it";
 import { tick } from "svelte";
+import ChatPostCards from "../chat/ChatPostCards.svelte";
+import { toolPostHits } from "../chat/post-hits";
 
 /**
  * 全站右下角的胶囊助手 —— 站内找文章 + 当前这篇文章的学习助手（讲解 / 出题 / 批改），
@@ -82,21 +84,15 @@ function turnText(parts: Part[]): string {
 		.join("");
 }
 
-/** 工具结果里的文章标题，用来在片段里直接列出命中项 */
-function toolHits(part: ToolPart): string[] {
+/** 分类工具没有文章卡片可画，仍然按「名称(篇数)」列一行 */
+function toolCategories(part: ToolPart): string[] {
 	if (!part.content) return [];
 	try {
 		const parsed = JSON.parse(part.content);
-		if (Array.isArray(parsed?.posts)) {
-			return parsed.posts
-				.slice(0, 5)
-				.map((p: any) => String(p?.title ?? ""))
-				.filter(Boolean);
-		}
 		if (Array.isArray(parsed?.categories)) {
 			return parsed.categories
 				.slice(0, 8)
-				.map((c: any) => `${c?.name}(${c?.count})`);
+				.map((c: { name?: string; count?: number }) => `${c?.name}(${c?.count})`);
 		}
 	} catch {
 		// 解析不了就只显示原始内容
@@ -502,7 +498,8 @@ $effect(() => {
 					<div class="space-y-2">
 						{#each m.parts as part, pi}
 							{#if part.kind === 'tool'}
-								{@const hits = toolHits(part)}
+								{@const posts = toolPostHits(part.content)}
+								{@const categories = toolCategories(part)}
 								<div class="rounded-lg border border-black/10 bg-black/[0.03] px-2.5 py-2 text-[0.7rem] dark:border-white/10 dark:bg-white/[0.06]">
 									<div class="flex items-center gap-1.5">
 										{#if part.status === 'running'}
@@ -519,10 +516,14 @@ $effect(() => {
 									<div class="mt-1 {part.status === 'error' ? 'text-red-500' : 'text-black/50 dark:text-white/50'}">
 										{part.status === 'running' ? '正在检索…' : part.summary || ''}
 									</div>
-									{#if hits.length}
+									{#if posts.length}
+										<div class="mt-1.5">
+											<ChatPostCards posts={posts} />
+										</div>
+									{:else if categories.length}
 										<ul class="mt-1 space-y-0.5 text-black/45 dark:text-white/45">
-											{#each hits as h}
-												<li class="truncate">· {h}</li>
+											{#each categories as c}
+												<li class="truncate">· {c}</li>
 											{/each}
 										</ul>
 									{/if}

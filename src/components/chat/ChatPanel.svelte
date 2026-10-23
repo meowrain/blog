@@ -2,6 +2,8 @@
 import Icon from "@iconify/svelte";
 import MarkdownIt from "markdown-it";
 import { tick } from "svelte";
+import ChatPostCards from "./ChatPostCards.svelte";
+import { toolPostHits } from "./post-hits";
 
 /**
  * /chat/ 聊天页的主体 —— 一个通用 AI 助手：什么都聊，需要时自己联网查、自己翻站内文章。
@@ -111,7 +113,7 @@ function appendText(piece: string) {
 	else turn.parts.push({ kind: "text", content: piece });
 }
 
-/** 工具结果里能直接点开的链接（搜索命中、网页、站内文章） */
+/** 站内文章走卡片（见 ChatPostCards），这里只挑外链和单页结果 */
 function toolLinks(part: ToolPart): { text: string; url: string }[] {
 	if (!part.content) return [];
 	try {
@@ -122,15 +124,6 @@ function toolLinks(part: ToolPart): { text: string; url: string }[] {
 				.map((r: any) => ({
 					text: String(r?.title || r?.url || ""),
 					url: String(r?.url || ""),
-				}))
-				.filter((l: { text: string; url: string }) => l.url);
-		}
-		if (Array.isArray(parsed?.posts)) {
-			return parsed.posts
-				.slice(0, 6)
-				.map((p: any) => ({
-					text: String(p?.title || ""),
-					url: String(p?.url || ""),
 				}))
 				.filter((l: { text: string; url: string }) => l.url);
 		}
@@ -421,7 +414,8 @@ $effect(() => {
 				<div class="space-y-2">
 					{#each m.parts as part, pi}
 						{#if part.kind === "tool"}
-							{@const links = toolLinks(part)}
+							{@const hits = toolPostHits(part.content)}
+							{@const links = hits.length ? [] : toolLinks(part)}
 							<div class="rounded-lg border border-black/10 bg-black/[0.03] px-2.5 py-2 text-[0.7rem] dark:border-white/10 dark:bg-white/[0.06]">
 								<div class="flex items-center gap-1.5">
 									{#if part.status === "running"}
@@ -439,7 +433,11 @@ $effect(() => {
 								<div class="mt-1 {part.status === 'error' ? 'text-red-500' : 'text-black/50 dark:text-white/50'}">
 									{part.status === "running" ? TOOL_RUNNING_TEXT[part.name] ?? "正在调用…" : part.summary || ""}
 								</div>
-								{#if links.length}
+								{#if hits.length}
+									<div class="mt-1.5">
+										<ChatPostCards posts={hits} />
+									</div>
+								{:else if links.length}
 									<ul class="mt-1 space-y-0.5">
 										{#each links as link}
 											<li class="truncate">
