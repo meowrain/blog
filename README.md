@@ -327,6 +327,17 @@ pnpm build
 
 将 `dist/` 部署到静态托管平台即可。`edgeone.json` 包含 EdgeOne 使用的重定向规则；`astro.config.mjs` 中也维护了开发构建时的重定向配置。
 
+### 持续集成
+
+CNB 仓库（<https://cnb.cool/meowyyds/blog>）的 `main` 分支推送后会由 [.cnb.yml](.cnb.yml) 自动构建并部署：
+
+1. `node:20` 环境里安装 pnpm 9，执行 `pnpm install --frozen-lockfile` 和 `pnpm build`
+2. 用 `edgeone makers deploy ./dist -n blog-learn` 上传到 EdgeOne Makers 的 upload 项目
+
+`EDGEONE_API_TOKEN` 不写在仓库里，而是通过 `imports` 从私有密钥仓库 `meowyyds/blog-envs` 的 `envs.yml` 注入。
+
+需要注意：公开域名 `blog-edgeone.meowrain.cn` 绑定的是 GitHub 连线的另一个 EdgeOne 项目（`blog-meowrain`），由 GitHub `main` 推送自动部署；CNB 这条流水线只更新它自己的 upload 项目。
+
 ### 管理后台
 
 ```bash
