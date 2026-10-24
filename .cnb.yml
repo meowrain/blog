@@ -3,17 +3,14 @@
 main:
   push:
     - imports: https://cnb.cool/meowyyds/blog-envs/-/blob/main/envs.yml
+      # 不传目录：让 CLI 自己 install / build .edgeone（静态资源 + cloud-functions + agents）
+      # 再整体上传；直接传 ./dist 只会传静态文件，云函数会丢。
       stages:
-        - name: Install
+        - name: Build and Deploy
           image: node:20
           script:
             - npm i -g pnpm@9.14.4
-            - pnpm install --frozen-lockfile
-        # 不传目录：让 CLI 自己构建 .edgeone（静态资源 + cloud-functions + agents）
-        # 再整体上传；直接传 ./dist 只会传静态文件，云函数会丢。
-        - name: Build and Deploy
-          image: node:20
-          script: npx --yes edgeone makers deploy -n blog-learn -t "$EDGEONE_API_TOKEN" --json
+            - npx --yes edgeone makers deploy -n blog-learn -t "$EDGEONE_API_TOKEN" --json
 
 # NPC 事件流水线：@ 提及 NPC 时，由 npc:go 执行任务。
 # 角色定义见 .cnb/settings.yml；这里只固定运行模型。

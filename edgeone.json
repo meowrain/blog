@@ -64,6 +64,7 @@
   "agents": {
     "framework": "deepagents"
   },
+  "installCommand": "pnpm install --frozen-lockfile",
   "buildCommand": "npm run build",
   "outputDirectory": "dist"
 }
