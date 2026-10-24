@@ -331,8 +331,8 @@ pnpm build
 
 CNB 仓库（<https://cnb.cool/meowyyds/blog>）的 `main` 分支推送后会由 [.cnb.yml](.cnb.yml) 自动构建并部署：
 
-1. `node:20` 环境里安装 pnpm 9，执行 `pnpm install --frozen-lockfile` 和 `pnpm build`
-2. 用 `edgeone makers deploy ./dist -n blog-learn` 上传到 EdgeOne Makers 的 upload 项目
+1. `node:20` 环境里安装 pnpm 9，执行 `pnpm install --frozen-lockfile`
+2. 用 `edgeone makers deploy -n blog-learn` 交给 CLI 构建 `.edgeone` 并整体上传；它会一并打包 `cloud-functions/` 和 `agents/`，只传 `./dist` 会丢云函数
 
 `EDGEONE_API_TOKEN` 不写在仓库里，而是通过 `imports` 从私有密钥仓库 `meowyyds/blog-envs` 的 `envs.yml` 注入。
 
