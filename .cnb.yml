@@ -1,3 +1,19 @@
+# 推送到 main：构建静态站点并部署到 EdgeOne Makers 项目 blog-learn。
+# EDGEONE_API_TOKEN 存放在私有密钥仓库 meowyyds/blog-envs 的 envs.yml 中。
+main:
+  push:
+    - imports: https://cnb.cool/meowyyds/blog-envs/-/blob/main/envs.yml
+      stages:
+        - name: Build
+          image: node:20
+          script:
+            - npm i -g pnpm@9.14.4
+            - pnpm install --frozen-lockfile
+            - pnpm build
+        - name: Deploy to EdgeOne Makers
+          image: node:20
+          script: npx --yes edgeone makers deploy ./dist -n blog-learn -t "$EDGEONE_API_TOKEN"
+
 # NPC 事件流水线：@ 提及 NPC 时，由 npc:go 执行任务。
 # 角色定义见 .cnb/settings.yml；这里只固定运行模型。
 #
