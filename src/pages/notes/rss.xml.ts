@@ -1,5 +1,5 @@
 import { siteConfig } from "@/config";
-import { noteAnchor, noteHeading } from "@/utils/personal-core";
+import { isSealed, noteAnchor, noteHeading } from "@/utils/personal-core";
 import { getSortedNotes } from "@/utils/personal-utils";
 import rss from "@astrojs/rss";
 import type { APIContext } from "astro";
@@ -15,7 +15,11 @@ const markdownParser = new MarkdownIt();
 export async function GET(context: APIContext) {
 	if (!context.site) throw new Error("site not set");
 
-	const notes = await getSortedNotes();
+	// 封存中的时间胶囊不进 feed：RSS 会把正文整段带出去，等于提前拆封。
+	// 到点后重新构建（或下次部署）时自然出现。
+	const notes = (await getSortedNotes()).filter(
+		(note) => !isSealed(note.data.unlockAt),
+	);
 
 	return rss({
 		title: `${siteConfig.title} · 碎碎念`,

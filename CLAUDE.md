@@ -149,6 +149,9 @@ tags: []
 mood: ""         # optional
 location: ""     # optional
 pinned: false
+# optional 时间胶囊：到点前只显示「封存中」，客户端倒计时到点自动展开。
+# 正文仍在 HTML 里，只是仪式感；封存期间不进 /notes/rss.xml。
+unlockAt: 2027-01-01T00:00:00
 
 # projects
 title: Project Name

@@ -1,0 +1,310 @@
+---
+import { statsConfig } from "@/config";
+import MainGridLayout from "@layouts/MainGridLayout.astro";
+import { Icon } from "astro-icon/components";
+---
+
+<MainGridLayout
+  title="访问统计"
+  description="本站访问量、访客数与热门文章统计（自建，数据存于 EdgeOne Blob）"
+>
+  <div id="stats-page" class="space-y-4" data-stats-enabled={statsConfig.enable ? "true" : "false"}>
+    {!statsConfig.enable && (
+      <div class="card-base p-6">
+        <p class="text-sm text-black/60 dark:text-white/60">
+          统计功能已在 <code>src/config.ts</code> 的 <code>statsConfig.enable</code> 中关闭。
+        </p>
+      </div>
+    )}
+
+    {
+      statsConfig.enable && (
+        <>
+          {/* 顶部：今日主数字 + 范围切换 */}
+          <section class="card-base p-5 md:p-7">
+            <header class="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p class="text-sm text-black/50 dark:text-white/50">今日访问量</p>
+                <div class="mt-1 flex items-baseline gap-2">
+                  <span id="stats-hero" class="text-5xl font-bold leading-none text-black dark:text-white">
+                    –
+                  </span>
+                  <span class="text-sm text-black/40 dark:text-white/40">次</span>
+                </div>
+                <p class="mt-2 text-xs text-black/40 dark:text-white/40">
+                  今日访客 <span id="stats-hero-visitors" class="font-medium text-black/60 dark:text-white/60">–</span> 人
+                </p>
+              </div>
+              <div class="flex items-center gap-1 rounded-lg border border-black/10 dark:border-white/10 p-1" role="group" aria-label="时间范围">
+                <button type="button" data-range="7" class="stats-range-btn">7 天</button>
+                <button type="button" data-range="30" class="stats-range-btn is-active">30 天</button>
+                <button type="button" data-range="90" class="stats-range-btn">90 天</button>
+              </div>
+            </header>
+
+            {/* 指标卡片 */}
+            <div class="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+              <div class="stats-tile">
+                <span class="stats-tile-label">区间访问量</span>
+                <span id="tile-range-views" class="stats-tile-value">–</span>
+              </div>
+              <div class="stats-tile">
+                <span class="stats-tile-label">区间访客数</span>
+                <span id="tile-range-visitors" class="stats-tile-value">–</span>
+              </div>
+              <div class="stats-tile">
+                <span class="stats-tile-label">累计访问量</span>
+                <span id="tile-site-views" class="stats-tile-value">–</span>
+              </div>
+              <div class="stats-tile">
+                <span class="stats-tile-label">累计访客数</span>
+                <span id="tile-site-visitors" class="stats-tile-value">–</span>
+              </div>
+              <div class="stats-tile">
+                <span class="stats-tile-label">文章数</span>
+                <span id="tile-pages" class="stats-tile-value">–</span>
+              </div>
+              <div class="stats-tile">
+                <span class="stats-tile-label">更新于</span>
+                <span id="tile-updated" class="stats-tile-value stats-tile-time">–</span>
+              </div>
+            </div>
+          </section>
+
+          {/* 趋势图 */}
+          <section class="card-base p-5 md:p-7">
+            <header class="flex flex-wrap items-center justify-between gap-3">
+              <h2 class="text-base font-bold text-black dark:text-white">访问趋势</h2>
+              <div id="stats-legend" class="flex items-center gap-4 text-xs text-black/60 dark:text-white/60">
+                <span class="flex items-center gap-1.5">
+                  <span class="stats-swatch stats-swatch-views"></span>访问量
+                </span>
+                <span class="flex items-center gap-1.5">
+                  <span class="stats-swatch stats-swatch-visitors"></span>访客数
+                </span>
+              </div>
+            </header>
+            <div id="stats-chart" class="stats-chart relative mt-4">
+              <p class="stats-empty">加载中…</p>
+            </div>
+            <div id="stats-tooltip" class="stats-tooltip" hidden></div>
+          </section>
+
+          {/* 热门文章 */}
+          <section class="card-base p-5 md:p-7">
+            <h2 class="text-base font-bold text-black dark:text-white">热门文章</h2>
+            <p class="mt-1 text-xs text-black/40 dark:text-white/40">按累计访问量排序，取前 12 篇</p>
+            <div class="mt-3 overflow-x-auto">
+              <table class="stats-table">
+                <thead>
+                  <tr>
+                    <th class="stats-th-index">#</th>
+                    <th>文章</th>
+                    <th class="stats-th-num">访问量</th>
+                    <th class="stats-th-num">访客数</th>
+                  </tr>
+                </thead>
+                <tbody id="stats-top-pages">
+                  <tr><td colspan="4" class="stats-table-empty">加载中…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <p id="stats-error" class="hidden rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400"></p>
+        </>
+      )
+    }
+  </div>
+</MainGridLayout>
+
+<style is:global>
+    #stats-page {
+      /* 双系列配色（dataviz 校验通过）：蓝=访问量、橙=访客数 */
+      --viz-views: #2a78d6;
+      --viz-visitors: #eb6834;
+      --viz-grid: rgba(0, 0, 0, 0.08);
+      --viz-axis-text: rgba(0, 0, 0, 0.45);
+      --viz-surface: #fcfcfb;
+    }
+    :root[data-theme="dark"] #stats-page {
+      --viz-views: #3987e5;
+      --viz-visitors: #d95926;
+      --viz-grid: rgba(255, 255, 255, 0.12);
+      --viz-axis-text: rgba(255, 255, 255, 0.5);
+      --viz-surface: #1a1a19;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) #stats-page {
+        --viz-views: #3987e5;
+        --viz-visitors: #d95926;
+        --viz-grid: rgba(255, 255, 255, 0.12);
+        --viz-axis-text: rgba(255, 255, 255, 0.5);
+        --viz-surface: #1a1a19;
+      }
+    }
+
+    .stats-range-btn {
+      border-radius: 0.375rem;
+      padding: 0.25rem 0.6rem;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: rgba(0, 0, 0, 0.55);
+      transition: background-color 0.15s, color 0.15s;
+    }
+    :root[data-theme="dark"] .stats-range-btn {
+      color: rgba(255, 255, 255, 0.6);
+    }
+    .stats-range-btn:hover {
+      background: var(--btn-plain-bg-hover, rgba(0, 0, 0, 0.05));
+    }
+    .stats-range-btn.is-active {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .stats-tile {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      padding: 0.75rem 0.85rem;
+      border-radius: 0.6rem;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+    }
+    :root[data-theme="dark"] .stats-tile {
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+    .stats-tile-label {
+      font-size: 0.72rem;
+      color: rgba(0, 0, 0, 0.5);
+    }
+    :root[data-theme="dark"] .stats-tile-label {
+      color: rgba(255, 255, 255, 0.55);
+    }
+    .stats-tile-value {
+      font-size: 1.35rem;
+      font-weight: 700;
+      line-height: 1.1;
+      color: #111;
+    }
+    :root[data-theme="dark"] .stats-tile-value {
+      color: #f0efec;
+    }
+    .stats-tile-time {
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: rgba(0, 0, 0, 0.5);
+    }
+    :root[data-theme="dark"] .stats-tile-time {
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .stats-swatch {
+      display: inline-block;
+      width: 0.7rem;
+      height: 0.7rem;
+      border-radius: 2px;
+    }
+    .stats-swatch-views {
+      background: var(--viz-views);
+    }
+    .stats-swatch-visitors {
+      background: var(--viz-visitors);
+    }
+
+    .stats-chart {
+      width: 100%;
+      min-height: 260px;
+    }
+    .stats-chart svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .stats-empty {
+      padding: 3rem 0;
+      text-align: center;
+      font-size: 0.85rem;
+      color: rgba(0, 0, 0, 0.4);
+    }
+    :root[data-theme="dark"] .stats-empty {
+      color: rgba(255, 255, 255, 0.4);
+    }
+
+    .stats-tooltip {
+      position: absolute;
+      z-index: 20;
+      pointer-events: none;
+      transform: translate(-50%, -100%);
+      border-radius: 0.5rem;
+      border: 1px solid rgba(0, 0, 0, 0.1);
+      background: #fff;
+      padding: 0.4rem 0.55rem;
+      font-size: 0.72rem;
+      line-height: 1.35;
+      white-space: nowrap;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+      color: #111;
+    }
+    :root[data-theme="dark"] .stats-tooltip {
+      border-color: rgba(255, 255, 255, 0.14);
+      background: #262624;
+      color: #f0efec;
+    }
+    .stats-tooltip-row {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .stats-tooltip-dot {
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 50%;
+    }
+
+    .stats-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    .stats-table th {
+      text-align: left;
+      font-weight: 600;
+      color: rgba(0, 0, 0, 0.5);
+      padding: 0.4rem 0.5rem;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    }
+    :root[data-theme="dark"] .stats-table th {
+      color: rgba(255, 255, 255, 0.55);
+      border-bottom-color: rgba(255, 255, 255, 0.1);
+    }
+    .stats-table td {
+      padding: 0.45rem 0.5rem;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    }
+    :root[data-theme="dark"] .stats-table td {
+      border-bottom-color: rgba(255, 255, 255, 0.06);
+    }
+    .stats-th-index,
+    .stats-th-num {
+      width: 6rem;
+    }
+    .stats-th-num {
+      text-align: right;
+    }
+    .stats-table td.stats-num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .stats-table-empty {
+      text-align: center;
+      color: rgba(0, 0, 0, 0.4);
+      padding: 1.5rem 0;
+    }
+    .stats-table a {
+      color: var(--primary);
+    }
+    .stats-table a:hover {
+      text-decoration: underline;
+    }
+</style>

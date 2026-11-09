@@ -31,6 +31,18 @@ export type SiteConfig = {
 		repeat?: "no-repeat" | "repeat" | "repeat-x" | "repeat-y";
 		attachment?: "fixed" | "scroll" | "local";
 		opacity?: number;
+		/**
+		 * 随机背景图。开启后忽略 `src`，每次打开页面从 `sources` 里随机挑一个
+		 * 接口拉图；加载失败自动换下一个源，全部失败则回落到纯渐变背景。
+		 */
+		random?: {
+			enable: boolean;
+			sources: BackgroundSource[];
+			/** 单张图加载超时（毫秒），超时即换源，默认 8000 */
+			timeout?: number;
+			/** 最多尝试几个源，默认 3 */
+			maxAttempts?: number;
+		};
 	};
 	/**
 	 * 磨砂玻璃（毛玻璃）外观。开启后卡片变成半透明并模糊背后的背景，
@@ -49,6 +61,13 @@ export type SiteConfig = {
 
 	favicon: Favicon[];
 	officialSites?: (string | { url: string; alias: string })[];
+};
+
+/** 随机背景图的一个图源。`mobileUrl` 不填时移动端也用 `url`。 */
+export type BackgroundSource = {
+	name: string;
+	url: string;
+	mobileUrl?: string;
 };
 
 export type Favicon = {
@@ -109,14 +128,9 @@ export type ImageFallbackConfig = {
 	fallbackDomain: string;
 };
 
-export type UmamiConfig = {
+export type StatsConfig = {
 	enable: boolean;
-	baseUrl: string;
-	shareId: string;
-	timezone: string;
 };
-
-
 
 export type LIGHT_DARK_MODE =
 	| typeof LIGHT_MODE

@@ -3,10 +3,14 @@ import { describe, it } from "node:test";
 import {
 	compareNotes,
 	compareProjects,
+	countdownTo,
 	formatContentDate,
 	formatContentDateTime,
+	formatCountdown,
+	isSealed,
 	noteAnchor,
 	noteHeading,
+	sealedNoteHeading,
 	toPlainText,
 	topTagsOf,
 	writingYearsSince,
@@ -145,6 +149,66 @@ describe("writingYearsSince", () => {
 
 	it("没有文章时是 0", () => {
 		assert.equal(writingYearsSince(null), 0);
+	});
+});
+
+describe("isSealed", () => {
+	it("没写 unlockAt 的碎碎念永远是已解锁", () => {
+		assert.equal(isSealed(undefined), false);
+		assert.equal(isSealed(null), false);
+	});
+
+	it("解锁时间之前封存，到点（含之后）解锁", () => {
+		const unlockAt = at("2027-01-01T00:00:00Z");
+		assert.equal(isSealed(unlockAt, at("2026-12-31T23:59:59Z")), true);
+		assert.equal(isSealed(unlockAt, at("2027-01-01T00:00:00Z")), false);
+		assert.equal(isSealed(unlockAt, at("2027-06-01T00:00:00Z")), false);
+	});
+});
+
+describe("countdownTo", () => {
+	it("拆成天时分秒", () => {
+		assert.deepEqual(
+			countdownTo(at("2027-01-02T03:04:05Z"), at("2027-01-01T00:00:00Z")),
+			{ days: 1, hours: 3, minutes: 4, seconds: 5, totalMs: 97_445_000 },
+		);
+	});
+
+	it("已到点时归零，不出现负数", () => {
+		const parts = countdownTo(
+			at("2027-01-01T00:00:00Z"),
+			at("2027-02-01T00:00:00Z"),
+		);
+		assert.equal(parts.totalMs, 0);
+		assert.deepEqual(
+			[parts.days, parts.hours, parts.minutes, parts.seconds],
+			[0, 0, 0, 0],
+		);
+	});
+});
+
+describe("formatCountdown", () => {
+	it("超过一天带上天数", () => {
+		assert.equal(
+			formatCountdown(at("2027-01-02T03:04:05Z"), at("2027-01-01T00:00:00Z")),
+			"1 天 03:04:05",
+		);
+	});
+
+	it("不足一天只显示时钟", () => {
+		assert.equal(
+			formatCountdown(at("2027-01-01T01:02:03Z"), at("2027-01-01T00:00:00Z")),
+			"01:02:03",
+		);
+	});
+});
+
+describe("sealedNoteHeading", () => {
+	it("占位标题带上解锁日期", () => {
+		assert.equal(
+			sealedNoteHeading(at("2027-01-01T00:00:00Z")),
+			"封存中的时间胶囊 · 2027-01-01 解锁",
+		);
 	});
 });
 

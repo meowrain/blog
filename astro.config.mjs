@@ -29,6 +29,7 @@ import { pluginCustomCopyButton } from "./src/plugins/expressive-code/custom-cop
 import { devImageBed } from "./src/plugins/dev-image-bed.mjs";
 import { devMusicApi } from "./src/plugins/dev-music-api.mjs";
 import { devSearchIndex } from "./src/plugins/dev-search-index.mjs";
+import { devStatsApi } from "./src/plugins/dev-stats-api.mjs";
 import { remarkWikiLink } from "./src/plugins/remark-wikilink.js";
 import { scanWikiTargets } from "./src/utils/wikilink-targets.ts";
 import { defineConfig, passthroughImageService } from "astro/config";
@@ -215,7 +216,7 @@ export default defineConfig({
     // astro dev 不跑 EdgeOne Pages Function，本地图床中间件顶上 /api/i/*
     // /api/music/* 同理：本地直接复用云函数那份 onRequest
     // devSearchIndex：dev 下给 /search-index/*.json 补斜杠，和静态托管行为对齐
-    plugins: [devImageBed(), devMusicApi(), devSearchIndex()],
+    plugins: [devImageBed(), devMusicApi(), devSearchIndex(), devStatsApi()],
     build: {
       rollupOptions: {
         onwarn(warning, warn) {

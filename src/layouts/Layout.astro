@@ -76,8 +76,12 @@ if (!banner || typeof banner !== "string" || banner.trim() === "") {
 banner = siteConfig.banner.src;
 
 const enableBanner = siteConfig.banner.enable;
+// 随机背景：每次打开从接口拉一张图，由 src/scripts/background.ts 异步填进 #bg-photo
+const randomBgEnabled = !!siteConfig.background.random?.enable;
 // 背景图开关真正生效：关闭时 #bg-box 只显示跟随主题的渐变色
-const bgEnabled = siteConfig.background.enable && !!siteConfig.background.src;
+const bgEnabled =
+	siteConfig.background.enable &&
+	(randomBgEnabled || !!siteConfig.background.src);
 const glass = siteConfig.frostedGlass;
 const glassEnabled = !!glass?.enable;
 const glassBlur = glass?.blur ?? 22;
@@ -170,7 +174,7 @@ const bannerOffset =
 
     <meta name="viewport" content="width=device-width" />
     <meta name="generator" content={Astro.generator} />
-    <!-- <script src="/js/umami-share.js" defer></script> -->
+    <!-- 访问量统计改用自建方案（/api/stats/*），旧的 umami-share.js 已删除。 -->
     <!-- <script
       data-swup-ignore-script
       is:inline
@@ -267,7 +271,9 @@ const bannerOffset =
         configHue,
         "page-width": `${PAGE_WIDTH}rem`,
         "bg-url": bgEnabled
-          ? `url(${siteConfig.background.src})`
+          ? randomBgEnabled
+            ? "none"
+            : `url(${siteConfig.background.src})`
           : "none",
         "bg-enable": bgEnabled ? "1" : "0",
         "bg-position": siteConfig.background.position || "center",
@@ -300,13 +306,21 @@ const bannerOffset =
         --bg-opacity: var(--bg-opacity);
       }
 
-      #bg-box {
+      /* 背景分两层：#bg-box 是渐变 + 柔光色斑，#bg-photo 叠在上面放随机壁纸。
+         壁纸由客户端脚本异步填进来，加载完成前只看到渐变，不会白屏。 */
+      #bg-box,
+      #bg-photo {
         position: fixed;
         top: 0;
         left: 0;
         width: 100%;
         height: 100%;
         overflow: hidden;
+        pointer-events: none;
+        z-index: -1;
+      }
+
+      #bg-box {
         /* 未启用背景图时只显示渐变层：颜色跟随主题色（--hue）和明暗模式 */
         background-image: var(--bg-url),
           radial-gradient(
@@ -320,8 +334,30 @@ const bannerOffset =
         background-repeat: var(--bg-repeat);
         background-attachment: var(--bg-attachment);
         opacity: var(--bg-opacity);
+      }
+
+      /* 随机壁纸层：加载成功后由脚本加 data-random-bg="ready" 淡入 */
+      #bg-photo {
+        background-position: var(--bg-position);
+        background-size: var(--bg-size);
+        background-repeat: var(--bg-repeat);
+        background-attachment: var(--bg-attachment);
+        opacity: 0;
+        transition: opacity 0.8s ease;
+      }
+
+      #bg-photo[data-random-bg="ready"] {
+        opacity: var(--bg-opacity);
+      }
+
+      /* 暗色模式压暗一层，避免整屏亮图刺眼。
+         不用 filter：设置面板的模糊 / 色相旋转是行内 filter，会把它覆盖掉。 */
+      :root.dark #bg-photo::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.28);
         pointer-events: none;
-        z-index: -1;
       }
 
       /* 磨砂外观：在背景上铺一层跟随主题色的柔光色斑，给卡片提供可以“磨”的内容。
@@ -389,17 +425,19 @@ const bannerOffset =
       title={profileConfig.name}
       href={`${Astro.site}rss.xml`}
     />
-    <!-- Umami分析（自建） -->
+    <!-- 访问统计：改用自建方案（cloud-functions/api/stats/* + Blob），前端 SDK 在
+         src/scripts/stats.ts，由页面底部的 mountStats() 驱动。以下第三方统计均已停用。 -->
+    <!-- Umami分析（自建，已停用） -->
     <!-- <script
       defer
       src="https://umami.acofork.com/script.js"
       data-website-id="5d710dbd-3a2e-43e3-a553-97b415090c63"
       data-swup-ignore-script></script> -->
     {
-      /* - Umami分析（云-备用） 
+      /* - Umami分析（云-备用，已停用）
 		<script defer src="https://cloud.umami.is/script.js" data-website-id="5d710dbd-3a2e-43e3-a553-97b415090c63" data-swup-ignore-script></script> */
     }
-    <!-- 超级吊的Umami eop -->
+    <!-- 超级吊的Umami eop（已停用） -->
     <!-- <script
       defer
       src="https://eo-umami.acofork.com/script.js"
@@ -467,6 +505,7 @@ const bannerOffset =
     data-overlayscrollbars-initialize
   >
     <div id="bg-box"></div>
+    <div id="bg-photo" aria-hidden="true"></div>
     <FallingEffect />
     <EmojiCursor />
     <ConfigCarrier />
@@ -1451,6 +1490,13 @@ function disableAnimation() {
         import("../scripts/monitor").then((module) => module.initMonitorPage()),
     },
     {
+      marker: "stats-page",
+      load: () =>
+        import("../scripts/stats-dashboard").then((module) =>
+          module.initStatsDashboard()
+        ),
+    },
+    {
       marker: "bangumi-page",
       load: () =>
         import("../scripts/bangumi").then((module) => module.initBangumiPage()),
@@ -1488,6 +1534,49 @@ function disableAnimation() {
     bindPages();
   } else {
     document.addEventListener("swup:enable", bindPages, { once: true });
+  }
+</script>
+
+<script>
+  // 随机二次元壁纸：整页加载时抽一张，换页（Swup）时保持不动。
+  import { mountRandomBackground } from "../scripts/background";
+
+  mountRandomBackground();
+</script>
+
+<script>
+  // 访问统计：上报当前页 + 回填文章访问量 / 全站访问量。
+  // 首次加载与每次 Swup 换页都跑一遍，保证 SPA 导航后新渲染的 DOM 也能填上数值。
+  import { mountStats } from "../scripts/stats";
+
+  mountStats();
+
+  const bindStats = () => {
+    window.swup?.hooks?.on("page:view", mountStats);
+  };
+
+  if (window.swup) {
+    bindStats();
+  } else {
+    document.addEventListener("swup:enable", bindStats, { once: true });
+  }
+</script>
+
+<script>
+  // 时间胶囊：碎碎念页的封存条目到点自动展开。页面在 swup 容器内，
+  // 每次换页都要重新挂载；离开时把倒计时停掉。
+  import { mountTimeCapsules } from "../scripts/time-capsule";
+
+  mountTimeCapsules();
+
+  const bindTimeCapsules = () => {
+    window.swup?.hooks?.on("page:view", mountTimeCapsules);
+  };
+
+  if (window.swup) {
+    bindTimeCapsules();
+  } else {
+    document.addEventListener("swup:enable", bindTimeCapsules, { once: true });
   }
 </script>
 

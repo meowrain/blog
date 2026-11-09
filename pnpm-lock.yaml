@@ -31,6 +31,9 @@ importers:
       '@astrojs/vercel':
         specifier: ^8.2.7
         version: 8.2.7(astro@5.7.9(patch_hash=ysrllw3gj6hylybllnynya5oma)(@types/node@22.14.1)(jiti@1.21.7)(lightningcss@1.29.3)(rollup@2.79.2)(sass@1.80.4)(stylus@0.64.0)(terser@5.39.0)(typescript@5.8.3)(yaml@2.9.1))(rollup@2.79.2)(svelte@5.28.2)
+      '@edgeone/pages-blob':
+        specifier: ^0.0.14
+        version: 0.0.14
       '@expressive-code/core':
         specifier: ^0.41.3
         version: 0.41.3
@@ -957,6 +960,10 @@ packages:
   '@ctrl/tinycolor@4.1.0':
     resolution: {integrity: sha512-WyOx8cJQ+FQus4Mm4uPIZA64gbk3Wxh0so5Lcii0aJifqwoVOlfFtorjLE0Hen4OYyHZMXDWqMmaQemBhgxFRQ==}
     engines: {node: '>=14'}
+
+  '@edgeone/pages-blob@0.0.14':
+    resolution: {integrity: sha512-u4zSac1JKhhrWiYSbqWm4zw8Uo3b+nruz2rBcgxEdWaCIvyLQzcSJVBN3OVVe2QeqS4olXqrifoYsYRD9sXOEA==}
+    engines: {node: '>=18.0.0'}
 
   '@emmetio/abbreviation@2.3.3':
     resolution: {integrity: sha512-mgv58UrU3rh4YgbE/TzgLQwJ3pFsHHhCLqY20aJq+9comytTXUDNGG/SMtSeMJdkpxgXSXunBGLD8Boka3JyVA==}
@@ -6618,6 +6625,8 @@ snapshots:
       postcss-selector-parser: 7.1.0
 
   '@ctrl/tinycolor@4.1.0': {}
+
+  '@edgeone/pages-blob@0.0.14': {}
 
   '@emmetio/abbreviation@2.3.3':
     dependencies:

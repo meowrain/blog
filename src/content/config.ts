@@ -51,6 +51,9 @@ const notesCollection = defineCollection({
 		pinned: z.boolean().optional().default(false),
 		mood: z.string().optional().default(""),
 		location: z.string().optional().default(""),
+		// 时间胶囊：到 unlockAt 之前只显示「封存中」，到点后由客户端自动展开。
+		// 静态站里正文仍然会进 HTML，这只是仪式感；真要保密得自己做客户端加密。
+		unlockAt: z.date().optional(),
 	}),
 });
 

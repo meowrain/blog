@@ -47,6 +47,17 @@ export function setRainbowSpeed(speed: number): void {
 	localStorage.setItem("rainbow-speed", String(speed));
 }
 
+/**
+ * 背景由两层组成：#bg-box（渐变 + 主题柔光）和 #bg-photo（随机壁纸）。
+ * 模糊 / 色相旋转 / 隐藏都要同时作用于两层，只改其中一层会露馅。
+ */
+function forEachBgLayer(fn: (element: HTMLElement) => void): void {
+	for (const id of ["bg-box", "bg-photo"]) {
+		const element = document.getElementById(id);
+		if (element) fn(element);
+	}
+}
+
 export function getBgBlur(): number {
 	const stored = localStorage.getItem("bg-blur");
 	return stored ? Number.parseInt(stored) : 0; // Default blur is 0
@@ -54,38 +65,32 @@ export function getBgBlur(): number {
 
 export function setBgBlur(blur: number): void {
 	localStorage.setItem("bg-blur", String(blur));
-	const bgBox = document.getElementById("bg-box");
-	if (bgBox) {
-		// Retrieve existing hue-rotate value if any, or 0
-		const currentFilter = bgBox.style.filter || "";
-		const hueRotateMatch = currentFilter.match(/hue-rotate\((.*?)deg\)/);
-		const hueRotate = hueRotateMatch ? hueRotateMatch[1] : "0";
-		bgBox.style.setProperty(
+	// Retrieve existing hue-rotate value if any, or 0
+	const currentFilter = document.getElementById("bg-box")?.style.filter || "";
+	const hueRotateMatch = currentFilter.match(/hue-rotate\((.*?)deg\)/);
+	const hueRotate = hueRotateMatch ? hueRotateMatch[1] : "0";
+	forEachBgLayer((element) => {
+		element.style.setProperty(
 			"filter",
 			`blur(${blur}px) hue-rotate(${hueRotate}deg)`,
 		);
-	}
+	});
 }
 
 export function setBgHueRotate(hue: number): void {
-	const bgBox = document.getElementById("bg-box");
-	if (bgBox) {
-		// Retrieve existing blur value
-		const currentFilter = bgBox.style.filter || "";
-		const blurMatch = currentFilter.match(/blur\((.*?)px\)/);
-		const blur = blurMatch ? blurMatch[1] : getBgBlur();
-		bgBox.style.setProperty("filter", `blur(${blur}px) hue-rotate(${hue}deg)`);
-	}
+	// Retrieve existing blur value
+	const currentFilter = document.getElementById("bg-box")?.style.filter || "";
+	const blurMatch = currentFilter.match(/blur\((.*?)px\)/);
+	const blur = blurMatch ? blurMatch[1] : getBgBlur();
+	forEachBgLayer((element) => {
+		element.style.setProperty("filter", `blur(${blur}px) hue-rotate(${hue}deg)`);
+	});
 }
 
 export function getBgHueRotate(): number {
-	const bgBox = document.getElementById("bg-box");
-	if (bgBox) {
-		const currentFilter = bgBox.style.filter || "";
-		const hueRotateMatch = currentFilter.match(/hue-rotate\((.*?)deg\)/);
-		return hueRotateMatch ? Number.parseInt(hueRotateMatch[1]) : 0;
-	}
-	return 0;
+	const currentFilter = document.getElementById("bg-box")?.style.filter || "";
+	const hueRotateMatch = currentFilter.match(/hue-rotate\((.*?)deg\)/);
+	return hueRotateMatch ? Number.parseInt(hueRotateMatch[1]) : 0;
 }
 
 export function getHideBg(): boolean {
@@ -95,10 +100,9 @@ export function getHideBg(): boolean {
 
 export function setHideBg(hide: boolean): void {
 	localStorage.setItem("hide-bg", String(hide));
-	const bgBox = document.getElementById("bg-box");
-	if (bgBox) {
-		bgBox.style.setProperty("display", hide ? "none" : "");
-	}
+	forEachBgLayer((element) => {
+		element.style.setProperty("display", hide ? "none" : "");
+	});
 }
 
 export type FallingEffectType =

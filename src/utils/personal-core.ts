@@ -73,6 +73,59 @@ export function noteAnchor(slug: string): string {
 	return slug.replace(/[/\s]+/g, "-");
 }
 
+/**
+ * 时间胶囊是否还没到解锁时间。
+ * 没写 unlockAt 的普通碎碎念永远算「已解锁」。
+ */
+export function isSealed(
+	unlockAt: Date | null | undefined,
+	now: Date = new Date(),
+): boolean {
+	return unlockAt instanceof Date && now.getTime() < unlockAt.getTime();
+}
+
+export interface CountdownParts {
+	days: number;
+	hours: number;
+	minutes: number;
+	seconds: number;
+	/** 距离目标时间的毫秒数，已到点时是 0。 */
+	totalMs: number;
+}
+
+/** 把「距离解锁还有多久」拆成天 / 时 / 分 / 秒。 */
+export function countdownTo(
+	target: Date | null | undefined,
+	now: Date = new Date(),
+): CountdownParts {
+	const totalMs = Math.max(0, (target?.getTime() ?? 0) - now.getTime());
+	const totalSeconds = Math.floor(totalMs / 1000);
+	return {
+		days: Math.floor(totalSeconds / 86_400),
+		hours: Math.floor((totalSeconds % 86_400) / 3_600),
+		minutes: Math.floor((totalSeconds % 3_600) / 60),
+		seconds: totalSeconds % 60,
+		totalMs,
+	};
+}
+
+/** 倒计时文案：超过一天显示「N 天 HH:MM:SS」，否则只显示 HH:MM:SS。 */
+export function formatCountdown(
+	target: Date | null | undefined,
+	now: Date = new Date(),
+): string {
+	const { days, hours, minutes, seconds } = countdownTo(target, now);
+	const clock = [hours, minutes, seconds]
+		.map((value) => String(value).padStart(2, "0"))
+		.join(":");
+	return days > 0 ? `${days} 天 ${clock}` : clock;
+}
+
+/** 封存中的碎碎念在列表里用的替代标题，不泄露正文和原 title。 */
+export function sealedNoteHeading(unlockAt: Date): string {
+	return `封存中的时间胶囊 · ${formatContentDate(unlockAt)} 解锁`;
+}
+
 /** 碎碎念排序：置顶优先，其余按发布时间倒序。 */
 export function compareNotes(a: NoteLike, b: NoteLike): number {
 	if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;

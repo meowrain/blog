@@ -7,7 +7,7 @@ import type {
   NavBarConfig,
   ProfileConfig,
   SiteConfig,
-  UmamiConfig,
+  StatsConfig,
   WikiLinkConfig,
 } from "./types/config";
 import { LinkPreset } from "./types/config";
@@ -36,16 +36,45 @@ export const siteConfig: SiteConfig = {
     },
   },
   background: {
-    // 关闭随机图背景，改用跟随主题（明暗模式 + 主题色）的渐变背景，见 Layout.astro 中 #bg-box
-    enable: false, // Enable background image
-    // src: "https://riscv-nas.acetaffy.top/random?type=horizontal",
-    // src: "https://t.alcy.cc/ycy", // Background image URL (supports HTTPS)
+    // 随机二次元壁纸背景。关闭时 #bg-box 只显示跟随主题（明暗模式 + 主题色）的渐变。
+    enable: true, // Enable background image
+    src: "", // 随机模式关闭时的固定图片；随机模式开启后被忽略
     position: "center", // Background position: 'top', 'center', 'bottom'
     size: "cover", // Background size: 'cover', 'contain', 'auto'
     repeat: "no-repeat", // Background repeat: 'no-repeat', 'repeat', 'repeat-x', 'repeat-y'
     attachment: "fixed", // Background attachment: 'fixed', 'scroll', 'local'
     opacity: 0.8, // Background opacity (0-1)
+
+    // 每次打开页面从下面随机挑一个接口拉图；某个源挂了自动换下一个，
+    // 全部失败则回落到渐变背景（不会出现破图）。
+    random: {
+      enable: true,
+      // {width} 会被替换成按屏幕宽度算出的像素值，不支持的源留空即可。
+      // 顺序无所谓，每次加载都会重新洗牌。
+      sources: [
+        {
+          name: "Starlight 图床 · 电脑壁纸",
+          url: "https://t.alcy.cc/pc?w={width}",
+          mobileUrl: "https://t.alcy.cc/mp?w={width}",
+        },
+        {
+          name: "LoliaPI · 二次元横屏",
+          url: "https://www.loliapi.com/acg/pc/",
+        },
+        {
+          name: "搏天图床 · 动漫壁纸",
+          url: "https://api.btstu.cn/sjbz/api.php?lx=dongman&format=images&zsy=1920x1080",
+        },
+        {
+          name: "dmoe · 动漫随机图",
+          url: "https://www.dmoe.cc/random.php",
+        },
+      ],
+      timeout: 8000, // 单个源多久没加载出来就换源（毫秒）
+      maxAttempts: 3, // 最多试几个源
+    },
   },
+
   frostedGlass: {
     // 磨砂玻璃外观：半透明卡片 + 背景柔光 + 毛玻璃模糊。
     // 喜欢现在的纯色卡片就把 enable 改成 false。
@@ -132,6 +161,11 @@ export const navBarConfig: NavBarConfig = {
           url: "/monitor/",
           external: false,
         },
+        {
+          name: "访问统计",
+          url: "/stats/",
+          external: false,
+        },
       ],
     },
     {
@@ -160,16 +194,7 @@ export const navBarConfig: NavBarConfig = {
         },
       ],
     },
-    // {
-    //   name: "统计",
-    //   url: "https://umami.acofork.com/share/CdkXbGgZr6ECKOyK", // Internal links should not include the base path, as it is automatically added
-    //   external: true, // Show an external link icon and will open in a new tab
-    // },
-    // {
-    //   name: "监控",
-    //   url: "https://eoddos.2x.nz", // Internal links should not include the base path, as it is automatically added
-    //   external: true, // Show an external link icon and will open in a new tab
-    // },
+    // 旧的 Umami / 外部监控入口已停用，访问统计改为站内 /stats/（见上方「服务」分组）。
   ],
 };
 
@@ -223,11 +248,10 @@ export const imageFallbackConfig: ImageFallbackConfig = {
   fallbackDomain: "https://eopfapi.acofork.com/pic?img=ua",
 };
 
-export const umamiConfig: UmamiConfig = {
+// 自建访问统计（cloud-functions/api/stats/[[default]].js + Blob 存储）。
+// 关掉 enable 就不再上报、也不回填任何访问量。
+export const statsConfig: StatsConfig = {
   enable: true,
-  baseUrl: "https://umami.acofork.com",
-  shareId: "CdkXbGgZr6ECKOyK",
-  timezone: "Asia/Shanghai",
 };
 
 export const expressiveCodeConfig: ExpressiveCodeConfig = {
