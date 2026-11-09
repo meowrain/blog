@@ -3,7 +3,7 @@ title: JVM GC相关参数
 published: 2025-07-18
 description: ''
 image: ''
-tags: [GC,JAVA,JVM]
+tags: [GC,Java,JVM]
 category: 'Java > JVM'
 series: JVM
 draft: false 

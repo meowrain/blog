@@ -3,7 +3,7 @@ title: MySQL-binlog
 published: 2025-09-16
 description: ''
 image: ''
-tags: [MYSQL,binlog,MySQL]
+tags: [MySQL,binlog]
 category: '中间件 > MySQL'
 series: MySQL
 draft: false 

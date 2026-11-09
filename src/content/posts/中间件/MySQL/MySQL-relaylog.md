@@ -3,7 +3,7 @@ title: MySQL-relaylog（中继日志）
 published: 2025-09-16
 description: ''
 image: ''
-tags: [MYSQL,relaylog,MySQL]
+tags: [MySQL,relaylog]
 category: '中间件 > MySQL'
 series: MySQL
 draft: false 

@@ -3,7 +3,7 @@ title: volatile-实现单例模式的双重锁
 published: 2025-08-07
 description: ''
 image: ''
-tags: [JUC,JAVA,volatile,双重锁]
+tags: [JUC,Java,volatile,双重锁]
 category: 'Java > JUC'
 series: JUC
 draft: false 

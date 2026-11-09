@@ -3,11 +3,16 @@ import path from "node:path";
 import type { CollectionEntry } from "astro:content";
 import { Icon } from "astro-icon/components";
 
-import { getDir } from "../utils/url-utils";
+import { getSortedPosts } from "../utils/content-utils";
 import { formatDateToYYYYMMDD } from "../utils/date-utils";
+import {
+	getPostTags,
+	getTagDisplayNames,
+	resolveTagList,
+} from "../utils/tag-utils";
+import { getDir } from "../utils/url-utils";
 import PostMetadata from "./PostMeta.astro";
 import ImageWrapper from "./misc/ImageWrapper.astro";
-import { umamiConfig } from "../config";
 
 interface Props {
 	class?: string;
@@ -43,6 +48,14 @@ const className = Astro.props.class;
 
 const hasCover = image !== undefined && image !== null && image !== "";
 
+// 卡片上的标签统一成规范写法（JAVA → Java、MYSQL → MySQL）并去掉同一标签的重复写法。
+// 规范名按全站统计，与标签页 / 搜索筛选下拉保持一致。
+const tagNames = getTagDisplayNames(await getSortedPosts());
+const displayTags = resolveTagList(
+	tags.length > 0 ? tags : getPostTags(entry),
+	tagNames,
+);
+
 // 列表卡片封面很小（手机 62x200 CSS 像素），直接用压缩过的 thumb；
 // 老文章没有 thumb 时回退原图，功能不受影响。
 const coverSrc = thumb || image;
@@ -71,7 +84,7 @@ const { remarkPluginFrontmatter } = await entry.render();
         </div>
 
         <!-- metadata -->
-        <PostMetadata published={published} updated={updated} hideUpdateDate={true} hidePublishedDate={true} slug={entry.slug} category={category} tags={tags} class="mb-2 md:mb-4"></PostMetadata>
+        <PostMetadata published={published} updated={updated} hideUpdateDate={true} hidePublishedDate={true} slug={entry.slug} category={category} tags={displayTags} class="mb-2 md:mb-4"></PostMetadata>
 
         <!-- word count, read time and page views -->
         <div class="text-sm text-black/30 dark:text-white/30 flex gap-4 transition">

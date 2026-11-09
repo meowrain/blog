@@ -92,6 +92,13 @@ const CJK_RE = /[㐀-䶿一-鿿豈-﫿]/;
 const SEPARATOR_RE = /[\s,，、;；:：|/\\。！？!?"'“”‘’]+/u;
 const HAN_RUN_RE = /[\p{Script=Han}]+|[^\p{Script=Han}]+/gu;
 
+/**
+ * 分类层级分隔符，与 `category-utils.ts` 保持一致（如 "Java > JUC"）。
+ * 这里复制常量而不 import：`search-core` 是零依赖纯函数模块，
+ * 要能在 Node 里被单测直接加载。
+ */
+const CATEGORY_SEPARATOR = " > ";
+
 const WEIGHT_TITLE = 12;
 const WEIGHT_TAGS = 10;
 const WEIGHT_CATEGORY = 8;
@@ -243,9 +250,40 @@ function scoreDoc(
 	return score;
 }
 
+/**
+ * 分类是否命中筛选值。
+ *
+ * 与 `/category/<slug>/` 页保持一致：选中父分类时要把子分类一起算进来
+ * （选中 "Java" 应命中 "Java > JUC"、"Java > Spring" 等）。
+ * 旧实现用整串严格相等，导致搜索筛 "Java" 只剩扁平值恰好为 "Java" 的几篇，
+ * 与分类页几十篇的口径对不上。
+ */
+function matchesCategory(docCategory: string, filter: string): boolean {
+	if (!filter) return true;
+	return (
+		docCategory === filter ||
+		docCategory.startsWith(filter + CATEGORY_SEPARATOR)
+	);
+}
+
+/**
+ * 标签归并键：NFKC + 小写 + 去首尾空白，与 `tag-utils.ts` 的 `tagKey` 一致。
+ * 这里复制实现而不 import：`search-core` 要能在 Node 里被单测直接加载。
+ * frontmatter 里 Java / JAVA、MySQL / MYSQL 的写法差异都归到同一个键。
+ */
+export function tagKey(tag: string): string {
+	return tag.trim().normalize("NFKC").toLowerCase();
+}
+
+function matchesTag(docTags: readonly string[], filter: string): boolean {
+	const key = tagKey(filter);
+	return docTags.some((tag) => tagKey(tag) === key);
+}
+
 function matchesFilters(doc: SearchDoc, filters: SearchFilters): boolean {
-	if (filters.category && doc.category !== filters.category) return false;
-	if (filters.tag && !(doc.tags ?? []).includes(filters.tag)) return false;
+	if (filters.category && !matchesCategory(doc.category, filters.category))
+		return false;
+	if (filters.tag && !matchesTag(doc.tags ?? [], filters.tag)) return false;
 	return true;
 }
 
@@ -456,20 +494,54 @@ export function parseIndexVersion(payload: unknown): string {
 	return generatedAt.replace(/[^0-9]/g, "").slice(0, 14);
 }
 
+/**
+ * 把一条完整分类展开成每一级前缀：
+ * "中间件 > Redis" => ["中间件", "中间件 > Redis"]。
+ * 用于统计时让父分类累计子分类的篇数，下拉才能提供可选的父级项。
+ */
+function categoryBuckets(category: string): string[] {
+	const parts = category
+		.split(CATEGORY_SEPARATOR)
+		.map((part) => part.trim())
+		.filter(Boolean);
+	if (parts.length <= 1) return [category];
+	const buckets: string[] = [];
+	for (let i = 1; i <= parts.length; i++) {
+		buckets.push(parts.slice(0, i).join(CATEGORY_SEPARATOR));
+	}
+	return buckets;
+}
+
 /** 收集分类/标签筛选项，带文章数，按常用程度排序。 */
 export function collectFilterOptions(
 	docs: readonly SearchDoc[],
 ): FilterOptions {
 	const categories = new Map<string, number>();
-	const tags = new Map<string, number>();
+	// 归并键 → { count, variants }：Java / JAVA 只占一项，计数合并
+	const tagGroups = new Map<
+		string,
+		{ count: number; variants: Map<string, number> }
+	>();
 
 	for (const doc of docs) {
 		if (doc.category) {
-			categories.set(doc.category, (categories.get(doc.category) ?? 0) + 1);
+			// 展开层级：父分类的计数包含所有子分类，口径与 `/category/<slug>/` 一致
+			for (const bucket of categoryBuckets(doc.category)) {
+				categories.set(bucket, (categories.get(bucket) ?? 0) + 1);
+			}
 		}
-		for (const tag of doc.tags ?? []) {
+		// 同一篇文章里重复的同一标签只算一次，与标签页计数口径一致
+		const seen = new Set<string>();
+		for (const raw of doc.tags ?? []) {
+			const tag = raw.trim();
 			if (!tag) continue;
-			tags.set(tag, (tags.get(tag) ?? 0) + 1);
+			const key = tagKey(tag);
+			if (seen.has(key)) continue;
+			seen.add(key);
+			const group = tagGroups.get(key) ?? { count: 0, variants: new Map() };
+			group.count++;
+			group.variants.set(tag, (group.variants.get(tag) ?? 0) + 1);
+			tagGroups.set(key, group);
 		}
 	}
 
@@ -480,7 +552,19 @@ export function collectFilterOptions(
 				(a, b) => b.count - a.count || a.value.localeCompare(b.value, "zh-CN"),
 			);
 
-	return { categories: toOptions(categories), tags: toOptions(tags) };
+	// 展示名取出现次数最多的写法；筛选时用归并键比较，不受大小写影响
+	const tags: FilterOption[] = [...tagGroups.values()]
+		.map((group) => ({
+			value: [...group.variants.entries()].sort(
+				(a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh-CN"),
+			)[0][0],
+			count: group.count,
+		}))
+		.sort(
+			(a, b) => b.count - a.count || a.value.localeCompare(b.value, "zh-CN"),
+		);
+
+	return { categories: toOptions(categories), tags };
 }
 
 /**

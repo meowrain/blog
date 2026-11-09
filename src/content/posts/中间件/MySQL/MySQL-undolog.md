@@ -3,7 +3,7 @@ title: MySQL-undolog（回滚日志）
 published: 2025-09-16
 description: ''
 image: ''
-tags: [MYSQL,undolog,MySQL]
+tags: [MySQL,undolog]
 category: '中间件 > MySQL'
 series: MySQL
 draft: false 

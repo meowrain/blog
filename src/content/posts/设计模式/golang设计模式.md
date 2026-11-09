@@ -3,7 +3,7 @@ title: golang设计模式
 published: 2024-08-07
 description: ''
 image: ''
-tags: [设计模式, golang]
+tags: [设计模式, Golang]
 category: '设计模式'
 series: 设计模式
 draft: false 

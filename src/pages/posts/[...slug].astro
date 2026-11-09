@@ -7,16 +7,17 @@ import MainGridLayout from "@layouts/MainGridLayout.astro";
 import { getBacklinks } from "@utils/backlinks-utils";
 import { getSortedPosts } from "@utils/content-utils";
 import { getSeriesInfo } from "@utils/series-utils";
+import { getTagDisplayNames, resolveTagList } from "@utils/tag-utils";
 import { getDir, getPostUrlBySlug } from "@utils/url-utils";
 import { Icon } from "astro-icon/components";
 import { gitHubEditConfig, licenseConfig, ogImageBase } from "src/config";
+import ArticleShare from "../../components/ArticleShare.astro";
 import Backlinks from "../../components/Backlinks.astro";
 import PostMetadata from "../../components/PostMeta.astro";
 import ReadLaterButton from "../../components/ReadLaterButton.astro";
-import ImageWrapper from "../../components/misc/ImageWrapper.astro";
 import RelatedPosts from "../../components/RelatedPosts.astro";
 import SeriesNav from "../../components/SeriesNav.astro";
-import ArticleShare from "../../components/ArticleShare.astro";
+import ImageWrapper from "../../components/misc/ImageWrapper.astro";
 import { profileConfig, siteConfig, wikiLinkConfig } from "../../config";
 import { formatDateToYYYYMMDD } from "../../utils/date-utils";
 import { getRelatedPosts } from "../../utils/related-utils";
@@ -40,6 +41,10 @@ const seriesInfo = await getSeriesInfo(entry);
 // 文末推荐：构建期按 series > tags 重合度 > category 打分
 const relatedPosts = await getRelatedPosts(entry, 3);
 
+// 正文标签统一成规范写法（JAVA → Java、MYSQL → MySQL），与标签页/搜索一致
+const tagNames = getTagDisplayNames(await getSortedPosts());
+const displayTags = resolveTagList(entry.data.tags ?? [], tagNames);
+
 // 反向链接：哪些文章在正文里用 [[slug]] 指向了本文，构建期反转出链索引
 const backlinks =
 	wikiLinkConfig.enable && wikiLinkConfig.backlinks
@@ -51,9 +56,9 @@ const jsonLd = {
 	"@type": "BlogPosting",
 	headline: entry.data.title,
 	description: entry.data.description || entry.data.title,
-    author: {
-      "@type": "Person",
-      name: profileConfig.name,
+	author: {
+		"@type": "Person",
+		name: profileConfig.name,
 		url: Astro.site,
 	},
 	datePublished: formatDateToYYYYMMDD(entry.data.published),
@@ -72,7 +77,7 @@ const ogSlugPath = entry.slug.split("/").map(encodeURIComponent).join("/");
 const ogImage =
 	`${ogImageBase}/api/og/${ogSlugPath}` +
 	`?title=${encodeURIComponent(entry.data.title)}` +
-	`&tags=${encodeURIComponent((entry.data.tags || []).join(","))}` +
+	`&tags=${encodeURIComponent(displayTags.join(","))}` +
 	`&date=${formatDateToYYYYMMDD(entry.data.published)}`;
 ---
 <MainGridLayout banner={entry.data.image} title={entry.data.title} description={entry.data.description} lang={entry.data.lang} setOGTypeArticle={true} ogImage={ogImage} headings={headings}>
@@ -115,7 +120,7 @@ const ogImage =
                         slug={entry.slug}
                         cardUrl={ogImage}
                         date={formatDateToYYYYMMDD(entry.data.published)}
-                        tags={entry.data.tags || []}
+                        tags={displayTags}
                     />
                 </div>
             </div>
@@ -149,7 +154,7 @@ const ogImage =
                         class="mb-5"
                         published={entry.data.published}
                         updated={entry.data.updated}
-                        tags={entry.data.tags}
+                        tags={displayTags}
                         category={entry.data.category}
                         slug={entry.slug}
                 ></PostMetadata>

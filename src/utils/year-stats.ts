@@ -1,6 +1,7 @@
 import type { CollectionEntry } from "astro:content";
 import { getPostCategories } from "./category-utils";
 import { getSortedPosts } from "./content-utils";
+import { getPostTags, tagKey } from "./tag-utils";
 
 /** 单篇文章在年报里的样子 */
 export interface YearPostStat {
@@ -81,6 +82,35 @@ function countNames(names: string[]): YearCount[] {
 		.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "zh"));
 }
 
+/**
+ * 标签计数：按归并键合并大小写/全角差异（Java 与 JAVA、MySQL 与 MYSQL），
+ * 展示名取出现次数最多的写法，和标签页、搜索筛选项口径一致。
+ */
+function countTags(tagLists: string[][]): YearCount[] {
+	const groups = new Map<string, Map<string, number>>();
+	for (const tags of tagLists) {
+		const seen = new Set<string>();
+		for (const raw of tags) {
+			const tag = raw.trim();
+			if (!tag) continue;
+			const key = tagKey(tag);
+			if (seen.has(key)) continue;
+			seen.add(key);
+			const variants = groups.get(key) ?? new Map<string, number>();
+			variants.set(tag, (variants.get(tag) ?? 0) + 1);
+			groups.set(key, variants);
+		}
+	}
+	return [...groups.values()]
+		.map((variants) => {
+			const [name, count] = [...variants.entries()].sort(
+				(a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh"),
+			)[0];
+			return { name, count };
+		})
+		.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "zh"));
+}
+
 async function toPostStat(
 	entry: CollectionEntry<"posts">,
 ): Promise<YearPostStat> {
@@ -93,7 +123,7 @@ async function toPostStat(
 		published: new Date(entry.data.published),
 		words: Number(remarkPluginFrontmatter.words) || 0,
 		minutes: Number(remarkPluginFrontmatter.minutes) || 0,
-		tags: entry.data.tags ?? [],
+		tags: getPostTags(entry),
 		categories: getPostCategories(entry),
 	};
 }
@@ -168,7 +198,7 @@ function buildYearReport(year: number, list: YearPostStat[]): YearReport {
 		months,
 		hours,
 		weekdays,
-		topTags: countNames(posts.flatMap((post) => post.tags)),
+		topTags: countTags(posts.map((post) => post.tags)),
 		categories: countNames(posts.flatMap((post) => post.categories)),
 		posts: [...posts].reverse(),
 		highlight: {

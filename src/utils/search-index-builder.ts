@@ -10,6 +10,7 @@ import {
 	toPlainText,
 	tokenizeDocument,
 } from "./search-index";
+import { getPostTags, resolveTagNames, tagKey } from "./tag-utils";
 import { getPostUrlBySlug } from "./url-utils";
 
 /**
@@ -82,6 +83,8 @@ function groupChunks(docId: number, chunks: string[]): BodyFile[] {
 
 async function build(): Promise<SearchArtifacts> {
 	const posts = await getSortedPosts();
+	// 标签规范名：索引里统一写 Java / MySQL，客户端筛选下拉和搜索结果标签都靠它
+	const tagNames = resolveTagNames(posts.map((post) => getPostTags(post)));
 
 	const termPostings = new Map<string, Map<number, Set<number>>>();
 	const metas: IndexedPostMeta[] = [];
@@ -119,7 +122,9 @@ async function build(): Promise<SearchArtifacts> {
 			url: getPostUrlBySlug(post.slug),
 			category: toCategories(post.data.category),
 			series: post.data.series ?? "",
-			tags: post.data.tags ?? [],
+			tags: getPostTags(post).map(
+				(tag) => tagNames.get(tagKey(tag)) ?? tag.trim(),
+			),
 			published: post.data.published.toISOString().slice(0, 10),
 			headings: extractHeadings(body),
 			excerpt: plain.slice(0, EXCERPT_CHARS),

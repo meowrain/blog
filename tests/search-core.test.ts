@@ -8,6 +8,7 @@ import {
 	highlightTokens,
 	normalizeText,
 	parseSearchIndex,
+	rankFullText,
 	searchDocs,
 	tokenize,
 } from "../src/utils/search-core.ts";
@@ -183,6 +184,29 @@ describe("searchDocs", () => {
 		assert.equal(hits[0].doc.slug, "redis-cache-expire");
 	});
 
+	it("父分类筛选包含子分类（与分类页口径一致）", () => {
+		const { hits, total } = searchDocs(docs, "", { category: "中间件" });
+		assert.equal(total, 2);
+		assert.deepEqual(hits.map((hit) => hit.doc.slug).sort(), [
+			"mysql-index",
+			"redis-cache-expire",
+		]);
+	});
+
+	it("父分类筛选不会跨到同名前缀的其他分类", () => {
+		// "Java" 只应命中 "Java > JUC"，不应命中 "JavaScript" 之类
+		const { hits, total } = searchDocs(
+			[
+				doc({ title: "a", slug: "a", category: "Java > JUC" }),
+				doc({ title: "b", slug: "b", category: "JavaScript" }),
+			],
+			"",
+			{ category: "Java" },
+		);
+		assert.equal(total, 1);
+		assert.equal(hits[0].doc.slug, "a");
+	});
+
 	it("按标签过滤", () => {
 		const { hits } = searchDocs(docs, "缓存", { tag: "缓存过期" });
 		assert.equal(hits.length, 1);
@@ -287,12 +311,24 @@ describe("parseSearchIndex", () => {
 describe("collectFilterOptions", () => {
 	it("统计分类和标签数量并按数量倒序", () => {
 		const options = collectFilterOptions(docs);
-		assert.equal(options.categories.length, 4);
-		assert.ok(options.categories.every((option) => option.count === 1));
+		// 父分类会被展开成独立选项：Go / Java / Java > JUC / 中间件 / 中间件 > MySQL / 中间件 > Redis
+		assert.equal(options.categories.length, 6);
 		assert.deepEqual(
 			options.categories.map((option) => option.value).sort(),
-			["Go", "Java > JUC", "中间件 > MySQL", "中间件 > Redis"].sort(),
+			[
+				"Go",
+				"Java",
+				"Java > JUC",
+				"中间件",
+				"中间件 > MySQL",
+				"中间件 > Redis",
+			].sort(),
 		);
+		const countOf = (value: string) =>
+			options.categories.find((option) => option.value === value)?.count;
+		assert.equal(countOf("中间件"), 2);
+		assert.equal(countOf("中间件 > Redis"), 1);
+		assert.equal(countOf("Java"), 1);
 		assert.equal(options.tags.length, 8);
 		assert.deepEqual(
 			[...options.tags].sort((a, b) => a.value.localeCompare(b.value)),
@@ -308,5 +344,54 @@ describe("collectFilterOptions", () => {
 			doc({ title: "b", tags: ["Redis"] }),
 		]);
 		assert.deepEqual(options.tags[0], { value: "Redis", count: 2 });
+	});
+
+	it("大小写不同的标签合并成一项，展示名取最常见的写法", () => {
+		const options = collectFilterOptions([
+			doc({ title: "a", tags: ["Java", "JAVA"] }),
+			doc({ title: "b", tags: ["Java"] }),
+			doc({ title: "c", tags: ["JAVA"] }),
+			doc({ title: "d", tags: ["MySQL"] }),
+		]);
+		const java = options.tags.find(
+			(option) => option.value.toLowerCase() === "java",
+		);
+		assert.deepEqual(java, { value: "Java", count: 3 });
+		// 同一篇文章里的 Java + JAVA 只算一次
+		assert.equal(
+			options.tags.filter((option) => option.value.toLowerCase() === "java")
+				.length,
+			1,
+		);
+	});
+});
+
+describe("标签筛选的大小写归并", () => {
+	it("筛选值大小写不一致也能命中文章", () => {
+		const sample = [
+			doc({ title: "a", slug: "a", tags: ["JAVA"] }),
+			doc({ title: "b", slug: "b", tags: ["Java"] }),
+			doc({ title: "c", slug: "c", tags: ["Go"] }),
+		];
+		for (const filter of ["Java", "JAVA", "java", " java "]) {
+			const { total } = searchDocs(sample, "", { tag: filter });
+			assert.equal(total, 2, `筛选 ${filter}`);
+		}
+	});
+
+	it("全文检索时筛选同样归并大小写", () => {
+		const sample = [
+			doc({ title: "Redis 缓存", slug: "a", tags: ["MYSQL"], excerpt: "缓存" }),
+			doc({
+				title: "Redis 缓存二",
+				slug: "b",
+				tags: ["MySQL"],
+				excerpt: "缓存",
+			}),
+			doc({ title: "Redis 缓存三", slug: "c", tags: ["Go"], excerpt: "缓存" }),
+		];
+		const postings = new Map<string, Map<number, number[]>>();
+		const { total } = rankFullText(sample, "缓存", postings, { tag: "mysql" });
+		assert.equal(total, 2);
 	});
 });
