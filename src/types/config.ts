@@ -38,9 +38,9 @@ export type SiteConfig = {
 		random?: {
 			enable: boolean;
 			sources: BackgroundSource[];
-			/** 单张图加载超时（毫秒），超时即换源，默认 8000 */
+			/** 单张图加载超时（毫秒），超时即放弃，默认 6000 */
 			timeout?: number;
-			/** 最多尝试几个源，默认 3 */
+			/** 一次并发拉几个源，默认 3 */
 			maxAttempts?: number;
 		};
 	};

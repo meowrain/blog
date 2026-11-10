@@ -82,6 +82,24 @@ const randomBgEnabled = !!siteConfig.background.random?.enable;
 const bgEnabled =
 	siteConfig.background.enable &&
 	(randomBgEnabled || !!siteConfig.background.src);
+// 随机图源的主机名，用来在 <head> 里 preconnect，省掉第一张图的 DNS + TLS
+const bgHosts = randomBgEnabled
+	? [
+			...new Set(
+				(siteConfig.background.random?.sources ?? [])
+					.flatMap((source) => [source.url, source.mobileUrl])
+					.filter((value): value is string => typeof value === "string")
+					.map((value) => {
+						try {
+							return new URL(value).host;
+						} catch {
+							return "";
+						}
+					})
+					.filter((host) => host.length > 0),
+			),
+		]
+	: [];
 const glass = siteConfig.frostedGlass;
 const glassEnabled = !!glass?.enable;
 const glassBlur = glass?.blur ?? 22;
@@ -139,6 +157,12 @@ const bannerOffset =
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700&display=swap" rel="stylesheet">
+    {
+      /* 随机壁纸是从第三方图源拉的，提前建好连接能省掉第一张图的 DNS + TLS 时间 */
+      bgHosts.map((host) => (
+        <link rel="preconnect" href={`https://${host}`} crossorigin />
+      ))
+    }
     <title>{pageTitle}</title>
 
     <meta charset="UTF-8" />
@@ -348,6 +372,14 @@ const bannerOffset =
 
       #bg-photo[data-random-bg="ready"] {
         opacity: var(--bg-opacity);
+      }
+
+      /* 壁纸就绪后把下面的紫色渐变层淡出。
+         两层各自有 opacity，叠加后是 0.8×壁纸 + 0.2×(0.8×紫渐变)，
+         整张图会蒙上一层约 16% 的主题紫；渐变层不撤掉，壁纸永远不是原色。 */
+      :root[data-random-bg="ready"] #bg-box {
+        opacity: 0;
+        transition: opacity 0.8s ease;
       }
 
       /* 暗色模式压暗一层，避免整屏亮图刺眼。

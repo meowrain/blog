@@ -45,8 +45,8 @@ export const siteConfig: SiteConfig = {
     attachment: "fixed", // Background attachment: 'fixed', 'scroll', 'local'
     opacity: 0.8, // Background opacity (0-1)
 
-    // 每次打开页面从下面随机挑一个接口拉图；某个源挂了自动换下一个，
-    // 全部失败则回落到渐变背景（不会出现破图）。
+    // 每次打开页面从下面随机挑几个源并发拉图；某个源挂了不影响其他的，
+    // 第一张加载成功的就用，全部失败则回落到渐变背景（不会出现破图）。
     random: {
       enable: true,
       // {width} 会被替换成按屏幕宽度算出的像素值，不支持的源留空即可。
@@ -58,8 +58,9 @@ export const siteConfig: SiteConfig = {
           mobileUrl: "https://t.alcy.cc/mp?w={width}",
         },
         {
-          name: "LoliaPI · 二次元横屏",
-          url: "https://www.loliapi.com/acg/pc/",
+          name: "mwm.moe · 二次元壁纸",
+          url: "https://t.mwm.moe/pc",
+          mobileUrl: "https://t.mwm.moe/mp",
         },
         {
           name: "搏天图床 · 动漫壁纸",
@@ -70,8 +71,8 @@ export const siteConfig: SiteConfig = {
           url: "https://www.dmoe.cc/random.php",
         },
       ],
-      timeout: 8000, // 单个源多久没加载出来就换源（毫秒）
-      maxAttempts: 3, // 最多试几个源
+      timeout: 6000, // 单张图多久加载不出来就放弃（毫秒）
+      maxAttempts: 3, // 一次并发拉几个源
     },
   },
 
