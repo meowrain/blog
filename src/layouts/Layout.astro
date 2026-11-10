@@ -76,7 +76,7 @@ if (!banner || typeof banner !== "string" || banner.trim() === "") {
 banner = siteConfig.banner.src;
 
 const enableBanner = siteConfig.banner.enable;
-// 随机背景：每次打开从接口拉一张图，由 src/scripts/background.ts 异步填进 #bg-photo
+// 随机背景：每次打开从接口拉一张图，由 src/scripts/background.ts 异步填进 #bg-photo-img
 const randomBgEnabled = !!siteConfig.background.random?.enable;
 // 背景图开关真正生效：关闭时 #bg-box 只显示跟随主题的渐变色
 const bgEnabled =
@@ -149,6 +149,7 @@ const bannerOffset =
   lang={siteLang}
   class:list={["bg-[var(--page-bg)] transition text-[12px] md:text-[16px]", { glass: glassEnabled }]}
   style={`--glass-blur: ${glassBlur}px; --glass-card-opacity: ${glassEnabled ? glassOpacity : 1}; --glass-card-opacity-dark: ${glassEnabled ? glassDarkOpacity : 1}; --glass-panel-opacity: ${glassEnabled ? 0.82 : 1}; --glass-panel-opacity-dark: ${glassEnabled ? 0.78 : 1};`}
+  data-random-bg={randomBgEnabled ? "pending" : undefined}
   data-overlayscrollbars-initialize
 >
   <!-- 手机端适配 -->
@@ -330,8 +331,8 @@ const bannerOffset =
         --bg-opacity: var(--bg-opacity);
       }
 
-      /* 背景分两层：#bg-box 是渐变 + 柔光色斑，#bg-photo 叠在上面放随机壁纸。
-         壁纸由客户端脚本异步填进来，加载完成前只看到渐变，不会白屏。 */
+      /* 背景分两层：#bg-box 是渐变 + 柔光色斑（只在没开随机壁纸、或图源全挂时
+         露出来），#bg-photo 放随机壁纸。 */
       #bg-box,
       #bg-photo {
         position: fixed;
@@ -360,35 +361,74 @@ const bannerOffset =
         opacity: var(--bg-opacity);
       }
 
-      /* 随机壁纸层：加载成功后由脚本加 data-random-bg="ready" 淡入 */
-      #bg-photo {
+      /* 随机壁纸模式下一开始就不铺紫色渐变，否则会先闪一下紫色再出图。
+         pending = 等待第一张图，ready = 已经在显示壁纸，两种状态都把渐变藏起来；
+         只有 failed（所有图源都挂了）才把渐变放出来兜底。 */
+      :root[data-random-bg="pending"] #bg-box,
+      :root[data-random-bg="ready"] #bg-box {
+        opacity: 0;
+      }
+
+      /* 壁纸铺在 #bg-photo-img 上，出场是一个动画搞定：
+         先以 28px 模糊的样子快速浮现，再慢慢收成清晰原图。
+         用动画而不是两段 transition——两段要靠两帧提交才会分开，
+         后台标签页里帧会被推迟，结果就是糊着不动或直接跳到清晰。
+         外层 #bg-photo 继续承载设置面板的模糊 / 色相旋转，两者互不干扰。
+         inset 向外扩一圈，让模糊时的边缘溢到视口外，避免四周发虚。 */
+      #bg-photo-img {
+        position: absolute;
+        inset: -60px;
         background-position: var(--bg-position);
         background-size: var(--bg-size);
         background-repeat: var(--bg-repeat);
         background-attachment: var(--bg-attachment);
+        filter: blur(28px);
         opacity: 0;
-        transition: opacity 0.8s ease;
       }
 
-      #bg-photo[data-random-bg="ready"] {
-        opacity: var(--bg-opacity);
+      /* 图到了才开始播：前 8% 快速浮现（仍是糊的），之后线性收模糊。
+         用 linear 而不是 ease-out：缓动会让模糊在前 20% 就塌掉，
+         看起来像「直接出现」，失去由糊到清的过程。 */
+      #bg-photo-img[data-bg-ready] {
+        animation: bg-reveal 1.2s linear forwards;
       }
 
-      /* 壁纸就绪后把下面的紫色渐变层淡出。
-         两层各自有 opacity，叠加后是 0.8×壁纸 + 0.2×(0.8×紫渐变)，
-         整张图会蒙上一层约 16% 的主题紫；渐变层不撤掉，壁纸永远不是原色。 */
-      :root[data-random-bg="ready"] #bg-box {
-        opacity: 0;
-        transition: opacity 0.8s ease;
+      @keyframes bg-reveal {
+        0% {
+          opacity: 0;
+          filter: blur(28px);
+        }
+        8% {
+          opacity: 1;
+          filter: blur(26px);
+        }
+        100% {
+          opacity: 1;
+          filter: blur(0);
+        }
       }
 
-      /* 暗色模式压暗一层，避免整屏亮图刺眼。
-         不用 filter：设置面板的模糊 / 色相旋转是行内 filter，会把它覆盖掉。 */
-      :root.dark #bg-photo::after {
+      /* 系统开了「减弱动效」就直接给清晰图，不做模糊过渡 */
+      @media (prefers-reduced-motion: reduce) {
+        #bg-photo-img[data-bg-ready] {
+          animation: none;
+          opacity: 1;
+          filter: blur(0);
+        }
+      }
+
+      /* 暗色模式压暗，避免整屏亮图刺眼（二次元壁纸多半是亮色，0.28 不够，
+         正文里的摘要文字会糊在背景上）。顶部再压深一点，导航区更清楚。
+         不用 filter：设置面板的模糊 / 色相旋转是行内 filter，会把它覆盖掉。
+         z-index 抬到 #bg-photo-img 之上，否则压暗层会被壁纸盖住。 */
+      :root.dark[data-random-bg="ready"] #bg-photo::after {
         content: "";
         position: absolute;
         inset: 0;
-        background: rgba(0, 0, 0, 0.28);
+        z-index: 1;
+        background:
+          linear-gradient(to bottom, rgba(0, 0, 0, 0.34) 0%, rgba(0, 0, 0, 0) 220px),
+          rgba(0, 0, 0, 0.45);
         pointer-events: none;
       }
 
@@ -537,7 +577,16 @@ const bannerOffset =
     data-overlayscrollbars-initialize
   >
     <div id="bg-box"></div>
-    <div id="bg-photo" aria-hidden="true"></div>
+    <div id="bg-photo" aria-hidden="true">
+      <!-- 壁纸铺在这一层，由它在 data-bg-ready 时完成「模糊 → 清晰」的出场 -->
+      <div id="bg-photo-img"></div>
+    </div>
+    {/* 没有 JS 就拉不到壁纸：直接标成 failed，让渐变兜底层露出来，不然整屏只有底色 */}
+    <noscript>
+      <style is:inline>
+        #bg-box { opacity: var(--bg-opacity) !important; }
+      </style>
+    </noscript>
     <FallingEffect />
     <EmojiCursor />
     <ConfigCarrier />

@@ -7,13 +7,13 @@ import {
 /**
  * 随机二次元壁纸。
  *
- * - 上次用过的图存在 localStorage，刷新时先直接铺上，避免长时间只有渐变；
- * - 同时后台把候选源**并发**拉一遍，第一张解码完成的就采用（串行等待会让
- *   最慢的那个源决定总耗时）；
- * - 全部失败则保留旧图或渐变，不会出现破图；
- * - 壁纸就绪后给 <html> 打上 data-random-bg="ready"，CSS 据此把底下的紫色
- *   渐变层（#bg-box）淡出，否则壁纸上会一直蒙着主题色；
- * - 站点用 Swup 做无刷新跳转，#bg-photo 常在容器外，脚本只在整页加载时跑一次，
+ * 出场顺序：页面底色 → 壁纸以「模糊色块」浮出 → 收模糊变成清晰原图。
+ * 全程不出现紫色渐变（<html data-random-bg="pending"> 一开始就把它藏了），
+ * 只有所有图源都失败才退回渐变兜底（data-random-bg="failed"）。
+ *
+ * - 上次的图和本次的新图并行开跑，谁先好谁上，互不排队；
+ * - 候选源**并发**拉，第一张解码完成的就用（串行等待会让最慢的源决定总耗时）；
+ * - 站点用 Swup 做无刷新跳转，#bg-photo 在容器外，脚本只在整页加载时跑一次，
  *   换页时背景保持不变。
  */
 
@@ -71,13 +71,19 @@ function viewportWidth(): number {
 }
 
 function applyBackground(url: string): void {
-	const layer = document.getElementById("bg-photo");
+	const layer = document.getElementById("bg-photo-img");
 	if (!layer) return;
 	// 只换 background-image，不碰 filter / display，避免和设置面板的模糊、禁用背景打架
 	layer.style.backgroundImage = `url("${url}")`;
-	layer.dataset.randomBg = "ready";
-	// 让 CSS 把底下的紫色渐变淡出，壁纸才是原色
+	// data-bg-ready 触发 CSS 里的 bg-reveal：模糊色块浮现 → 收成清晰原图
+	layer.dataset.bgReady = "";
+	// 通知 CSS：渐变兜底层可以彻底藏起来了
 	document.documentElement.dataset.randomBg = "ready";
+}
+
+/** 所有图源都失败：把紫色渐变放回来兜底，总比一片空白强。 */
+function fallbackToGradient(): void {
+	document.documentElement.dataset.randomBg = "failed";
 }
 
 /** 一次图片加载，可中途取消。取消后 promise 以 false 收尾。 */
@@ -206,5 +212,6 @@ export async function mountRandomBackground(): Promise<void> {
 		applyBackground(fresh);
 		writeCache(fresh);
 	}
-	// 全部源都失败：保留 cached（若有），否则维持渐变背景
+	// 新图没拿到：缓存图若已铺上就保留，否则退回渐变兜底
+	if (!applied) fallbackToGradient();
 }
