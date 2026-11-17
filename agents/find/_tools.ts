@@ -12,6 +12,8 @@ import { clampArticleBody } from '../_article';
 import type { ToolDef, ToolResult } from '../_agent-loop';
 import { createLogger } from '../_shared';
 import { type NoteCorpus, type PostRecord, loadBodyChunks, loadShards } from './_corpus';
+import { locatePost } from './_locate';
+import { collectPostBody } from './_post-body';
 import { matchSeriesName, readSeries, summarizeSeries } from './_series';
 
 const logger = createLogger('find');
@@ -48,6 +50,22 @@ const FIELD_WEIGHTS = { title: 3, tags: 2, category: 1.5, headings: 1.5, excerpt
 const ARTICLE_TOKENS_PER_CALL = 6_000;
 /** read_article 结果回灌模型时的字符上限 —— 默认的 4k 装不下一篇正文 */
 const ARTICLE_RESULT_CHARS = 16_000;
+
+/**
+ * read_post 的正文预算。正文块每块约 1800 字、每个 group 最多 4 块（≈7200 字，
+ * 见 src/utils/search-index.ts 的 CHUNK_CHARS / CHUNKS_PER_FILE），所以默认预算大约
+ * 两个 group 就打满。上限按「一篇正文塞进 64k 上下文还剩多少给对话」倒推，卡在 2 万字。
+ */
+const READ_POST_DEFAULT_CHARS = 12_000;
+const READ_POST_MAX_CHARS = 20_000;
+/**
+ * 单次 read_post 最多发几个正文块请求。最长的《SSM》有 28 个 group —— 全打出去既拖慢
+ * 又毫无意义（2 万字早就超了默认预算），4 个已经够把默认预算填满。
+ * 这是硬上限，不随 maxChars 放大。
+ */
+const READ_POST_MAX_REQUESTS = 4;
+/** read_post 结果回灌模型时的字符上限：正文上限 2 万 + JSON 外壳，留点余量 */
+const READ_POST_RESULT_CHARS = 23_000;
 
 /**
  * 站内检索工具需要的 ctx：三种模式只用得到语料和「本次已经给过谁」。
@@ -615,6 +633,144 @@ async function readNotes(args: Record<string, unknown>, ctx: unknown): Promise<T
 	};
 }
 
+/** 正文块文件的结构（见 src/pages/search-index/body/[doc]/[group].json.ts） */
+interface BodyFile {
+	chunks?: unknown;
+}
+
+/**
+ * 拉一个正文块文件。null 表示越界（404）—— 这是「这篇拉完了」的正常终点；
+ * 其余非 2xx 照旧抛，真正的故障不该被悄悄当成读完了。
+ */
+async function fetchBodyGroup(origin: string, doc: number, group: number): Promise<string[] | null> {
+	const url = `${origin}/search-index/body/${doc}/${group}.json`;
+	const resp = await fetch(url, { headers: { Accept: 'application/json' } });
+	if (resp.status === 404) return null;
+	if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+	const data = (await resp.json()) as BodyFile;
+	return Array.isArray(data?.chunks) ? data.chunks.filter((c): c is string => typeof c === 'string' && !!c) : [];
+}
+
+function truncationHint(
+	post: PostRecord,
+	result: { nextGroup: number; requests: number; failed: string; stop: string },
+): string {
+	const resume = `read_post({url:"${post.url}", group:${result.nextGroup}}) 接着读（返回 text 为空说明已经到结尾）`;
+	if (result.stop === 'failed') {
+		return `第 ${result.requests} 个正文块拉取失败（${result.failed}），只给了已经拿到的部分。${resume}。`;
+	}
+	if (result.stop === 'requests') {
+		return `单次最多 ${READ_POST_MAX_REQUESTS} 个正文块请求，这次已经用完，后面还有没读到的部分：${resume}。`;
+	}
+	if (result.stop === 'ceiling') {
+		return `单次最多返回 ${READ_POST_MAX_CHARS} 字，再多就装不进上下文了，后面还有没读到的部分：${resume}。`;
+	}
+	return `已经达到本次 maxChars 预算，后面还有没读到的部分：${resume}；想一次读更多就调大 maxChars，上限 ${READ_POST_MAX_CHARS}。`;
+}
+
+/**
+ * 读**任意**一篇文章的正文 —— 靠 url 定位，不依赖访客当前在哪个页面。
+ *
+ * 和 read_article 并存而不是合并：那边读的是访客正在看的那篇，正文由前端从 DOM 抽好
+ * 递上来，零网络开销、还带前端切好的 sections；这边读的是「搜到了但访客没在看」的文章，
+ * 服务端只能按块拉。合并只会把前端递上来的数据白扔掉。
+ *
+ * 预算的卡口全部在拉取过程中生效，不是先拉完再截（实现在 _post-body.ts）：
+ * 1. 文档号必须从语料里查到。查不到直接报错 —— 猜号会把别人的正文递给模型；
+ * 2. 累计字符触到 maxChars 就停手，不再发下一个请求；
+ * 3. 请求数硬上限 READ_POST_MAX_REQUESTS，不随 maxChars 放大（最长那篇有 28 个正文块）。
+ */
+async function readPost(args: Record<string, unknown>, ctx: unknown): Promise<ToolResult> {
+	const state = ctx as SearchCtx;
+	const input = typeof args.url === 'string' ? args.url.trim() : '';
+	if (!input) {
+		return {
+			summary: '缺少 url 参数',
+			content: JSON.stringify({
+				error: 'url 不能为空',
+				hint: '先用 search 找到文章，再把结果里的 url（或 slug）原样传进来。',
+			}),
+		};
+	}
+
+	const wantedChars = Number(args.maxChars);
+	const maxChars =
+		Number.isFinite(wantedChars) && wantedChars > 0
+			? Math.min(Math.trunc(wantedChars), READ_POST_MAX_CHARS)
+			: READ_POST_DEFAULT_CHARS;
+	const wantedGroup = Number(args.group);
+	const startGroup = Number.isInteger(wantedGroup) && wantedGroup > 0 ? wantedGroup : 0;
+
+	const posts = await state.loadPosts();
+	const found = locatePost(posts, input);
+	if (!found) {
+		// 找不到就直说。绝不退化成「拿数组下标当文档号」这种猜测 —— 猜错了就是把别人的文章递出去
+		return {
+			summary: `站内没有「${input}」这篇`,
+			content: JSON.stringify({
+				error: `站内找不到这篇文章：${input}`,
+				hint: 'url 要用 search 结果里给出的站内链接（形如 /posts/分类/slug/）或它的 slug，不要自己拼。还没搜到就先 search 一次。',
+			}),
+		};
+	}
+
+	const { post, id } = found;
+	const result = await collectPostBody((group) => fetchBodyGroup(state.origin, id, group), {
+		startGroup,
+		maxChars,
+		hardMaxChars: READ_POST_MAX_CHARS,
+		maxRequests: READ_POST_MAX_REQUESTS,
+	});
+
+	if (!result.text) {
+		// 续读时 group 已经越界：这不是错误，只是这篇读完了
+		if (result.complete && startGroup > 0) {
+			return {
+				summary: `《${post.title}》已经读到结尾`,
+				content: JSON.stringify({
+					title: post.title,
+					url: post.url,
+					chars: 0,
+					truncated: false,
+					text: '',
+					hint: `group ${startGroup} 及之后没有内容了，这篇正文已经读完。`,
+				}),
+			};
+		}
+		return {
+			summary: `《${post.title}》没有可读正文`,
+			content: JSON.stringify({
+				title: post.title,
+				url: post.url,
+				error: result.failed
+					? `拉正文失败：${result.failed}`
+					: '这篇文章没有可提取的正文（可能是纯图片或空文章）',
+				hint: result.failed
+					? '过一会儿再试一次；访客正开着这篇时也可以用 read_article。'
+					: '这篇没有文字正文，只能按标题和标签回答，别编造内容。',
+			}),
+		};
+	}
+
+	const truncated = !result.complete || !!result.failed;
+
+	return {
+		summary: `读了《${post.title}》正文 ${result.text.length} 字${truncated ? '（已截断）' : ''}`,
+		content: JSON.stringify({
+			title: post.title,
+			slug: post.slug,
+			url: post.url,
+			published: post.published,
+			category: post.category,
+			tags: post.tags.slice(0, MAX_TAGS),
+			chars: result.text.length,
+			truncated,
+			...(truncated ? { hint: truncationHint(post, result) } : {}),
+			text: result.text,
+		}),
+	};
+}
+
 /**
  * 系列总览：站内有哪些成套的连载、各多少篇。只给名字、篇数和高频标签，
  * 章节列表留给 read_series —— 14 个系列全展开会把上下文一次吃光。
@@ -792,5 +948,28 @@ export const TOOLS: ToolDef[] = [
 			required: ['name'],
 		},
 		run: readSeriesTool,
+	},
+	// 追加在末尾（不是插到中间）：多条分支同时往 TOOLS 加工具，末尾追加最不容易撞车
+	{
+		name: 'read_post',
+		description:
+			'读取站内**任意一篇文章**的正文（纯文本），靠 url 定位，不要求访客正打开它。' +
+			'search 找到文章后要对内容作具体回答（讲了什么、某个点怎么说的、对比几篇）时用它，不要只凭 220 字摘要答。' +
+			'url 传 search 结果里的 url 或 slug，别自己拼。默认只返回前 12000 字，正文更长时 truncated 为 true 并给 hint，' +
+			'按 hint 里的 group 续读即可。访客正在阅读的那篇优先用 read_article（更快、带小节切分）。',
+		parameters: {
+			type: 'object',
+			properties: {
+				url: { type: 'string', description: '文章的站内链接（如 /posts/Java/JUC/JUC-synchronized/）或 slug' },
+				maxChars: {
+					type: 'integer',
+					description: `正文最多返回多少字符，默认 ${READ_POST_DEFAULT_CHARS}，上限 ${READ_POST_MAX_CHARS}`,
+				},
+				group: { type: 'integer', description: '从第几个正文块开始读（默认 0）。只在续读截断结果时用 hint 里给的值' },
+			},
+			required: ['url'],
+		},
+		maxResultChars: READ_POST_RESULT_CHARS,
+		run: readPost,
 	},
 ];

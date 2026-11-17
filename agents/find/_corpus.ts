@@ -5,8 +5,12 @@ import { SHARD_COUNT, type ChunkGroup, type ShardPayload } from '../../src/utils
 const logger = createLogger('find');
 
 export interface PostRecord {
-	/** `/posts-index.json` 里的文档号，与倒排表、正文块文件里的编号一致 */
-	id?: number;
+	/**
+	 * 文档号。`/posts-index.json` 里每条都带，与倒排表、正文块文件路径
+	 * `/search-index/body/{id}/{group}.json` 用的是同一个号（见 src/pages/posts-index.json.ts）。
+	 * read_post 靠它拉正文，所以类型上标成必需：缺了就当「找不到这篇文章」，不许拿数组下标顶上。
+	 */
+	id: number;
 	title: string;
 	slug: string;
 	url: string;

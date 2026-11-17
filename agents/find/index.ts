@@ -25,6 +25,12 @@ const MAX_ARTICLE_CHARS = 60_000;
 const MAX_ARTICLE_SECTIONS = 200;
 /** 带上文章时工具结果累计进上下文的字符上限要放宽 —— read_article 得装得下一篇正文 */
 const MAX_TOOL_CONTEXT_CHARS_WITH_ARTICLE = 24_000;
+/**
+ * 不带文章时的累计上限。默认的 20k 比 read_post 单条最坏结果（约 20.2k 字符：2 万字正文
+ * 加一条 hint 和元信息）还小 —— 累计预算超了会**整条丢掉**最早的结果，模型就等于什么都
+ * 没读到。所以这里抬到 22k，保证一条最长的 read_post 结果能完整进上下文。
+ */
+const MAX_TOOL_CONTEXT_CHARS_PLAIN = 22_000;
 
 interface FindRequestBody {
 	messages?: HistoryMessage[];
@@ -82,10 +88,14 @@ function buildSystemPrompt(origin: string, article: ArticleCtx | null) {
 		'  推荐时按章节顺序讲（先第 1 章再往后），并把序号和站内链接一起给出；',
 		'  系列名先用 list_series 查准，命中多个候选时从候选里挑，不要自己猜。',
 		'',
-		'学习助手用这个工具：',
+		'读正文有两个工具，按「访客在不在看这篇」选：',
 		'- read_article：读访客当前正在阅读的这篇文章的正文。',
-		'  只要回答涉及文章内容，就必须先调用它，基于正文回答；不要凭标题猜文章讲了什么。',
+		'  只要回答涉及这篇的内容，就必须先调用它，基于正文回答；不要凭标题猜文章讲了什么。',
 		'  正文过长时结果会被截断并附带 outline（小节标题），用 read_article({section}) 按小节把剩下的读回来。',
+		'- read_post：读**任意**一篇文章的正文，靠 url 定位，访客没在看它也能读。',
+		'  search 只给标题和 220 字摘要，要讲清某一篇的具体内容（尤其摘要没覆盖到的后半部分）时，用 read_post({url}) 把正文读回来。',
+		'  结果 truncated 为 true 时按 hint 里的 group 续读；实在读不完就在回答里说明「只读了前面部分」，不要假装读全了。',
+		'  访客正在看的那篇优先用 read_article：更快，而且带前端切好的小节。',
 		'',
 		'访客在文章页时会说三种话，按他的说法自己判断该做什么：',
 		'- 讲解：循序渐进讲透正文里的知识点，举浅显的例子，点出容易混淆的地方；',
@@ -190,7 +200,7 @@ export async function onRequest(context: any) {
 				signal,
 				collector,
 				logger,
-				maxToolContextChars: article ? MAX_TOOL_CONTEXT_CHARS_WITH_ARTICLE : undefined,
+				maxToolContextChars: article ? MAX_TOOL_CONTEXT_CHARS_WITH_ARTICLE : MAX_TOOL_CONTEXT_CHARS_PLAIN,
 			});
 		} finally {
 			const finalText = stripDsml(collector.text).trim();
