@@ -2,7 +2,7 @@ import { estimateTokens } from '../_article';
 import { runToolLoop, type HistoryMessage } from '../_agent-loop';
 import { getAgentEnv } from '../_model';
 import { createLogger, createSSEResponse, stripDsml } from '../_shared';
-import { loadCorpus, siteOrigin, type PostRecord } from './_corpus';
+import { loadCorpus, loadNotes, siteOrigin, type NoteCorpus, type PostRecord } from './_corpus';
 import { TOOLS, type ArticleCtx, type FindCtx } from './_tools';
 
 const logger = createLogger('find');
@@ -68,6 +68,12 @@ function buildSystemPrompt(origin: string, article: ArticleCtx | null) {
 		'  （中文关键词、英文术语、同义词、更小粒度的词各试一遍），不要只搜一次就下结论。',
 		'- search({mode:"categories"})：列出站内全部分类与篇数。访客没想好方向时，或几个关键词都搜不到时用它，据此给访客出选择题。',
 		'- search({mode:"recent"})：按发布时间列出最新文章。访客问「最近写了什么」这类跟时间有关、又没给主题的问题时用它，不要靠猜。',
+		'',
+		'访客问起博主本人（最近在干嘛、最近心情怎么样、去过哪、有什么新鲜事）时，用 read_notes：',
+		'- read_notes：读博主的碎碎念（/notes/ 时间线），返回日期、标题、摘要、心情、地点、标签和站内链接。',
+		'  这类问题不要去 search 文章 —— 答案不在文章里。可以用 limit / tag / mood / location / since 收窄。',
+		'  ⚠️ 封存中的时间胶囊（unlockAt 未到）不会出现在结果里，你只拿到 sealedCount 这个数字。',
+		'  只能告诉访客「有 N 条还在封存中，到时间才解锁」，绝不能猜测、编造或从别处拼凑它们的内容。',
 		'',
 		'学习助手用这个工具：',
 		'- read_article：读访客当前正在阅读的这篇文章的正文。',
@@ -161,6 +167,7 @@ export async function onRequest(context: any) {
 	const ctx: FindCtx = {
 		origin,
 		loadPosts: (): Promise<PostRecord[]> => loadCorpus(origin),
+		loadNotes: (): Promise<NoteCorpus> => loadNotes(origin),
 		seen: new Set<string>(),
 		article,
 	};

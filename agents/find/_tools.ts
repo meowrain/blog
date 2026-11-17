@@ -11,7 +11,7 @@ import { chunkGroupOf, collectQueryPostings, shardsForTokens } from '../../src/u
 import { clampArticleBody } from '../_article';
 import type { ToolDef, ToolResult } from '../_agent-loop';
 import { createLogger } from '../_shared';
-import { type PostRecord, loadBodyChunks, loadShards } from './_corpus';
+import { type NoteCorpus, type PostRecord, loadBodyChunks, loadShards } from './_corpus';
 
 const logger = createLogger('find');
 
@@ -58,6 +58,8 @@ export interface SearchCtx {
 export interface FindCtx extends SearchCtx {
 	/** 访客当前正在阅读的文章（前端从页面 DOM 抽好随请求递上来）；不在文章页时为 null */
 	article: ArticleCtx | null;
+	/** 碎碎念索引（`/notes-index.json`，封存中的时间胶囊已被端点滤掉） */
+	loadNotes: () => Promise<NoteCorpus>;
 }
 
 /** 文章按标题切出来的小节（前端切好递上来，服务端不解析 Markdown） */
@@ -532,6 +534,82 @@ function readArticle(args: Record<string, unknown>, ctx: unknown): ToolResult {
 	};
 }
 
+const DEFAULT_NOTE_LIMIT = 5;
+/** 碎碎念一共十来条，一次给满也吃不掉多少上下文 */
+const MAX_NOTE_LIMIT = 10;
+const NOTE_EXCERPT_CHARS = 200;
+
+/** 关键词模糊匹配：忽略大小写与空白，「南京」能命中「南京 · 玄武湖」 */
+function fuzzyHit(value: string, needle: string): boolean {
+	if (!needle) return true;
+	const loose = (s: string) => s.toLowerCase().replace(/\s+/g, '');
+	return loose(value).includes(loose(needle));
+}
+
+function paramText(args: Record<string, unknown>, key: string): string {
+	return typeof args[key] === 'string' ? (args[key] as string).trim() : '';
+}
+
+/**
+ * 读碎碎念（`/notes/` 时间线）。用户问「最近在干嘛」「最近心情怎么样」「去过哪」时用它 ——
+ * 这些答案不在文章里，search 找不到。
+ *
+ * 封存中的时间胶囊端点已经滤掉，这里只把 sealedCount 如实交出去：模型能说「还有 N 条封存中」，
+ * 手上却没有任何内容可讲 —— 想编也没有素材。
+ */
+async function readNotes(args: Record<string, unknown>, ctx: unknown): Promise<ToolResult> {
+	const state = ctx as FindCtx;
+	const { notes, sealedCount } = await state.loadNotes();
+
+	const limitRaw = Number(args.limit);
+	const limit =
+		Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.trunc(limitRaw), MAX_NOTE_LIMIT) : DEFAULT_NOTE_LIMIT;
+
+	const tag = paramText(args, 'tag');
+	const mood = paramText(args, 'mood');
+	const location = paramText(args, 'location');
+	const since = paramText(args, 'since').slice(0, 10);
+
+	const matched = notes.filter(
+		(note) =>
+			(!tag || note.tags.some((name) => fuzzyHit(name, tag))) &&
+			fuzzyHit(note.mood, mood) &&
+			fuzzyHit(note.location, location) &&
+			(!since || note.published >= since),
+	);
+
+	// 端点已按「置顶优先 + 发布时间倒序」排好，这里只截断
+	const picked = matched.slice(0, limit);
+	const sealedNote =
+		sealedCount > 0
+			? `另外还有 ${sealedCount} 条碎碎念封存在时间胶囊里，到 unlockAt 才解锁。` +
+				`索引里没有它们的内容：只能告诉访客「有 ${sealedCount} 条还在封存中」，不要猜、不要编。`
+			: '';
+
+	return {
+		summary: picked.length
+			? `读过 ${picked.length} 条碎碎念${sealedCount > 0 ? `（另有 ${sealedCount} 条封存中）` : ''}`
+			: `没有匹配的碎碎念${sealedCount > 0 ? `（${sealedCount} 条封存中）` : ''}`,
+		content: JSON.stringify({
+			count: picked.length,
+			sealedCount,
+			notes: picked.map((note) => ({
+				published: note.published,
+				title: note.title,
+				excerpt: note.excerpt.slice(0, NOTE_EXCERPT_CHARS),
+				mood: note.mood,
+				location: note.location,
+				tags: note.tags,
+				url: note.url,
+			})),
+			...(sealedNote ? { sealedNote } : {}),
+			...(picked.length
+				? {}
+				: { hint: '没有匹配的条目。去掉筛选条件再读一次，或按用户问的时间范围调整 since。' }),
+		}),
+	};
+}
+
 /**
  * 站内检索工具。`/find` 和 `/assistant` 共用同一份定义 —— 站内只有一套检索能力，
  * 两个 agent 不该各有各的玩法，也不该出现「一边能看分类、一边不能」这种偏差。
@@ -584,4 +662,27 @@ export const TOOLS: ToolDef[] = [
 		run: readArticle,
 	},
 	SEARCH_TOOL,
+	{
+		name: 'read_notes',
+		description:
+			'读博主的碎碎念（`/notes/` 时间线里的短笔记）：生活小事、随手记、当下心情和去过的地方。' +
+			'用户问「最近在干嘛」「最近心情怎么样」「去过哪」「最近有什么新鲜事」这类关于博主本人的问题时用它，' +
+			'不要去搜文章 —— 这些内容不在文章里。' +
+			'返回日期、标题（没写标题时是正文首句）、摘要、心情、地点、标签和站内链接。' +
+			'封存中的时间胶囊不会出现在结果里：只能告诉用户「有 N 条还在封存中」，绝不能猜测或编造它们的内容。',
+		parameters: {
+			type: 'object',
+			properties: {
+				limit: {
+					type: 'integer',
+					description: `返回条数，默认 ${DEFAULT_NOTE_LIMIT}，最多 ${MAX_NOTE_LIMIT}`,
+				},
+				tag: { type: 'string', description: '只看带这个标签的（如「生活」「踩坑」）' },
+				mood: { type: 'string', description: '按心情关键词模糊筛选（如「平静」「累」）' },
+				location: { type: 'string', description: '按地点关键词模糊筛选（如「南京」「家」）' },
+				since: { type: 'string', description: '只看这个日期之后（含）的，格式 YYYY-MM-DD' },
+			},
+		},
+		run: readNotes,
+	},
 ];

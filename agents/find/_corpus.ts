@@ -267,3 +267,55 @@ export async function loadBodyChunks(origin: string, doc: number, group: number)
 		version,
 	);
 }
+
+/** 碎碎念。`title` 已由端点做过回退（没写标题时用正文首句），工具直接用。 */
+export interface NoteRecord {
+	published: string;
+	title: string;
+	tags: string[];
+	mood: string;
+	location: string;
+	pinned: boolean;
+	excerpt: string;
+	url: string;
+}
+
+export interface NoteCorpus {
+	notes: NoteRecord[];
+	/** 封存中（`unlockAt` 还没到）的条数 —— 这些条目在索引里根本不存在，只有这个数字 */
+	sealedCount: number;
+}
+
+/**
+ * 碎碎念索引 `/notes-index.json`（十来条，几 KB），和文章走的 `/posts-index.json` 是一套路子。
+ * 封存中的时间胶囊由端点直接滤掉，服务端拿到的只有能公开讲的部分：
+ * 红线留在构建期守一次，工具这边不用再判断日期。
+ */
+let noteCache: { at: number; data: NoteCorpus } | null = null;
+let noteInflight: Promise<NoteCorpus> | null = null;
+
+export async function loadNotes(origin: string): Promise<NoteCorpus> {
+	if (noteCache && Date.now() - noteCache.at < CACHE_TTL_MS) return noteCache.data;
+	if (noteInflight) return noteInflight;
+
+	noteInflight = (async () => {
+		const url = `${origin}/notes-index.json`;
+		const resp = await fetch(url, { headers: { Accept: 'application/json' } });
+		if (!resp.ok) throw new Error(`拉取 ${url} 失败：HTTP ${resp.status}`);
+		const data = (await resp.json()) as { notes?: NoteRecord[]; sealedCount?: number };
+		// 碎碎念可能真的是 0 条（新站），空数组不算失败
+		const payload: NoteCorpus = {
+			notes: Array.isArray(data?.notes) ? data.notes : [],
+			sealedCount: Number.isFinite(data?.sealedCount) ? Number(data.sealedCount) : 0,
+		};
+		noteCache = { at: Date.now(), data: payload };
+		logger.log('notes loaded notes=%d sealed=%d', payload.notes.length, payload.sealedCount);
+		return payload;
+	})();
+
+	try {
+		return await noteInflight;
+	} finally {
+		noteInflight = null;
+	}
+}
