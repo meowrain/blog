@@ -3,14 +3,14 @@ import Icon from "@iconify/svelte";
 import MarkdownIt from "markdown-it";
 import { tick } from "svelte";
 import ChatPostCards from "../chat/ChatPostCards.svelte";
-import { toolPostHits } from "../chat/post-hits";
+import { toolCategories, toolPostHits } from "../chat/post-hits";
 
 /**
  * 全站右下角的胶囊助手 —— 站内找文章 + 当前这篇文章的学习助手（讲解 / 出题 / 批改），
  * 全站只有这一个入口，不再有单独的学习面板。
  *
  * 挂在 Layout.astro（Swup 容器之外），所以换页时面板和对话都留着 —— 这正是
- * 「全站一个入口」要的行为。真正干活的是 /find（agents/find）：它自带 search_posts /
+ * 「全站一个入口」要的行为。真正干活的是 /find（agents/find）：它自带 search /
  * read_article 等工具，自己决定搜什么、读什么；这里只负责把工具调用过程如实显示出来。
  *
  * 正文只存在于页面上，所以文章页发送前会先把正文抽出来一起递上去（read_article 工具
@@ -82,22 +82,6 @@ function turnText(parts: Part[]): string {
 		.filter((p): p is TextPart => p.kind === "text")
 		.map((p) => p.content)
 		.join("");
-}
-
-/** 分类工具没有文章卡片可画，仍然按「名称(篇数)」列一行 */
-function toolCategories(part: ToolPart): string[] {
-	if (!part.content) return [];
-	try {
-		const parsed = JSON.parse(part.content);
-		if (Array.isArray(parsed?.categories)) {
-			return parsed.categories
-				.slice(0, 8)
-				.map((c: { name?: string; count?: number }) => `${c?.name}(${c?.count})`);
-		}
-	} catch {
-		// 解析不了就只显示原始内容
-	}
-	return [];
 }
 
 function prettyArgs(args: string): string {
@@ -499,7 +483,7 @@ $effect(() => {
 						{#each m.parts as part, pi}
 							{#if part.kind === 'tool'}
 								{@const posts = toolPostHits(part.content)}
-								{@const categories = toolCategories(part)}
+								{@const categories = toolCategories(part.content)}
 								<div class="rounded-lg border border-black/10 bg-black/[0.03] px-2.5 py-2 text-[0.7rem] dark:border-white/10 dark:bg-white/[0.06]">
 									<div class="flex items-center gap-1.5">
 										{#if part.status === 'running'}

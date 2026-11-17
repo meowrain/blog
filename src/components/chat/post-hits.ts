@@ -1,9 +1,9 @@
 /**
  * 工具结果 → 文章卡片数据。
  *
- * `search_posts` / `list_recent_posts` 都把命中放在 `posts` 数组里，字段不完全一样：
- * - search_posts：title / url / published / category / tags / snippet（+ 可选的 matchedHeadings）
- * - list_recent_posts：title / url / published / category
+ * 站内检索统一走 `search` 一条工具（由 mode 决定查什么），命中都放在 `posts` 数组里：
+ * - keyword：title / url / published / category / tags / snippet（+ 可选的 matchedHeadings）
+ * - recent：title / url / published / category
  * - 本次请求里已经返回过的命中：只有 title / url / seen: true —— 那篇的卡片前面已经渲染过，跳过
  */
 
@@ -41,6 +41,21 @@ export function toolPostHits(content?: string): ChatPostHit[] {
 		return hits;
 	} catch {
 		// 解析不了就不出卡片，原始内容在「查看返回内容」里
+		return [];
+	}
+}
+
+/** `search({mode:"categories"})` 没有文章卡片可画，按「名称(篇数)」列一行 */
+export function toolCategories(content?: string): string[] {
+	if (!content) return [];
+	try {
+		const parsed = JSON.parse(content);
+		if (!Array.isArray(parsed?.categories)) return [];
+		return parsed.categories
+			.slice(0, 8)
+			.map((c: { name?: string; count?: number }) => `${c?.name}(${c?.count})`);
+	} catch {
+		// 解析不了就只显示原始内容
 		return [];
 	}
 }

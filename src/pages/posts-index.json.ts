@@ -3,7 +3,7 @@ import type { APIContext } from "astro";
 
 /**
  * 站内文章索引，有两个消费者：
- * - `/find` agent 的 `search_posts` 工具（服务端拉取）；
+ * - `/find` 与 `/assistant` agent 的 `search` 工具（服务端拉取）；
  * - 导航栏搜索面板（`src/components/Search.svelte`，客户端拉取）。
  * 搜索面板复用同一份索引，不再解析整份 `/rss.xml`。
  *

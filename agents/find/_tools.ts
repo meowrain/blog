@@ -6,6 +6,9 @@ import type { PostRecord } from './_corpus';
  * `/find` 的工具注册表 —— 胶囊助手既能站内找文章，也能当当前这篇文章的学习助手，
  * 两边的能力都从这里挂上去。加新能力就往 TOOLS 里加一条，tool loop 和前端都不用动。
  *
+ * 站内检索只有一条 `search`（keyword / categories / recent 三个模式），
+ * `/assistant` 也复用这一个定义（见 SEARCH_TOOL）—— 两个 agent 不各玩一套。
+ *
  * 返回体刻意做得瘦：模型上下文里最贵的就是工具结果，所以条数、每条带什么字段、
  * 回灌进上下文的长度都卡死了（见 _agent-loop.ts 的预算常量，以及下面 read_article 的覆盖）。
  */
@@ -15,6 +18,9 @@ const MAX_LIMIT = 8;
 const MAX_TAGS = 4;
 const MAX_MATCHED_HEADINGS = 3;
 const SNIPPET_CHARS = 80;
+const DEFAULT_RECENT = 6;
+const MAX_RECENT = 10;
+const MAX_CATEGORIES = 15;
 /** 命中分下限。分数已按 idf 加权，所以这里只需拦掉「几乎全站都有」的词带来的噪声 */
 const MIN_SCORE = 1;
 
@@ -25,11 +31,18 @@ const ARTICLE_TOKENS_PER_CALL = 6_000;
 /** read_article 结果回灌模型时的字符上限 —— 默认的 4k 装不下一篇正文 */
 const ARTICLE_RESULT_CHARS = 16_000;
 
-export interface FindCtx {
+/**
+ * 站内检索工具需要的 ctx：三种模式只用得到语料和「本次已经给过谁」。
+ * `/find` 的 FindCtx 和 `/assistant` 的 ChatCtx 都满足这个形状，所以工具定义两边共用。
+ */
+export interface SearchCtx {
 	origin: string;
 	loadPosts: () => Promise<PostRecord[]>;
 	/** 本次请求里已经返回过的文章 —— 重复命中只给标题和链接 */
 	seen: Set<string>;
+}
+
+export interface FindCtx extends SearchCtx {
 	/** 访客当前正在阅读的文章（前端从页面 DOM 抽好随请求递上来）；不在文章页时为 null */
 	article: ArticleCtx | null;
 }
@@ -170,8 +183,8 @@ function matchedHeadings(post: PostRecord, terms: string[]): string[] {
 	return out;
 }
 
-export async function searchPosts(args: Record<string, unknown>, ctx: unknown): Promise<ToolResult> {
-	const state = ctx as FindCtx;
+async function searchByKeyword(args: Record<string, unknown>, ctx: unknown): Promise<ToolResult> {
+	const state = ctx as SearchCtx;
 	const query = typeof args.query === 'string' ? args.query.trim() : '';
 	if (!query) {
 		return { summary: '缺少 query 参数', content: JSON.stringify({ error: 'query 不能为空' }) };
@@ -206,7 +219,7 @@ export async function searchPosts(args: Record<string, unknown>, ctx: unknown): 
 			content: JSON.stringify({
 				query,
 				count: 0,
-				hint: '没有匹配到文章。换更具体的关键词（术语、英文名、具体技术名），或先用 list_categories 看看站内有哪些方向。',
+				hint: '没有匹配到文章。换更具体的关键词（术语、英文名、具体技术名），或用 search({mode:"categories"}) 看看站内有哪些方向。',
 			}),
 		};
 	}
@@ -236,7 +249,7 @@ export async function searchPosts(args: Record<string, unknown>, ctx: unknown): 
 }
 
 async function listCategories(_args: Record<string, unknown>, ctx: unknown): Promise<ToolResult> {
-	const state = ctx as FindCtx;
+	const state = ctx as SearchCtx;
 	const posts = await state.loadPosts();
 
 	const buckets = new Map<string, { count: number; tags: Map<string, number> }>();
@@ -250,7 +263,7 @@ async function listCategories(_args: Record<string, unknown>, ctx: unknown): Pro
 
 	const categories = [...buckets.entries()]
 		.sort((a, b) => b[1].count - a[1].count)
-		.slice(0, 15)
+		.slice(0, MAX_CATEGORIES)
 		.map(([name, bucket]) => ({
 			name,
 			count: bucket.count,
@@ -267,10 +280,10 @@ async function listCategories(_args: Record<string, unknown>, ctx: unknown): Pro
 }
 
 async function listRecentPosts(args: Record<string, unknown>, ctx: unknown): Promise<ToolResult> {
-	const state = ctx as FindCtx;
+	const state = ctx as SearchCtx;
 	const posts = await state.loadPosts();
 	const limitRaw = Number(args.limit);
-	const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.trunc(limitRaw), 10) : 6;
+	const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.trunc(limitRaw), MAX_RECENT) : DEFAULT_RECENT;
 
 	const recent = [...posts].sort((a, b) => (a.published < b.published ? 1 : -1)).slice(0, limit);
 	for (const post of recent) state.seen.add(post.slug);
@@ -285,6 +298,29 @@ async function listRecentPosts(args: Record<string, unknown>, ctx: unknown): Pro
 				published: post.published,
 				category: post.category,
 			})),
+		}),
+	};
+}
+
+/**
+ * 站内检索的统一入口 —— 三个模式原先各占一条工具，现在合成一条 `search`。
+ * 模型的工具预算有限，一条带 mode 的工具比三条各自描述「什么时候该用我」更好选；
+ * 前端也已经按工具名分支渲染，合并后只需要认识一个名字。
+ *
+ * 只做分发，检索逻辑仍在各自的实现里，互不影响。
+ */
+async function searchSite(args: Record<string, unknown>, ctx: unknown): Promise<ToolResult> {
+	const mode = typeof args.mode === 'string' ? args.mode.trim().toLowerCase() : 'keyword';
+
+	if (mode === 'categories') return listCategories(args, ctx);
+	if (mode === 'recent') return listRecentPosts(args, ctx);
+	if (mode === 'keyword' || mode === '') return searchByKeyword(args, ctx);
+
+	return {
+		summary: `未知的 mode：${mode}`,
+		content: JSON.stringify({
+			error: `mode 只能是 keyword / categories / recent，收到的是「${mode}」`,
+			hint: '按关键词找文章用 mode:"keyword"（可省略）；看分类用 "categories"；看最新用 "recent"。',
 		}),
 	};
 }
@@ -314,7 +350,7 @@ function readArticle(args: Record<string, unknown>, ctx: unknown): ToolResult {
 			summary: '当前不在文章页',
 			content: JSON.stringify({
 				error:
-					'拿不到文章正文：访客现在不在文章页（或刚换了页）。要讲文章先用 search_posts 找到它、' +
+					'拿不到文章正文：访客现在不在文章页（或刚换了页）。要讲文章先用 search 找到它、' +
 					'让访客点开阅读；其余问题按普通问答回答即可。',
 			}),
 		};
@@ -366,6 +402,37 @@ function readArticle(args: Record<string, unknown>, ctx: unknown): ToolResult {
 	};
 }
 
+/**
+ * 站内检索工具。`/find` 和 `/assistant` 共用同一份定义 —— 站内只有一套检索能力，
+ * 两个 agent 不该各有各的玩法，也不该出现「一边能看分类、一边不能」这种偏差。
+ */
+export const SEARCH_TOOL: ToolDef = {
+	name: 'search',
+	description:
+		'在本博客站内找文章，三种模式（默认 keyword）：\n' +
+		'- keyword：按关键词检索，返回标题、站内链接、发布日期和摘要片段。' +
+		'访客的问题里往往没有准确术语，换几种说法（中文关键词、英文术语、同义词、更小粒度的词）多调用几次，不要只搜一次就下结论。' +
+		'count 为 0 说明这次没搜到，换关键词，或改用 mode:"categories" / mode:"recent"。\n' +
+		'- categories：列出站内全部分类与篇数。访客没想好方向时，或几个关键词都搜不到时用它，据此给访客出选择题。\n' +
+		'- recent：按发布时间列出最新的文章。访客问「最近写了什么」「有什么新文」这类跟时间有关、又没给主题的问题时用它，不要靠猜。',
+	parameters: {
+		type: 'object',
+		properties: {
+			mode: {
+				type: 'string',
+				enum: ['keyword', 'categories', 'recent'],
+				description: 'keyword（默认）按关键词搜、categories 看分类、recent 看最新',
+			},
+			query: { type: 'string', description: 'mode=keyword 时的检索关键词，例如「JVM 垃圾回收」「Redis 持久化」' },
+			limit: {
+				type: 'integer',
+				description: `keyword 默认 ${DEFAULT_LIMIT}（最多 ${MAX_LIMIT}），recent 默认 ${DEFAULT_RECENT}（最多 ${MAX_RECENT}）`,
+			},
+		},
+	},
+	run: searchSite,
+};
+
 export const TOOLS: ToolDef[] = [
 	{
 		name: 'read_article',
@@ -386,39 +453,5 @@ export const TOOLS: ToolDef[] = [
 		maxResultChars: ARTICLE_RESULT_CHARS,
 		run: readArticle,
 	},
-	{
-		name: 'search_posts',
-		description:
-			'在本博客站内按关键词检索文章，返回标题、站内链接、发布日期和摘要片段。' +
-			'可以换几种说法（中文关键词、英文术语、同义词）多调用几次，把不同角度都试一遍。' +
-			'返回 count 为 0 说明这次没搜到，需要换关键词，或改用 list_categories / list_recent_posts。',
-		parameters: {
-			type: 'object',
-			properties: {
-				query: { type: 'string', description: '检索关键词，例如「JVM 垃圾回收」「Redis 持久化」' },
-				limit: { type: 'integer', description: `返回条数，默认 ${DEFAULT_LIMIT}，最多 ${MAX_LIMIT}` },
-			},
-			required: ['query'],
-		},
-		run: searchPosts,
-	},
-	{
-		name: 'list_categories',
-		description:
-			'列出站内所有分类（含篇数与代表性标签）。适合用户还没想好具体看什么、想问「站里都有些什么」的时候用。',
-		parameters: { type: 'object', properties: {} },
-		run: listCategories,
-	},
-	{
-		name: 'list_recent_posts',
-		description:
-			'按发布时间列出最新的文章。用户问「最近写了什么」「有什么新文」这类跟时间有关、又没给主题的问题时用它。',
-		parameters: {
-			type: 'object',
-			properties: {
-				limit: { type: 'integer', description: '返回条数，默认 6，最多 10' },
-			},
-		},
-		run: listRecentPosts,
-	},
+	SEARCH_TOOL,
 ];

@@ -3,12 +3,12 @@ import Icon from "@iconify/svelte";
 import MarkdownIt from "markdown-it";
 import { tick } from "svelte";
 import ChatPostCards from "./ChatPostCards.svelte";
-import { toolPostHits } from "./post-hits";
+import { toolCategories, toolPostHits } from "./post-hits";
 
 /**
  * /chat/ 聊天页的主体 —— 一个通用 AI 助手：什么都聊，需要时自己联网查、自己翻站内文章。
  *
- * 真正干活的是 /assistant（agents/assistant）：联网走 Tavily，站内检索复用 /find 那套索引。
+ * 真正干活的是 /assistant（agents/assistant）：联网走腾讯云元宝搜索，站内检索复用 /find 那套索引。
  * 接口不能跟页面同路径：页面占着 /chat/，同名时静态文件会把 POST 请求整个吃掉（见 agent 头部注释）。
  * 这里只负责把工具调用过程如实显示出来，以及历史消息的存取。
  *
@@ -35,14 +35,12 @@ const convKey = "eo_chat_conversation_id";
 /** 工具名 → 界面上说人话的标签 */
 const TOOL_LABELS: Record<string, string> = {
 	web_search: "联网搜索",
-	read_page: "读取网页",
-	search_posts: "站内找文章",
+	search: "站内找文章",
 };
 
 const TOOL_RUNNING_TEXT: Record<string, string> = {
 	web_search: "正在联网搜索…",
-	read_page: "正在读取网页…",
-	search_posts: "正在翻站内文章…",
+	search: "正在翻站内文章…",
 };
 
 const SUGGESTIONS = [
@@ -415,7 +413,8 @@ $effect(() => {
 					{#each m.parts as part, pi}
 						{#if part.kind === "tool"}
 							{@const hits = toolPostHits(part.content)}
-							{@const links = hits.length ? [] : toolLinks(part)}
+							{@const categories = hits.length ? [] : toolCategories(part.content)}
+							{@const links = hits.length || categories.length ? [] : toolLinks(part)}
 							<div class="rounded-lg border border-black/10 bg-black/[0.03] px-2.5 py-2 text-[0.7rem] dark:border-white/10 dark:bg-white/[0.06]">
 								<div class="flex items-center gap-1.5">
 									{#if part.status === "running"}
@@ -437,6 +436,12 @@ $effect(() => {
 									<div class="mt-1.5">
 										<ChatPostCards posts={hits} />
 									</div>
+								{:else if categories.length}
+									<ul class="mt-1 space-y-0.5 text-black/45 dark:text-white/45">
+										{#each categories as c}
+											<li class="truncate">· {c}</li>
+										{/each}
+									</ul>
 								{:else if links.length}
 									<ul class="mt-1 space-y-0.5">
 										{#each links as link}
