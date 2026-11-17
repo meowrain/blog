@@ -33,8 +33,17 @@ export interface IndexedPostMeta {
 	url: string;
 	category: string;
 	series: string;
+	/** 章节序号，没写的按发布时间排 —— agent 的 read_series 靠它复刻 /series/ 的顺序。 */
+	seriesOrder?: number;
 	tags: string[];
+	/** 只到天，够展示用；排序要精确到秒，用 publishedAt。 */
 	published: string;
+	/**
+	 * 完整发布时间戳（ISO）。`published` 砍到天后，同一天发的文章在索引里完全并列，
+	 * 而 `/series/` 页面用的是带时分秒的 Date —— JUC 就有 10 章同日发布，
+	 * 只靠 `published` 排出来的章节顺序会和站点对不上。
+	 */
+	publishedAt: string;
 	headings: string[];
 	excerpt: string;
 	/** 正文块总数，客户端据此推算需要哪些正文文件。 */
@@ -122,10 +131,12 @@ async function build(): Promise<SearchArtifacts> {
 			url: getPostUrlBySlug(post.slug),
 			category: toCategories(post.data.category),
 			series: post.data.series ?? "",
+			seriesOrder: post.data.seriesOrder,
 			tags: getPostTags(post).map(
 				(tag) => tagNames.get(tagKey(tag)) ?? tag.trim(),
 			),
 			published: post.data.published.toISOString().slice(0, 10),
+			publishedAt: post.data.published.toISOString(),
 			headings: extractHeadings(body),
 			excerpt: plain.slice(0, EXCERPT_CHARS),
 			chunks: chunks.length,

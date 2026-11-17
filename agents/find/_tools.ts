@@ -12,6 +12,7 @@ import { clampArticleBody } from '../_article';
 import type { ToolDef, ToolResult } from '../_agent-loop';
 import { createLogger } from '../_shared';
 import { type NoteCorpus, type PostRecord, loadBodyChunks, loadShards } from './_corpus';
+import { matchSeriesName, readSeries, summarizeSeries } from './_series';
 
 const logger = createLogger('find');
 
@@ -34,6 +35,10 @@ const SNIPPET_CHARS = 80;
 const DEFAULT_RECENT = 6;
 const MAX_RECENT = 10;
 const MAX_CATEGORIES = 15;
+/** 系列总览最多列几个：站内 14 个系列，留一格余量 */
+const MAX_SERIES = 15;
+/** 每个系列展示几个高频标签 */
+const MAX_SERIES_TAGS = 3;
 /** 命中分下限。分数已按 idf 加权，所以这里只需拦掉「几乎全站都有」的词带来的噪声 */
 const MIN_SCORE = 1;
 
@@ -611,6 +616,78 @@ async function readNotes(args: Record<string, unknown>, ctx: unknown): Promise<T
 }
 
 /**
+ * 系列总览：站内有哪些成套的连载、各多少篇。只给名字、篇数和高频标签，
+ * 章节列表留给 read_series —— 14 个系列全展开会把上下文一次吃光。
+ */
+async function listSeries(_args: Record<string, unknown>, ctx: unknown): Promise<ToolResult> {
+	const state = ctx as SearchCtx;
+	const posts = await state.loadPosts();
+	const { totalSeries, totalPosts, series } = summarizeSeries(posts, MAX_SERIES, MAX_SERIES_TAGS);
+
+	if (!totalSeries) {
+		return {
+			summary: '站内还没有系列',
+			content: JSON.stringify({ totalSeries: 0, totalPosts: 0, series: [] }),
+		};
+	}
+
+	return {
+		summary: `${totalSeries} 个系列、${totalPosts} 篇`,
+		content: JSON.stringify({ totalSeries, totalPosts, series }),
+	};
+}
+
+/**
+ * 读一个系列的完整章节表。章节顺序与 `/series/` 页面一致（排序规则见 _series.ts），
+ * 所以可以放心说「第 3 章是某某」。
+ */
+async function readSeriesTool(args: Record<string, unknown>, ctx: unknown): Promise<ToolResult> {
+	const state = ctx as SearchCtx;
+	const wanted = typeof args.name === 'string' ? args.name.trim() : '';
+	if (!wanted) {
+		return {
+			summary: '缺少 name 参数',
+			content: JSON.stringify({
+				error: 'name 不能为空',
+				hint: '先用 list_series 看站内有哪些系列。',
+			}),
+		};
+	}
+
+	const posts = await state.loadPosts();
+	const names = [...new Set(posts.filter((post) => (post.series ?? '').trim()).map((post) => post.series.trim()))];
+	const matched = matchSeriesName(wanted, names);
+
+	if (matched.kind === 'none') {
+		return {
+			summary: `没有「${wanted}」这个系列`,
+			content: JSON.stringify({
+				error: `站内没有名字匹配「${wanted}」的系列`,
+				hint: '换更短的关键词，或先用 list_series 看全部系列。',
+			}),
+		};
+	}
+
+	if (matched.kind === 'ambiguous') {
+		return {
+			summary: `「${wanted}」命中 ${matched.candidates.length} 个系列`,
+			content: JSON.stringify({
+				query: wanted,
+				ambiguous: true,
+				candidates: matched.candidates,
+				hint: '有多个系列匹配，从 candidates 里挑一个再调用 read_series({name})，不要自己猜。',
+			}),
+		};
+	}
+
+	const detail = readSeries(posts, matched.name);
+	return {
+		summary: `${detail.name}：${detail.count} 章`,
+		content: JSON.stringify(detail),
+	};
+}
+
+/**
  * 站内检索工具。`/find` 和 `/assistant` 共用同一份定义 —— 站内只有一套检索能力，
  * 两个 agent 不该各有各的玩法，也不该出现「一边能看分类、一边不能」这种偏差。
  */
@@ -684,5 +761,36 @@ export const TOOLS: ToolDef[] = [
 			},
 		},
 		run: readNotes,
+	},
+	{
+		name: 'list_series',
+		description:
+			'列出站内所有系列（成套的连载，如 JUC、Spring、MySQL）以及各自的篇数和高频标签。' +
+			'访客问「都有哪些系列」「有没有成套的笔记」「某某专题有几篇」时用它。' +
+			'系列有先后顺序，要看某一系列的具体章节和阅读顺序，用 read_series。',
+		parameters: {
+			type: 'object',
+			properties: {},
+		},
+		run: listSeries,
+	},
+	{
+		name: 'read_series',
+		description:
+			'读一个系列的章节表：按站内 /series/ 页面的顺序列出每一章的序号、标题、链接和发布日期。' +
+			'访客问「JUC 该从哪篇读起」「这个系列有几章」「下一章是什么」时用它，' +
+			'系列名先用 list_series 查准，不要凭印象编。' +
+			'系列名匹配到多个时会把候选列出来，此时从候选里挑一个再调用，不要自己猜。',
+		parameters: {
+			type: 'object',
+			properties: {
+				name: {
+					type: 'string',
+					description: '系列名，例如「JUC」「Spring」「Python 面向对象」',
+				},
+			},
+			required: ['name'],
+		},
+		run: readSeriesTool,
 	},
 ];

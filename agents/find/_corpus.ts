@@ -11,8 +11,15 @@ export interface PostRecord {
 	slug: string;
 	url: string;
 	category: string;
-	tags: string[];
+	/** 系列名，空串表示不属于任何系列 */
+	series: string;
+	/** 章节序号，没写的按发布时间排 */
+	seriesOrder?: number;
+	/** 只到天，展示用 */
 	published: string;
+	/** 完整时间戳，系列章节排序用（同日发布靠它分先后） */
+	publishedAt?: string;
+	tags: string[];
 	headings: string[];
 	excerpt: string;
 }
