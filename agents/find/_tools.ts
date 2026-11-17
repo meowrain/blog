@@ -1,6 +1,19 @@
+import {
+	type HighlightPart,
+	type SearchDoc,
+	highlightTokens,
+	parseSearchIndex,
+	rankFullText,
+	snippetFromChunks,
+	tokenize,
+} from '../../src/utils/search-core';
+import { chunkGroupOf, collectQueryPostings, shardsForTokens } from '../../src/utils/search-index';
 import { clampArticleBody } from '../_article';
 import type { ToolDef, ToolResult } from '../_agent-loop';
-import type { PostRecord } from './_corpus';
+import { createLogger } from '../_shared';
+import { type PostRecord, loadBodyChunks, loadShards } from './_corpus';
+
+const logger = createLogger('find');
 
 /**
  * `/find` 的工具注册表 —— 胶囊助手既能站内找文章，也能当当前这篇文章的学习助手，
@@ -173,9 +186,9 @@ function snippetAround(post: PostRecord, terms: string[]): string {
 	return `${start > 0 ? '…' : ''}${haystack.slice(start, end)}${end < haystack.length ? '…' : ''}`;
 }
 
-function matchedHeadings(post: PostRecord, terms: string[]): string[] {
+function matchedHeadings(headings: readonly string[], terms: readonly string[]): string[] {
 	const out: string[] = [];
-	for (const heading of post.headings) {
+	for (const heading of headings) {
 		const lower = heading.toLowerCase();
 		if (terms.some((t) => lower.includes(t))) out.push(heading);
 		if (out.length >= MAX_MATCHED_HEADINGS) break;
@@ -183,21 +196,14 @@ function matchedHeadings(post: PostRecord, terms: string[]): string[] {
 	return out;
 }
 
-async function searchByKeyword(args: Record<string, unknown>, ctx: unknown): Promise<ToolResult> {
-	const state = ctx as SearchCtx;
-	const query = typeof args.query === 'string' ? args.query.trim() : '';
-	if (!query) {
-		return { summary: '缺少 query 参数', content: JSON.stringify({ error: 'query 不能为空' }) };
-	}
-	const limitRaw = Number(args.limit);
-	const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.trunc(limitRaw), MAX_LIMIT) : DEFAULT_LIMIT;
-
-	const posts = await state.loadPosts();
+/** 元信息检索的返回体（旧实现，保留作降级路径） */
+async function keywordFromMetadata(
+	state: SearchCtx,
+	posts: PostRecord[],
+	query: string,
+	limit: number,
+): Promise<ToolResult> {
 	const terms = splitTerms(query);
-	if (!terms.length) {
-		return { summary: '关键词全是标点', content: JSON.stringify({ count: 0, hint: '换几个实词再试' }) };
-	}
-
 	// 定方向的是最罕见的那个词（df 最小）：命中它、或同时命中两个词才算真的相关。
 	// 否则「Rust 内存安全」会把所有讲「内存」的文章都当命中捞出来。
 	const stats = termStats(posts, terms);
@@ -213,16 +219,7 @@ async function searchByKeyword(args: Record<string, unknown>, ctx: unknown): Pro
 		.sort((a, b) => b.score - a.score)
 		.slice(0, limit);
 
-	if (!ranked.length) {
-		return {
-			summary: `「${query}」没有命中`,
-			content: JSON.stringify({
-				query,
-				count: 0,
-				hint: '没有匹配到文章。换更具体的关键词（术语、英文名、具体技术名），或用 search({mode:"categories"}) 看看站内有哪些方向。',
-			}),
-		};
-	}
+	if (!ranked.length) return emptyResult(query);
 
 	const results = ranked.map(({ post, terms: matched }) => {
 		if (state.seen.has(post.slug)) {
@@ -230,7 +227,7 @@ async function searchByKeyword(args: Record<string, unknown>, ctx: unknown): Pro
 			return { title: post.title, url: post.url, seen: true };
 		}
 		state.seen.add(post.slug);
-		const headings = matchedHeadings(post, matched);
+		const headings = matchedHeadings(post.headings, matched);
 		return {
 			title: post.title,
 			url: post.url,
@@ -246,6 +243,139 @@ async function searchByKeyword(args: Record<string, unknown>, ctx: unknown): Pro
 		summary: `「${query}」命中 ${ranked.length} 篇`,
 		content: JSON.stringify({ query, count: ranked.length, posts: results }),
 	};
+}
+
+function emptyResult(query: string): ToolResult {
+	return {
+		summary: `「${query}」没有命中`,
+		content: JSON.stringify({
+			query,
+			count: 0,
+			hint: '没有匹配到文章。换更具体的关键词（术语、英文名、具体技术名），或用 search({mode:"categories"}) 看看站内有哪些方向。',
+		}),
+	};
+}
+
+/** 高亮片段 → 纯文本（前端只吃 string） */
+function plainSnippet(parts: readonly HighlightPart[]): string {
+	const text = parts
+		.map((part) => part.text)
+		.join('')
+		.replace(/\s+/g, ' ')
+		.trim();
+	if (text.length <= SNIPPET_CHARS) return text;
+	return `${text.slice(0, SNIPPET_CHARS)}…`;
+}
+
+/**
+ * 摘要三级兜底：
+ * 1. `hit.snippet` 非空 —— 元信息字段命中了，`rankFullText` 已经切好片段；
+ * 2. 纯正文命中（`snippet` 为空但 `chunks` 有值）—— 按第一个命中块去拉正文块；
+ *    `rankFullText` 刻意把这种情况留给调用方，不拉就是「搜到了但没摘要」；
+ * 3. 正文块拉不到 —— 退回首段摘要。
+ */
+async function snippetFor(hit: { snippet: HighlightPart[]; chunks?: number[] }, origin: string, query: string, doc: SearchDoc): Promise<string> {
+	if (hit.snippet.length) return plainSnippet(hit.snippet);
+
+	const chunk = hit.chunks?.[0];
+	if (chunk !== undefined) {
+		try {
+			const group = await loadBodyChunks(origin, doc.id, chunkGroupOf(chunk));
+			const text = group?.chunks[chunk - group.start];
+			if (text) return plainSnippet(snippetFromChunks([text], highlightTokens(query)));
+		} catch (e) {
+			logger.error('正文块拉取失败 doc=%d chunk=%d：%s', doc.id, chunk, (e as Error).message);
+		}
+	}
+
+	return doc.excerpt.slice(0, SNIPPET_CHARS);
+}
+
+/** `parseSearchIndex` 的产物按语料数组缓存一份：同一批语料上反复搜索不用重建 142 个 doc */
+const docsCache = new WeakMap<PostRecord[], SearchDoc[]>();
+function searchDocs(posts: PostRecord[]): SearchDoc[] {
+	let docs = docsCache.get(posts);
+	if (!docs) {
+		docs = parseSearchIndex({ posts });
+		docsCache.set(posts, docs);
+	}
+	return docs;
+}
+
+/**
+ * 全文检索：拉查询词命中的那几片倒排表，交给 `rankFullText` 打分。
+ * 返回 null 表示分片没拉全（或查询词切不出来），调用方走元信息检索。
+ */
+async function keywordFromFullText(
+	state: SearchCtx,
+	posts: PostRecord[],
+	query: string,
+	limit: number,
+): Promise<ToolResult | null> {
+	const tokens = tokenize(query);
+	if (!tokens.length) return null;
+
+	const shards = await loadShards(state.origin, shardsForTokens(tokens));
+	if (!shards) return null;
+
+	const docs = searchDocs(posts);
+	if (!docs.length) return null;
+
+	const response = rankFullText(docs, query, collectQueryPostings(tokens, shards), { limit });
+	if (!response.total) return null; // 正文里也没有：让旧实现按「最罕见词」再宽松试一次
+
+	const results = await Promise.all(
+		response.hits.map(async (hit) => {
+			const doc = hit.doc;
+			if (state.seen.has(doc.slug)) {
+				return { title: doc.title, url: doc.url, seen: true };
+			}
+			state.seen.add(doc.slug);
+			const headings = matchedHeadings(doc.headings, tokens);
+			return {
+				title: doc.title,
+				url: doc.url,
+				published: doc.published,
+				category: doc.category,
+				tags: doc.tags.slice(0, MAX_TAGS),
+				...(headings.length ? { matchedHeadings: headings } : {}),
+				snippet: await snippetFor({ snippet: hit.snippet, chunks: hit.chunks }, state.origin, query, doc),
+			};
+		}),
+	);
+
+	logger.log('全文检索 query=%s tokens=%d hits=%d/%d', query, tokens.length, response.hits.length, response.total);
+
+	return {
+		summary: `「${query}」命中 ${results.length} 篇`,
+		content: JSON.stringify({ query, count: results.length, posts: results }),
+	};
+}
+
+async function searchByKeyword(args: Record<string, unknown>, ctx: unknown): Promise<ToolResult> {
+	const state = ctx as SearchCtx;
+	const query = typeof args.query === 'string' ? args.query.trim() : '';
+	if (!query) {
+		return { summary: '缺少 query 参数', content: JSON.stringify({ error: 'query 不能为空' }) };
+	}
+	const limitRaw = Number(args.limit);
+	const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.trunc(limitRaw), MAX_LIMIT) : DEFAULT_LIMIT;
+
+	const posts = await state.loadPosts();
+	if (!splitTerms(query).length) {
+		return { summary: '关键词全是标点', content: JSON.stringify({ count: 0, hint: '换几个实词再试' }) };
+	}
+
+	// 先走全文：正文覆盖率远高于元信息（元信息只有 3%，摘要还在 220 字符处被截断）。
+	// 分片拉取失败、或正文里也没有这个词组 → 退回元信息检索。
+	try {
+		const fullText = await keywordFromFullText(state, posts, query, limit);
+		if (fullText) return fullText;
+	} catch (e) {
+		logger.error('全文检索异常，降级元信息检索：%s', (e as Error).message);
+	}
+
+	return keywordFromMetadata(state, posts, query, limit);
 }
 
 async function listCategories(_args: Record<string, unknown>, ctx: unknown): Promise<ToolResult> {
