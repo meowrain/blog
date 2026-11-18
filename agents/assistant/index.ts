@@ -1,5 +1,12 @@
 import { estimateTokens } from '../_article';
-import { runToolLoop, type HistoryMessage } from '../_agent-loop';
+import { runToolLoop, type HistoryMessage, type LoopNotice } from '../_agent-loop';
+import {
+	buildImageNote,
+	buildUserContent,
+	fetchImageAsDataUrl,
+	pickModelForTurn,
+	stripImagesFromText,
+} from '../_multimodal';
 import { loadCorpus, siteOrigin, type PostRecord } from '../find/_corpus';
 import { getAgentEnv } from '../_model';
 import { createLogger, createSSEResponse, stripDsml } from '../_shared';
@@ -25,12 +32,28 @@ const logger = createLogger('chat');
 const MODEL_CONTEXT_TOKENS = 64_000;
 const MAX_HISTORY_TOKENS = 8_000;
 const MAX_USER_TURN_CHARS = 2_000;
+/** 单条消息最多带几张图（前端也限 3 张，这里是兜底） */
+const MAX_IMAGES_PER_TURN = 3;
+
+/** 进来的一条历史：文字 + 可选的图片直链（前端 Msg.images） */
+interface ChatTurn {
+	role: 'user' | 'assistant';
+	content: string;
+	images?: string[];
+}
 
 interface ChatRequestBody {
-	messages?: HistoryMessage[];
+	messages?: ChatTurn[];
 	/** 本轮问题，只用于日志 */
 	query?: string;
 }
+
+/**
+ * 进程内记住「这个模型到底能不能读图」。
+ * 乐观发送一次、被上游否掉之后，同一实例后续请求直接按纯文本发，不再白跑一趟。
+ * （EdgeOne 的实例会回收，所以这只是优化，不是依赖。）
+ */
+const visionState: { visionOk?: boolean } = {};
 
 function buildSystemPrompt(origin: string, webEnabled: boolean) {
 	const lines = [
@@ -51,6 +74,7 @@ function buildSystemPrompt(origin: string, webEnabled: boolean) {
 	} else {
 		lines.push(
 			'⚠️ 本次运行没有联网能力（服务端没配 WSA_SECRET_ID / WSA_SECRET_KEY）：web_search 会直接失败，不要调用它。',
+			'遇到时效性、事实性的问题时，说明自己查不到实时信息，别猜，也别编来源。',
 			'站内找文章仍然可以用 search。',
 			'',
 		);
@@ -88,13 +112,25 @@ export async function onRequest(context: any) {
 	}
 
 	const body = (request?.body ?? {}) as ChatRequestBody;
-	const clean = (Array.isArray(body.messages) ? body.messages : []).filter(
-		(m) => (m?.role === 'user' || m?.role === 'assistant') && typeof m?.content === 'string' && m.content.trim(),
-	);
-	const latest = [...clean].reverse().find((m) => m.role === 'user');
-	if (!latest) {
+	const clean: ChatTurn[] = (Array.isArray(body.messages) ? body.messages : [])
+		.filter(
+			(m) =>
+				(m?.role === 'user' || m?.role === 'assistant') &&
+				typeof m?.content === 'string' &&
+				(m.content.trim() || (Array.isArray(m.images) && m.images.length)),
+		)
+		.map((m) => ({
+			role: m.role,
+			content: m.content,
+			images: Array.isArray(m.images)
+				? m.images.filter((u): u is string => typeof u === 'string' && /^https?:\/\//i.test(u.trim()))
+				: [],
+		}));
+	const latestTurn = [...clean].reverse().find((m) => m.role === 'user');
+	if (!latestTurn) {
 		return jsonResponse(400, { error: "'messages' is required" });
 	}
+	const latest: ChatTurn = latestTurn;
 	if (!conversationId) {
 		return jsonResponse(400, { error: "'makers-conversation-id' header is required" });
 	}
@@ -106,34 +142,47 @@ export async function onRequest(context: any) {
 	const wsaSecretKey = typeof rawEnv?.WSA_SECRET_KEY === 'string' ? rawEnv.WSA_SECRET_KEY.trim() : '';
 	const webEnabled = Boolean(wsaSecretId && wsaSecretKey);
 
-	// 历史按预算从最新往回保留，单轮超长的输入也截断
-	const capped = clean.map((m) => ({
-		role: m.role,
-		content: m.content.length > MAX_USER_TURN_CHARS ? m.content.slice(0, MAX_USER_TURN_CHARS) : m.content,
-	}));
+	// 只有最新一轮的图会被真的送进模型；更早的轮次换成占位文本。
+	// 不这么做的话每轮都重新抓图计费，3 张 base64 ≈ 3~5k tokens，多聊几轮就撑爆 MAX_HISTORY_TOKENS。
+	const latestIndex = clean.lastIndexOf(latest);
+	const latestImages = (latest.images ?? []).slice(0, MAX_IMAGES_PER_TURN);
 	const system = buildSystemPrompt(origin, webEnabled);
-	const kept: HistoryMessage[] = [];
+
+	// 历史按预算从最新往回保留，单轮超长的输入也截断。
+	// 图片 URL 不计入字符预算（图按张算，按字符算会低估），只在最后拼装时才带上。
+	const capped = clean.map((m, i) => {
+		const text = m.images?.length && i !== latestIndex ? stripImagesFromText(m.content) : m.content;
+		return {
+			role: m.role,
+			content: text.length > MAX_USER_TURN_CHARS ? text.slice(0, MAX_USER_TURN_CHARS) : text,
+			images: i === latestIndex ? latestImages : [],
+		};
+	});
+	const keptBase: ChatTurn[] = [];
 	let used = estimateTokens(system);
 	for (let i = capped.length - 1; i >= 0; i--) {
 		const turn = capped[i];
 		const cost = estimateTokens(turn.content) + 8;
-		if (kept.length && used + cost > MODEL_CONTEXT_TOKENS - MAX_HISTORY_TOKENS) break;
+		if (keptBase.length && used + cost > MODEL_CONTEXT_TOKENS - MAX_HISTORY_TOKENS) break;
 		used += cost;
-		kept.unshift(turn);
+		keptBase.unshift(turn);
 	}
 
+	const vision = pickModelForTurn(rawEnv, visionState);
+	const hasImages = keptBase.some((m) => m.images?.length);
+	// 能不能读图：完全没有图片输入时谈不上「不能」，不发提示
+	const visionOk = hasImages ? vision.visionOk : true;
+
 	logger.log(
-		'POST /assistant conv=%s web=%s turns=%d(kept %d) latest=%s',
+		'POST /assistant conv=%s web=%s turns=%d(kept %d) images=%d vision=%s latest=%s',
 		conversationId,
 		webEnabled ? 'on' : 'off',
 		clean.length,
-		kept.length,
+		keptBase.length,
+		latestImages.length,
+		visionState.visionOk === undefined ? 'unknown' : String(visionState.visionOk),
 		String(body.query ?? latest.content).slice(0, 80),
 	);
-
-	await store
-		?.appendMessage?.({ conversationId, role: 'user', content: latest.content })
-		.catch((e: unknown) => logger.error('appendMessage(user) failed', (e as Error).message));
 
 	const agentEnv = getAgentEnv(rawEnv);
 	const collector = { text: '' };
@@ -149,16 +198,84 @@ export async function onRequest(context: any) {
 			signal,
 		};
 
+		const notices: LoopNotice[] = [];
+		if (!webEnabled) {
+			notices.push({
+				level: 'info',
+				code: 'web_disabled',
+				message: '本次未启用联网，只能靠模型已有知识和站内检索回答（时效性内容可能不准）。',
+			});
+		}
+
+		// 图床图片抓回来转 data URL：不把外链丢给模型，抓失败就记一条说明、跳过这张
+		const dataUrls: string[] = [];
+		const failed: string[] = [];
+		if (latestImages.length) {
+			const fetched = await Promise.all(latestImages.map((url) => fetchImageAsDataUrl(url, { signal })));
+			for (let i = 0; i < fetched.length; i++) {
+				const dataUrl = fetched[i];
+				if (dataUrl) dataUrls.push(dataUrl);
+				else failed.push(latestImages[i]);
+			}
+			if (failed.length) {
+				notices.push({
+					level: 'warn',
+					code: 'image_failed',
+					message: `${failed.length} 张图片没能取回（可能超时或超出 8MB），这次只能按文字回答。`,
+				});
+			}
+			if (!visionOk && dataUrls.length > 0) {
+				notices.push({
+					level: 'warn',
+					code: 'vision_disabled',
+					message: '当前模型读不了图，会把图片链接发过去，用文字继续聊。',
+				});
+			}
+		}
+
+		// 把抓到的图挂到最后一轮用户消息上；无图时 buildUserContent 原样返回字符串
+		const lastUser = [...keptBase].reverse().find((m) => m.role === 'user');
+		const history: HistoryMessage[] = keptBase.map((m) => {
+			if (m !== lastUser) return { role: m.role, content: m.content };
+			if (!dataUrls.length) {
+				// 一张图都没取到：把失败链接附在文字后面，模型至少能顺着链接说两句
+				const note = failed.length ? `\n\n${buildImageNote(failed)}` : '';
+				return { role: m.role, content: `${m.content}${note}`.trim() };
+			}
+			const text = m.content.trim() ? m.content : '请描述这张图片。';
+			const extra = failed.length ? `\n\n${buildImageNote(failed)}` : '';
+			return { role: m.role, content: buildUserContent({ text: `${text}${extra}`, images: dataUrls, visionOk }) };
+		});
+
+		// 用户消息先落库：图上已经单独显示，正文末尾追加 Markdown 图片行 + metadata，
+		// 这样别的标签页恢复历史时还能看到图（见 chat-core 的 parseHistoryMessages）
+		const userContent = latestImages.length
+			? [latest.content.trim(), ...latestImages.map((u) => `![图片](${u})`)].filter(Boolean).join('\n')
+			: latest.content;
+		await store
+			?.appendMessage?.({
+				conversationId,
+				role: 'user',
+				content: userContent,
+				...(latestImages.length ? { metadata: { images: latestImages } } : {}),
+			})
+			.catch((e: unknown) => logger.error('appendMessage(user) failed', (e as Error).message));
+
 		try {
 			yield* runToolLoop({
 				env: agentEnv,
 				system,
-				history: kept,
+				history,
 				tools: TOOLS,
 				ctx,
 				signal,
 				collector,
 				logger,
+				model: dataUrls.length && visionOk ? vision.model : undefined,
+				notices,
+				onVisionUnsupported: () => {
+					visionState.visionOk = false;
+				},
 			});
 		} finally {
 			const finalText = stripDsml(collector.text).trim();

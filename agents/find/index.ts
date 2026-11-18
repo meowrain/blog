@@ -121,6 +121,26 @@ function buildSystemPrompt(origin: string, article: ArticleCtx | null) {
 	].join('\n');
 }
 
+/**
+ * 历史 content 的类型被放宽成 `string | 部分数组`（带图轮次，见 _agent-loop 的 HistoryMessage），
+ * /find 只吃纯文本，所以先压回字符串再按 MAX_USER_TURN_CHARS 截断。纯文本路径行为不变。
+ */
+function capTurn(content: unknown): string {
+	let text = '';
+	if (typeof content === 'string') {
+		text = content;
+	} else if (Array.isArray(content)) {
+		text = content
+			.map((part) => {
+				const p = part as { type?: string; text?: string };
+				return p?.type === 'text' && typeof p.text === 'string' ? p.text : '';
+			})
+			.filter(Boolean)
+			.join('\n');
+	}
+	return text.length > MAX_USER_TURN_CHARS ? text.slice(0, MAX_USER_TURN_CHARS) : text;
+}
+
 function jsonResponse(status: number, payload: Record<string, unknown>) {
 	return new Response(JSON.stringify(payload), {
 		status,
@@ -150,7 +170,7 @@ export async function onRequest(context: any) {
 	// 历史按预算从最新往回保留，单轮超长的输入也截断
 	const capped = clean.map((m) => ({
 		role: m.role,
-		content: m.content.length > MAX_USER_TURN_CHARS ? m.content.slice(0, MAX_USER_TURN_CHARS) : m.content,
+		content: capTurn(m.content),
 	}));
 	const system = buildSystemPrompt(origin, article);
 	const kept: HistoryMessage[] = [];

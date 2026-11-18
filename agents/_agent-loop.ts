@@ -30,9 +30,23 @@ export interface ToolDef {
 	run: (args: Record<string, unknown>, ctx: unknown) => Promise<ToolResult> | ToolResult;
 }
 
+/**
+ * 回灌给模型的一条历史。
+ *
+ * content 默认还是字符串 —— 纯文本对话的行为字节级不变。只有「本轮带图且模型能读图」时，
+ * 才会是一条 content array（见 _multimodal.ts 的 buildUserContent），这里刻意不 import
+ * 那个模块的类型：本文件顶层不新增任何 import，否则整包可能加载期就崩。
+ */
 export interface HistoryMessage {
 	role: 'user' | 'assistant';
-	content: string;
+	content: string | Record<string, unknown>[];
+}
+
+/** 运行时提示：发在正文之前，前端渲染成消息区顶部的一条细提示 */
+export interface LoopNotice {
+	level: 'info' | 'warn';
+	code: 'web_disabled' | 'vision_disabled' | 'image_failed';
+	message: string;
 }
 
 interface ToolCallAcc {
@@ -71,6 +85,12 @@ export interface ToolLoopOptions {
 	maxToolContextChars?: number;
 	/** 逐字追加所有外发文字，路由用它写会话历史（见 find/index.ts 的 collector） */
 	collector?: { text: string };
+	/** 本轮覆盖模型名（比如图片轮换到视觉模型）；不传就走 env 里的默认模型 */
+	model?: string;
+	/** 首轮模型调用前发给前端的运行态提示 */
+	notices?: LoopNotice[];
+	/** 视觉能力被上游否掉时回调一次（路由用它把 visionOk=false 记进进程内） */
+	onVisionUnsupported?: () => void;
 	logger?: { log(...args: unknown[]): void; error(...args: unknown[]): void };
 }
 
@@ -141,8 +161,44 @@ function applyToolBudget(
 	}
 }
 
+/**
+ * 上游 400 是不是「带了图我不认识」。跟 _multimodal.ts 的 isVisionRejection 同一套判定，
+ * 但这里不能再 import（顶层 import 限制），所以内联一份最小实现。
+ */
+function looksLikeVisionRejection(status: number, detail: string): boolean {
+	if (status !== 400 && status !== 422) return false;
+	const text = detail.toLowerCase();
+	if (!text) return false;
+	if (/image_url|multimodal|multi-modal|vision|image input/.test(text)) return true;
+	return /content/.test(text) && /(image|array|string|invalid|unsupported)/.test(text);
+}
+
+/** 把一条 content array 压回纯文本（降级重试用）：图片换成链接，其余文字照留 */
+function degradeMessages(messages: Record<string, unknown>[]): void {
+	for (const m of messages) {
+		if (typeof m.content === 'string') continue;
+		const parts = Array.isArray(m.content) ? m.content : [];
+		const texts: string[] = [];
+		const links: string[] = [];
+		for (const part of parts) {
+			const p = part as { type?: string; text?: string; image_url?: { url?: string } };
+			if (p?.type === 'text' && typeof p.text === 'string') texts.push(p.text);
+			else if (p?.type === 'image_url' && typeof p.image_url?.url === 'string') links.push(p.image_url.url);
+		}
+		if (links.length) {
+			texts.push('（当前模型不能读图，以下图片没能一起发出去）', ...links.map((u) => `- ${u}`));
+		}
+		m.content = texts.join('\n\n').trim();
+	}
+}
+
+function hasArrayContent(messages: Record<string, unknown>[]): boolean {
+	return messages.some((m) => Array.isArray(m.content));
+}
+
 export async function* runToolLoop(opts: ToolLoopOptions): AsyncGenerator<string> {
 	const { env, system, history, tools, ctx, signal } = opts;
+	const turnModel = opts.model?.trim() || modelName(env);
 	const maxIterations = Math.max(2, opts.maxIterations ?? 4);
 	const logger = opts.logger ?? { log() {}, error() {} };
 	const collector = opts.collector;
@@ -157,6 +213,10 @@ export async function* runToolLoop(opts: ToolLoopOptions): AsyncGenerator<string
 	let rounds = 0;
 	let toolCalls = 0;
 
+	for (const notice of opts.notices ?? []) {
+		yield sseEvent({ type: 'notice', level: notice.level, code: notice.code, message: notice.message });
+	}
+
 	for (let round = 0; round < maxIterations; round++) {
 		// 最后一轮不给工具，保证用户一定拿到一句最终回答
 		const allowTools = round < maxIterations - 1;
@@ -168,7 +228,7 @@ export async function* runToolLoop(opts: ToolLoopOptions): AsyncGenerator<string
 
 		try {
 			const body: Record<string, unknown> = {
-				model: modelName(env),
+				model: turnModel,
 				messages,
 				temperature: 0,
 				stream: true,
@@ -179,7 +239,7 @@ export async function* runToolLoop(opts: ToolLoopOptions): AsyncGenerator<string
 				body.tool_choice = 'auto';
 			}
 
-			const resp = await fetch(chatCompletionsUrl(env), {
+			let resp = await fetch(chatCompletionsUrl(env), {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -188,6 +248,32 @@ export async function* runToolLoop(opts: ToolLoopOptions): AsyncGenerator<string
 				body: JSON.stringify(body),
 				signal,
 			});
+
+			// 视觉降级：乐观发出去，上游说「这条消息里的图我不认识」就压回纯文本重试一次。
+			// 降级后 messages 里不再有 content array，后面轮次不会再进这个分支。
+			if (!resp.ok && hasArrayContent(messages)) {
+				const detail = await resp.text().catch(() => '');
+				if (looksLikeVisionRejection(resp.status, detail)) {
+					logger.log('vision rejected (%d), retrying as plain text', resp.status);
+					degradeMessages(messages);
+					if (opts.onVisionUnsupported) opts.onVisionUnsupported();
+					yield sseEvent({
+						type: 'notice',
+						level: 'warn',
+						code: 'vision_disabled',
+						message: '当前模型读不了图，这次先把图片链接发过去，用文字继续聊。',
+					});
+					resp = await fetch(chatCompletionsUrl(env), {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							Authorization: `Bearer ${env.AI_GATEWAY_API_KEY}`,
+						},
+						body: JSON.stringify({ ...body, messages }),
+						signal,
+					});
+				}
+			}
 			if (!resp.ok || !resp.body) {
 				const detail = await resp.text().catch(() => '');
 				throw new Error(`AI Gateway ${resp.status}: ${detail.slice(0, 300)}`);

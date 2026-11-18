@@ -254,6 +254,21 @@ GET /api/og/<slug>?type=playlist|bangumi|monitor|year
 - 布局按高度预算逐级降级：指标超过一行就去掉柱条、收副标题，保证内容不会顶穿底栏（satori 不裁切溢出）。
 - 参数拼装收在 `src/utils/og-card.ts`（纯函数，有单测），不要在页面里手拼查询串。
 
+## 站内 AI 助手（`/chat/`）
+
+`/chat/` 是一个通用助手，接口在 `agents/assistant/`（EdgeOne Makers 的 agent 路由，挂在 `POST /assistant`）。页面占着 `/chat/`，接口不能同名，否则静态文件会把 POST 整个接走。
+
+能力与边界：
+
+- **多会话**：会话列表只存在浏览器 `localStorage`（`eo_chat_conversations`，最多 30 条，按更新时间倒序），正文才从 `/history` 拉。**不要**改成服务端列表：`store.listConversations` 是账号级的、没有 userId 维度，取出来等于把这个 EdgeOne 项目下所有访客的会话标题一起列出去。删除走 `POST /history { action: 'delete' }`，服务端真删。
+- **图片输入**：粘贴 / 拖拽 / 文件选择三种入口，收 png / jpeg / webp / gif，单张 ≤5MB、单条 ≤3 张；浏览器先压到最长边 1024、JPEG q0.85（GIF 不重编码，否则只剩第一帧），再 `POST /api/chat-image/upload` 由云函数代传图床。**图床 token 只在服务端**（`cloud-functions/api/chat-image/[[default]].js` 读 `IMAGE_BED_TOKEN`）；后台 `backend/src/admin/public/app.js` 里的硬编码直传只适用于管理员页面，聊天页任何访客都能打开，不能照抄。
+- **消息里只留图片 URL**，agent 收到后自己抓回来转 base64 内联（15s 超时、≤8MB）。只有**最后一轮**带图，更早的轮次换成 `[历史消息中的图片已省略]` —— 否则每轮重新抓图计费，3 张 base64 ≈ 3~5k tokens，多聊几轮就撑爆 `MAX_HISTORY_TOKENS`。
+- **视觉能力未知也不要紧**：默认模型 `@makers/deepseek-v4-flash` 文档没声明多模态。代码乐观发送 → 上游 400 且报错里提到 image / content / multimodal 时，压回纯文本重试一次并发一条 `notice`，同时在这个实例里记住「不支持」。想跳过试探就配 `AI_GATEWAY_VISION_MODEL`（图片轮换到视觉模型）或 `AI_GATEWAY_VISION=0`（直接按纯文本走）。`node scripts/probe-vision.mjs` 可以手动探一次（不进 CI，会真的打上游）。
+- **联网**：`web_search` 走腾讯云元宝搜索（TC3 签名，`WSA_SECRET_ID` / `WSA_SECRET_KEY`）。没配这对密钥时 system prompt 会禁用它，首轮前也会发一条 `notice`：「本次未启用联网」。
+- SSE 除 `ai_response` / `tool_call` / `tool_result` / `usage` / `error_message` 外，新增 `notice`（`level` + `code` + `message`），前端渲染成消息区顶部可关闭的细条；未知 type 旧客户端会静默忽略。
+
+环境变量见 `.env.example` 的 `AI_GATEWAY_*` / `WSA_SECRET_*` / `IMAGE_BED_*` 段。
+
 ## 管理后台
 
 管理后台位于 `backend/`，通过文件 API 直接读写博客文章，不需要数据库。
