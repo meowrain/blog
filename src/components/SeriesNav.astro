@@ -1,7 +1,7 @@
 ---
+import { type SeriesInfo, seriesPath } from "@utils/series-utils";
+import { url, getPostUrlBySlug } from "@utils/url-utils";
 import { Icon } from "astro-icon/components";
-import type { SeriesInfo } from "@utils/series-utils";
-import { getPostUrlBySlug, url } from "@utils/url-utils";
 
 interface Props {
 	series: SeriesInfo;
@@ -10,7 +10,8 @@ interface Props {
 const { series } = Astro.props;
 
 const percent = Math.round((series.current.index / series.total) * 100);
-const overviewUrl = `${url("/series/")}#${series.slug}`;
+// 系列总览按钮进详情页；旧的 /series/#<slug> 链接还能用（总览卡片保留了同名锚点）
+const overviewUrl = url(seriesPath(series.slug));
 ---
 
 <div class="card-base onload-animation mb-5 px-5 py-4 flex flex-col gap-3">

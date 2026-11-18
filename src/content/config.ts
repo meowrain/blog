@@ -20,6 +20,9 @@ const postsCollection = defineCollection({
 		series: z.string().optional().default(""),
 		// 章节序号，留空按发布时间排序；合集这类固定阅读顺序的系列用它指定。
 		seriesOrder: z.number().optional(),
+		// 系列计划总章数，可选。填了详情页才展示「已发布 N / 计划 M」的真进度；
+		// 不填就只说「已发布 N 章」，不暗示存在还没写的章节。
+		seriesTotal: z.number().int().positive().optional(),
 
 		/* For internal use */
 		prevTitle: z.string().default(""),

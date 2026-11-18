@@ -1,12 +1,16 @@
 ---
+import ImageWrapper from "@components/misc/ImageWrapper.astro";
 import MainGridLayout from "@layouts/MainGridLayout.astro";
-import { getAllSeries } from "@utils/series-utils";
 import { formatDateToYYYYMMDD } from "@utils/date-utils";
-import { getPostUrlBySlug } from "@utils/url-utils";
+import { getSeriesDetails, seriesPath } from "@utils/series-utils";
+import { url, getDir } from "@utils/url-utils";
 import { Icon } from "astro-icon/components";
 
-const seriesList = await getAllSeries();
-const chapterCount = seriesList.reduce((total, item) => total + item.chapters.length, 0);
+const seriesList = await getSeriesDetails();
+const chapterCount = seriesList.reduce(
+	(total, item) => total + item.chapters.length,
+	0,
+);
 ---
 
 <MainGridLayout title="系列" description="同一主题的文章按章节串成系列，可以顺着上一章、下一章读下去">
@@ -23,32 +27,56 @@ const chapterCount = seriesList.reduce((total, item) => total + item.chapters.le
             </div>
         </div>
 
-        {seriesList.map((item) => (
-            <section id={item.slug} class="card-base scroll-mt-24 px-8 py-6">
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                    <div class="font-bold text-90 text-lg">{item.name}</div>
-                    <div class="text-xs text-50">
-                        共 {item.chapters.length} 章 · 最近更新 {formatDateToYYYYMMDD(item.latestPublished)}
-                    </div>
-                </div>
-                <ol class="mt-4 flex flex-col gap-1">
-                    {item.chapters.map((chapter) => (
-                        <li>
-                            <a href={getPostUrlBySlug(chapter.slug)}
-                               class="group flex items-center gap-3 rounded-lg px-3 py-2 transition hover:bg-[var(--btn-plain-bg-hover)]">
-                                <span class="w-6 shrink-0 text-right text-xs text-30 tabular-nums group-hover:text-[var(--primary)]">
-                                    {chapter.index}
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {seriesList.map((item) => (
+                // 保留 id={item.slug}：旧的 /series/#<slug> 链接还能直接定位到这张卡片
+                <section id={item.slug} class="card-base scroll-mt-24 overflow-hidden flex flex-col">
+                    <a href={url(seriesPath(item.slug))} aria-label={`进入 ${item.name} 系列`} class="group block relative h-32">
+                        {item.cover ? (
+                            <ImageWrapper
+                                src={item.cover}
+                                basePath={item.coverEntryId ? getDir(`content/posts/${item.coverEntryId}`) : ""}
+                                alt={`${item.name} 系列封面`}
+                                class="h-full w-full"
+                            />
+                        ) : (
+                            <div class="flex h-full w-full items-center justify-center bg-[var(--btn-regular-bg)]">
+                                <span class="text-4xl font-bold text-[var(--primary)] opacity-40">
+                                    {Array.from(item.name)[0] ?? "系"}
                                 </span>
-                                <span class="truncate text-sm text-75 group-hover:text-[var(--primary)]">
-                                    {chapter.title}
-                                </span>
-                                <span class="ml-auto shrink-0 text-xs text-25">{formatDateToYYYYMMDD(chapter.published)}</span>
+                            </div>
+                        )}
+                        <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-[var(--card-bg)] via-[var(--card-bg)]/20 to-transparent"></div>
+                    </a>
+
+                    <div class="flex flex-1 flex-col gap-3 px-6 pb-5 pt-1">
+                        <div class="min-w-0">
+                            <a href={url(seriesPath(item.slug))}
+                               class="block truncate font-bold text-lg text-90 transition hover:text-[var(--primary)]">
+                                {item.name}
                             </a>
-                        </li>
-                    ))}
-                </ol>
-            </section>
-        ))}
+                            <div class="mt-1 text-xs text-50">
+                                共 {item.publishedCount} 章 · 最近更新 {formatDateToYYYYMMDD(item.latestPublished)}
+                            </div>
+                        </div>
+
+                        {item.description && (
+                            <p class="line-clamp-2 text-sm text-75">{item.description}</p>
+                        )}
+
+                        <div class="mt-auto flex items-center justify-between gap-3">
+                            <span class="text-xs text-30">
+                                {item.totalMinutes > 0 ? `约 ${item.totalMinutes} 分钟读完` : `已发布 ${item.publishedCount} 章`}
+                            </span>
+                            <a href={url(seriesPath(item.slug))} class="btn-plain h-8 shrink-0 rounded-lg px-2.5 text-xs gap-1">
+                                进入系列
+                                <Icon name="material-symbols:chevron-right-rounded" class="text-base"></Icon>
+                            </a>
+                        </div>
+                    </div>
+                </section>
+            ))}
+        </div>
 
         {seriesList.length === 0 && (
             <div class="card-base px-8 py-6 text-sm text-50">
