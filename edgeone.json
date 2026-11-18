@@ -57,14 +57,12 @@
     }
   ],
   "cloudFunctions": {
-    "nodejs": {
-      "includeFiles": []
-    }
+    "includeFiles": []
   },
   "agents": {
     "framework": "deepagents"
   },
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "npm run build",
+  "buildCommand": "pnpm build",
   "outputDirectory": "dist"
 }
