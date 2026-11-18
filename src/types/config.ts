@@ -177,6 +177,22 @@ export type WikiLinkConfig = {
 	brokenLinkWarn: boolean;
 };
 
+/** 链接卡片：正文里独占一段的外链自动渲染成站点卡片。 */
+export type LinkCardConfig = {
+	/** 总开关，关掉后所有链接保持原样 */
+	enable: boolean;
+	/** 抓取超时（毫秒），超时即降级，不会让 build 失败 */
+	timeout: number;
+	/** 元数据落盘缓存目录（相对项目根目录，已 gitignore） */
+	cacheDir: string;
+	/** 缓存有效期（毫秒），过期后重新抓取 */
+	cacheMaxAge: number;
+	/** 额外跳过的域名（除了与 site 同域的链接） */
+	skipDomains: string[];
+	/** 抓取失败时打印 warn，便于排查但仍不影响构建 */
+	logWarnings: boolean;
+};
+
 // Category types
 export type CategoryPath = string[];
 export type CategoryPathString = string;

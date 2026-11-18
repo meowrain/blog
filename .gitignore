@@ -46,3 +46,6 @@ backend/backups/
 
 # claude code local worktrees
 .claude/worktrees/
+
+# 链接卡片 OG 抓取缓存
+.link-card-cache/

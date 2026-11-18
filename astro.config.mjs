@@ -12,10 +12,11 @@ import remarkDirective from "remark-directive"; /* Handle directives */
 import remarkGithubAdmonitionsToDirectives from "remark-github-admonitions-to-directives";
 import remarkMath from "remark-math";
 import remarkSectionize from "remark-sectionize";
-import { imageFallbackConfig, siteConfig, wikiLinkConfig } from "./src/config.ts";
+import { imageFallbackConfig, linkCardConfig, siteConfig, wikiLinkConfig } from "./src/config.ts";
 import { AdmonitionComponent } from "./src/plugins/rehype-component-admonition.mjs";
 import { GithubCardComponent } from "./src/plugins/rehype-component-github-card.mjs";
 import rehypeImageFallback from "./src/plugins/rehype-image-fallback.mjs";
+import rehypeLinkCard from "./src/plugins/rehype-link-card.mjs";
 import { parseDirectiveNode } from "./src/plugins/remark-directive-rehype.js";
 import { remarkExcerpt } from "./src/plugins/remark-excerpt.js";
 import { remarkReadingTime } from "./src/plugins/remark-reading-time.mjs";
@@ -178,6 +179,20 @@ export default defineConfig({
             caution: (x, y) => AdmonitionComponent(x, y, "caution"),
             warning: (x, y) => AdmonitionComponent(x, y, "warning"),
           },
+        },
+      ],
+      // 独占段落的外链 → 网站卡片。要放在 rehypeExternalLinks 之前，
+      // 这样拿到的是 markdown 原始 <a>，判定更干净（卡片自己加 target/rel）。
+      [
+        rehypeLinkCard,
+        {
+          enable: linkCardConfig.enable,
+          site: "https://blog.meowrain.cn",
+          timeout: linkCardConfig.timeout,
+          cacheDir: linkCardConfig.cacheDir,
+          cacheMaxAge: linkCardConfig.cacheMaxAge,
+          skipDomains: linkCardConfig.skipDomains,
+          log: linkCardConfig.logWarnings ? console.warn : () => {},
         },
       ],
       [

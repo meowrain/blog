@@ -3,6 +3,7 @@ import type {
   GitHubEditConfig,
   ImageFallbackConfig,
   LicenseConfig,
+  LinkCardConfig,
   MusicConfig,
   NavBarConfig,
   ProfileConfig,
@@ -241,6 +242,18 @@ export const wikiLinkConfig: WikiLinkConfig = {
   outlinks: false, // 本期先不做「本文引用了」，留开关
   maxBacklinks: 20,
   brokenLinkWarn: true,
+};
+
+// 链接卡片：正文里「独占一个段落」的外链自动渲染成站点卡片。
+// 构建期抓取目标页面的 og/meta，落盘缓存到 cacheDir；抓取失败自动降级成域名简版卡片。
+// 单条链接想保持原样，在 markdown 里写 [文字](url){linkcard=false}。
+export const linkCardConfig: LinkCardConfig = {
+  enable: true,
+  timeout: 5000,
+  cacheDir: ".link-card-cache",
+  cacheMaxAge: 7 * 24 * 60 * 60 * 1000,
+  skipDomains: [],
+  logWarnings: true,
 };
 
 export const imageFallbackConfig: ImageFallbackConfig = {

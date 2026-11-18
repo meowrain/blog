@@ -84,6 +84,7 @@ Custom remark/rehype plugins for Markdown processing:
 - `rehype-component-admonition.mjs` - GitHub-style callouts (note, tip, warning, etc.)
 - `rehype-component-github-card.mjs` - GitHub repo embedding
 - `rehype-image-fallback.mjs` - Image fallback on failure
+- `rehype-link-card.mjs` - Turns a paragraph holding a single external link into a site card (see below)
 - `expressive-code/custom-copy-button.ts` - Custom code block copy button
 
 ## Configuration Files
@@ -172,6 +173,38 @@ published: 2026-01-01
 - **Math**: KaTeX support via `$...$` (inline) and `$$...$$` (block)
 - **Custom directives**: `:::github[repo](url)` for repo cards
 - **Auto TOC**: Generated from headings (configurable depth in `siteConfig.toc.depth`)
+
+### Link cards (独占段落的外链 → 站点卡片)
+
+Written by `src/plugins/rehype-link-card.mjs`, configured by `linkCardConfig` in
+`src/config.ts`, styled in `src/styles/markdown-extend.styl` (`.link-card*`).
+
+Turns into a card only when a paragraph `<p>` contains exactly one `http(s)` link
+and nothing else (no other text, image or inline code). Both bare URLs and
+`[title](url)` work; the link text is used as the card title fallback.
+
+Left untouched: paragraphs with extra text / several links, links inside lists,
+blockquotes, tables, headings and admonitions, same-site links (`site` plus its
+subdomains), non-`http(s)` protocols, and anything inside code blocks.
+
+```md
+https://scoop.sh
+
+[Astro 官方文档](https://docs.astro.build)
+
+<!-- 单条关闭卡片 -->
+[Astro 官方文档](https://docs.astro.build){linkcard=false}
+```
+
+Metadata (`og:title` / `og:description` / `og:image` / favicon) is fetched **at
+build time** — never in the browser, so no CORS problems. Each URL gets 5s
+(one retry within that budget), 4 fetched in parallel, and results are cached on disk in
+`.link-card-cache/` (gitignored, 7 days). Any timeout, non-200 status or missing
+meta degrades to a compact card showing the domain + URL; **a failed fetch never
+fails the build**, it only prints `warn: [link-card] ...`.
+
+Global switch: `linkCardConfig.enable` in `src/config.ts` (set `false` to leave
+every link alone).
 
 ## Deployment
 
