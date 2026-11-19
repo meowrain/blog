@@ -228,7 +228,7 @@ pnpm gallery:index --dir ../img-bed/public/api/i
 
 ## 音乐页
 
-`/music/` 用来直接播放网易云歌单，歌单、曲目和歌词都来自网易云音乐。浏览器不直接请求上游：上游不返回 CORS 头，还会按 Referer / Cookie 风控，所以统一走同源代理：
+`/music/` 用来直接播放网易云歌单，歌单、曲目和歌词都来自网易云音乐（聊天页的 AI 电台另外还接入了 QQ 音乐，见下文）。浏览器不直接请求上游：上游不返回 CORS 头，还会按 Referer / Cookie 风控，所以统一走同源代理：
 
 - 线上：`cloud-functions/api/music/[[default]].js`（EdgeOne Makers 云函数，部署时按文件路径自动生成 `^/api/music/(.*)$` 路由）
 - 本地：`src/plugins/dev-music-api.mjs` 在 `astro dev` 里复用同一个 `onRequest`，两边行为一致
@@ -236,6 +236,30 @@ pnpm gallery:index --dir ../img-bed/public/api/i
 代理有五个动作：`/api/music/playlist?id=`、`/api/music/song?id=`、`/api/music/lyric?id=`、`/api/music/search?q=` 和 `/api/music/artist?id=|q=`。播放地址带时效（约 20 分钟），因此只在前端真要播放时才去取。歌单接口会顺手探一遍可播性，把无版权的歌滤掉；歌单详情一次只给 1000 首，更大的歌单会再按 `trackIds` 补齐（上限 2000 首）。
 
 `search` / `artist` 是给聊天页电台用的，返回的每一首都**已经探过可播放性**（搜索结果里同名翻唱、无版权的一大堆）。`search&lyric=1` 会顺带取每首开头的两三句歌词，给模型写串词用。
+
+### 第二个曲库：QQ 音乐
+
+`search` / `artist` / `song` / `lyric` 都额外认一个 `source` 参数：
+
+| source | 行为 |
+| --- | --- |
+| 不传 / `netease` | 只问网易云（站内播放器、老调用方都是这个口径） |
+| `qq` | 只问 QQ 音乐，不登录、不读 Cookie |
+| `all` | 两个源都问，合并去重（电台默认） |
+
+为什么要有第二个源：两家**未登录能听的免费曲库不重合**，实测
+
+```text
+网易云一首能放的都没有：毛不易、梁博、郭顶
+QQ 整页要会员（一首拿不到）：周杰伦、许嵩、陈奕迅、林俊杰
+```
+
+只问一家，访客点这些歌手时助手永远「搜不到」。QQ 那边一页 24 首里约有两成能放，免费曲目和网易云是同一个量级，能补上另一边的缺口。
+
+- 上游封装在 `cloud-functions/_qqmusic.js`：搜索走 `client_search_cp`（`new_json=1` 才带 `album.mid` / `file.media_mid`），播放地址走 `musicu.fcg` 的 `vkey.GetVkeyServer`，歌词走 `fcg_query_lyric_new`。全部是网页端接口，不碰登录态。
+- `purl` 为空就是放不了（会员 / 下架 / 版权受限），和不开会员在网页版能听到的范围一致。QQ 这边**没有 30 秒试听**这种中间态，所以没有 `trial` 标记。
+- 播放地址是 `sip` + `purl` 拼出来的 https 直链，和 IP 绑定、约 2 小时过期，随用随取不缓存。上游的 `Content-Type` 是 COS 的默认值 `application/x-www-form-urlencoded`，但内容是正常音频，`<audio>` 按魔数嗅探能播。
+- 曲目 id 各自在自己的上游里有效：网易云是纯数字，QQ 是 base62 的 songmid。响应里都带 `source`；不带 `source` 时服务端按 id 形状认，所以老对话里存下的播放卡也能继续放。
 
 在 `src/config.ts` 的 `musicConfig.playlists` 里填歌单 ID 就能用，ID 就是歌单分享链接里 `id=` 后面那串数字；每一项还可以用 `name` 覆盖歌单显示名。默认放的是本人的「我喜欢的音乐」（`158197454`）。
 
@@ -247,8 +271,8 @@ pnpm gallery:index --dir ../img-bed/public/api/i
 
 聊天页（`/chat/`）里说「放点适合深夜写代码的」，助手会挑歌、给每首写一句串词，回一张播放卡；点「开始收听」后先念串词再放歌，放完自动接下一首。
 
-- 工具在 `agents/assistant/_radio.ts`：`radio_tracks` 找歌（走 `/api/music/search` 与 `/artist`，结果已滤掉不能播的），`radio_play` 出卡。id 只认本次真的搜出来过的曲目，模型自己拼的一律丢掉。
-- 播放卡是 `src/components/chat/RadioCard.svelte`，播放本身交给常驻的 `MusicPlayerHost`；`player.svelte.ts` 里的 `playRadio` / `stopRadio` 管队列，队列开着时 `tracks()` 优先读它，`advance()` 不改就跟着走。
+- 工具在 `agents/assistant/_radio.ts`：`radio_tracks` 找歌（走 `/api/music/search?source=all` 与 `/artist`，网易云和 QQ 各问一遍再合并，结果已滤掉不能播的），`radio_play` 出卡。id 只认本次真的搜出来过的曲目，模型自己拼的一律丢掉。
+- 播放卡是 `src/components/chat/RadioCard.svelte`，播放本身交给常驻的 `MusicPlayerHost`；`player.svelte.ts` 里的 `playRadio` / `stopRadio` 管队列，队列开着时 `tracks()` 优先读它，`advance()` 不改就跟着走。队列里的曲目可能来自两个曲库，`Track.source` 一路带到取播放地址和歌词为止。
 - 串词用浏览器自带的 `speechSynthesis`（`src/utils/speech.ts`），零配置；要换音质只改 `speak()` 的实现。
 - 实测边界：搜索接口只在歌手名/歌名上准，题材词是字面匹配。所以系统提示要求模型先用 `web_search` 查到具体歌手，再回来搜歌。
 
@@ -335,7 +359,7 @@ API_TOKEN=your-token
 │   └── src/common/         # 文件、索引、日志等公共模块
 ├── cloud-functions/        # EdgeOne Makers 云函数（图片 OG、历史、音乐代理）
 │   ├── api/og/            # /api/og/* 文章与数据分享卡（satori + resvg）
-│   └── api/music/          # /api/music/* 网易云音乐代理
+│   └── api/music/          # /api/music/* 网易云 / QQ 音乐代理
 ├── scripts/                # 文章、相册和图片清理脚本
 ├── public/                 # 静态资源
 ├── astro.config.mjs        # Astro 构建配置

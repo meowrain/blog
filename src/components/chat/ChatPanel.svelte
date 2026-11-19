@@ -82,7 +82,7 @@ const TOOL_LABELS: Record<string, string> = {
 const TOOL_RUNNING_TEXT: Record<string, string> = {
 	web_search: "正在联网搜索…",
 	search: "正在翻站内文章…",
-	radio_tracks: "正在网易云找歌…",
+	radio_tracks: "正在找歌…",
 	radio_play: "正在整理播放卡…",
 };
 

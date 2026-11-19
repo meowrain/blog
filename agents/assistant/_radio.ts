@@ -9,6 +9,13 @@ import { artistMusic, rememberTracks, searchMusic, type MusicHit } from '../_mus
  * - 出卡需要模型为**每一首**写一句串词，那是它的活儿，不是搜索接口的活儿。
  * 合成一条的话，模型只能在拿到结果的同一轮里硬塞串词，搜错了也得带着错误答案出卡。
  *
+ * ## 曲库
+ *
+ * 搜索走 `source=all`：网易云 + QQ 各问一遍再合并（见 agents/_music.ts 与
+ * cloud-functions/_qqmusic.js）。两家的免费曲库不重合，只问一家会让
+ * 「毛不易」「周杰伦」这类歌手里总有一半永远搜不到。结果里的 `source`
+ * 只标注来源，出卡时原样带上，前端按它分流取播放地址。
+ *
  * ## 这个电台的天花板（写在这里，免得以后有人以为它更聪明）
  *
  * 搜索接口按字面匹配，模型没听过这些歌，也没有音频特征。所以：
@@ -40,6 +47,7 @@ function toResult(hit: MusicHit): Record<string, unknown> {
 		artists: hit.artists,
 		...(hit.album ? { album: hit.album } : {}),
 		duration: Math.round(hit.duration / 1000),
+		...(hit.source ? { source: hit.source } : {}),
 		...(hit.trial ? { trial: true } : {}),
 		...(hit.sameName ? { sameName: true } : {}),
 		...(hit.lyric ? { lyric: hit.lyric } : {}),
@@ -47,7 +55,7 @@ function toResult(hit: MusicHit): Record<string, unknown> {
 }
 
 const SEARCH_HINT =
-	'这些是网易云里真实存在、且确认能播放的曲目。' +
+	'这些是网易云 / QQ 音乐里真实存在、且确认能播放的曲目（source 标了来自哪家，id 原样带回即可）。' +
 	'"适合XX"这类题材词按字面匹配，结果往往跑偏；要按氛围选歌，先用 web_search 查"XX 风格 歌手 推荐"，' +
 	'拿到具体的歌手名/歌名再回来搜。挑好后用 radio_play 出播放卡，每首配一句串词。';
 
@@ -205,6 +213,7 @@ async function radioPlay(args: Record<string, unknown>, ctx: unknown): Promise<T
 					artists: pick.track.artists,
 					cover: pick.track.cover,
 					duration: Math.round(pick.track.duration / 1000),
+					...(pick.track.source ? { source: pick.track.source } : {}),
 					...(pick.track.trial ? { trial: true } : {}),
 					intro: pick.intro,
 				})),
@@ -222,11 +231,13 @@ export const RADIO_TOOLS: ToolDef[] = [
 	{
 		name: 'radio_tracks',
 		description:
-			'在网易云音乐里搜歌，返回**确认能播放**的曲目（无版权、下架、同名翻唱的废条目已经滤掉）。电台点歌的第一步。\n' +
+			'在网易云音乐和 QQ 音乐里搜歌（两家曲库互补，默认一起问），返回**确认能播放**的曲目' +
+			'（无版权、下架、同名翻唱的废条目已经滤掉）。电台点歌的第一步。\n' +
 			'- mode:"search"（默认）：按关键词找。歌名、歌手名很准；"适合写代码""下雨天听的"这类题材词只是字面匹配，' +
 			'结果经常跑偏 —— 想要氛围，先用 web_search 查到具体的歌手/歌名，再回来搜。\n' +
 			'- mode:"artist"：按歌手取热门歌，能播率比关键词搜索高，适合访客说"放点 XXX 的歌"。\n' +
-			'每条结果带 id、歌名、歌手、时长，默认还带开头两三句歌词 —— 写串词请用它，不要凭空描述你没听过的旋律。',
+			'每条结果带 id、歌名、歌手、时长和 source（netease / qq），默认还带开头两三句歌词 —— ' +
+			'写串词请用它，不要凭空描述你没听过的旋律。id 原样带回 radio_play 即可，source 不用管。',
 		parameters: {
 			type: 'object',
 			properties: {

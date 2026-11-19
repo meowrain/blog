@@ -125,8 +125,16 @@ function play(index = 0) {
 								</span>
 							{/if}
 						</span>
-						<span class="mt-0.5 block truncate text-[0.68rem] text-black/45 dark:text-white/45">
-							{track.artists}
+						<span class="mt-0.5 flex items-center gap-1 text-[0.68rem] text-black/45 dark:text-white/45">
+							<span class="min-w-0 truncate">{track.artists}</span>
+							{#if track.source === "qq"}
+								<span
+									class="shrink-0 rounded bg-black/5 px-1 py-px text-[0.58rem] dark:bg-white/10"
+									title="来自 QQ 音乐"
+								>
+									QQ
+								</span>
+							{/if}
 						</span>
 						{#if track.intro}
 							<span

@@ -10,11 +10,20 @@ export function createLogger(name: string) {
 // tool_call_chunks 出现，而是把 DSML 标记当正文吐出来（review-checklist F：
 // Path A 必须对外发文本做 stripDSML）。正则参考 DeepSeek-V3.1/V3.2 的
 // ChatML 扩展标记：`<｜tool▁calls▁begin｜>` 一类的全角竖线包裹 token。
-const DSML_TOKEN_RE = /<｜[^<>｜]{0,64}｜>/g;
+//
+// 线上实测漏出来的是**双**竖线、带属性的版本：
+//   <｜｜DSML｜｜ calls>
+//   <｜｜DSML｜｜ invoke name="radio_play">
+//   <｜｜DSML｜｜ parameter name="tracks" string="false">
+// 原来的 `<｜…｜>` 只认「以竖线结尾」的裸 token，遇到 `｜>` 后面还跟着属性
+// 就整行留在正文里。所以拆成两段：竖线对之间是标记名，后面可以跟属性到 `>`。
+// 两端各有约束（`<` 后最多 3 个字符、标记名不含尖括号），正常正文几乎撞不上。
+const DSML_TOKEN_RE = /<[^<>]{0,3}｜+[^<>]{0,64}｜+[^<>]{0,96}>/g;
 
-// 逐 token 流式输出时，标记会被切成两半分两次到达，所以任何像「标记开头」的
-// 结尾都要先扣住，等下一个 chunk 拼上再判断，否则半个标记会漏到用户屏幕上。
-const DSML_PARTIAL_TAIL_RE = /<｜[^<>]{0,64}$/;
+// 逐 token 流式输出时，标记会被切成两半分两次到达（「<」先到、「｜｜DSML｜｜」后到），
+// 所以任何还没闭合的 `<…` 尾巴都要先扣住，等下一个 chunk 拼上再判断，否则半个
+// 标记会漏到用户屏幕上。扣住的尾巴由 flush() 兜底吐出，不影响正常结束。
+const DSML_PARTIAL_TAIL_RE = /<[^<>]{0,160}$/;
 
 /** 一次性清洗整段文本（写 store / 非流式返回用）。 */
 export function stripDsml(text: string): string {

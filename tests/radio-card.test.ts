@@ -81,6 +81,31 @@ describe("toRadioQueue", () => {
 	});
 });
 
+describe("曲库来源", () => {
+	it("显式的 source 原样带上，缺省时按 id 形状兜底", () => {
+		const card = toolRadioCard(
+			payload([
+				{ id: "287398", name: "网易云曲目" },
+				{ id: "003hKob536i6FA", name: "QQ 曲目" },
+				{ id: "001bLkWD2EYA4P", name: "带显式来源", source: "qq" },
+			]),
+		);
+		assert.ok(card);
+		assert.deepEqual(
+			card.tracks.map((track) => track.source),
+			["netease", "qq", "qq"],
+		);
+	});
+
+	it("source 一直传到播放器队列，不会被丢掉", () => {
+		const card = toolRadioCard(
+			payload([{ id: "003hKob536i6FA", name: "起风了", source: "qq" }]),
+		);
+		assert.ok(card);
+		assert.equal(toRadioQueue(card).tracks[0].source, "qq");
+	});
+});
+
 describe("formatDuration", () => {
 	it("秒转 m:ss，非法值给空串", () => {
 		assert.equal(formatDuration(0), "");

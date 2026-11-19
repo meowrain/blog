@@ -13,6 +13,17 @@ const logger = createLogger('music');
  * 处理好了这些，agent 只需要一个 HTTP 请求 —— 和 `_corpus.ts` 拉 `/posts-index.json`
  * 是同一条路。
  *
+ * ## 两个曲库
+ *
+ * 默认 `source=all`：网易云 + QQ 音乐各问一遍再合并。不是重复劳动 ——
+ * 实测两家的免费曲库不重合：
+ *
+ *   网易云完全空（一首能放的都没有）：毛不易、梁博、郭顶
+ *   QQ 完全空（整页要会员）：周杰伦、许嵩、陈奕迅、林俊杰
+ *   两边都行的（花粥、房东的猫、陈鸿宇）曲目也只是部分重叠
+ *
+ * 只问一家就会漏掉另一家独有的歌手，让模型白白「搜不到、如实告诉访客」。
+ *
  * ## 这个搜索能干什么、不能干什么
  *
  * 实测：搜歌手名、歌名很准（花粥 12 首里 11 首能播）；搜题材（"适合写代码"）
@@ -37,6 +48,8 @@ export interface MusicHit {
 	/** 毫秒 */
 	duration: number;
 	cover: string;
+	/** 曲库：网易云 id 是纯数字，QQ 是 base62 的 songmid，播放/歌词接口按它分流 */
+	source?: 'netease' | 'qq';
 	/** 会员曲目在没配 Cookie 时只能试听 30 秒 */
 	trial?: boolean;
 	/** 开头几行歌词（只有请求了 lyric 才带） */
@@ -85,6 +98,7 @@ function toHit(raw: Record<string, unknown>): MusicHit | null {
 	const id = String(raw?.id ?? '').trim();
 	const name = String(raw?.name ?? '').trim();
 	if (!id || !name) return null;
+	const source = raw?.source === 'qq' ? 'qq' : raw?.source === 'netease' ? 'netease' : undefined;
 	return {
 		id,
 		name,
@@ -92,6 +106,7 @@ function toHit(raw: Record<string, unknown>): MusicHit | null {
 		album: String(raw?.album ?? '').trim(),
 		duration: Number(raw?.duration) || 0,
 		cover: String(raw?.cover ?? '').trim(),
+		...(source ? { source } : {}),
 		...(raw?.trial ? { trial: true } : {}),
 		...(typeof raw?.lyric === 'string' && raw.lyric ? { lyric: raw.lyric } : {}),
 		...(raw?.sameName ? { sameName: true } : {}),
@@ -149,17 +164,25 @@ async function getJson(url: string, signal?: AbortSignal): Promise<unknown> {
 	}
 }
 
+/**
+ * 曲库。`all` 会让云函数把网易云和 QQ 都问一遍再合并 —— 两家的免费曲库不重合，
+ * 「毛不易/梁博/郭顶」在网易云一首能放的都没有，QQ 能捞出几首；
+ * 「周杰伦/许嵩/陈奕迅」反过来只在网易云有。见 cloud-functions/_qqmusic.js。
+ */
+export type MusicSource = 'netease' | 'qq' | 'all';
+
 export interface SearchOptions {
 	origin: string;
 	query: string;
 	limit?: number;
 	/** 顺带取每首的开头几行歌词 —— 模型没听过歌，只给歌名写不出串词 */
 	lyric?: boolean;
+	source?: MusicSource;
 	signal?: AbortSignal;
 }
 
-export async function searchMusic({ origin, query, limit = 8, lyric = false, signal }: SearchOptions): Promise<MusicSearchResponse> {
-	const key = `search|${query}|${limit}|${lyric ? 1 : 0}`;
+export async function searchMusic({ origin, query, limit = 8, lyric = false, source = 'all', signal }: SearchOptions): Promise<MusicSearchResponse> {
+	const key = `search|${source}|${query}|${limit}|${lyric ? 1 : 0}`;
 	const hit = cached(key);
 	if (hit) return hit;
 
@@ -168,10 +191,18 @@ export async function searchMusic({ origin, query, limit = 8, lyric = false, sig
 	const url = new URL('/api/music/search/', origin);
 	url.searchParams.set('q', query);
 	url.searchParams.set('limit', String(limit));
+	if (source !== 'netease') url.searchParams.set('source', source);
 	if (lyric) url.searchParams.set('lyric', '1');
 
 	const value = normalize(await getJson(url.toString(), signal));
-	logger.log('search q=%s lyric=%s results=%d found=%s', query, lyric ? 'y' : 'n', value.count, value.found ?? '-');
+	logger.log(
+		'search q=%s source=%s lyric=%s results=%d found=%s',
+		query,
+		source,
+		lyric ? 'y' : 'n',
+		value.count,
+		value.found ?? '-',
+	);
 	return remember(key, value);
 }
 
@@ -179,14 +210,16 @@ export interface ArtistOptions {
 	origin: string;
 	/** 歌手名（会先搜一次歌手，匹配不了就按关键词搜歌兜底） */
 	name?: string;
-	/** 歌手 id，确定时直接用，省一次搜索 */
+	/** 歌手 id，确定时直接用，省一次搜索（只有网易云有） */
 	id?: string;
 	limit?: number;
 	signal?: AbortSignal;
 }
 
 export async function artistMusic({ origin, name, id, limit = 8, signal }: ArtistOptions): Promise<MusicSearchResponse> {
-	const key = `artist|${id ?? ''}|${name ?? ''}|${limit}`;
+	// QQ 那边只认歌手名，所以按名字取歌时顺带把两边都问一遍；给了 id 就只能问网易云。
+	const source: MusicSource = !id && name ? 'all' : 'netease';
+	const key = `artist|${source}|${id ?? ''}|${name ?? ''}|${limit}`;
 	const hit = cached(key);
 	if (hit) return hit;
 
@@ -195,9 +228,10 @@ export async function artistMusic({ origin, name, id, limit = 8, signal }: Artis
 	else if (name) url.searchParams.set('q', name);
 	else throw new Error('artistMusic 需要 name 或 id');
 	url.searchParams.set('limit', String(limit));
+	if (source !== 'netease') url.searchParams.set('source', source);
 
 	const value = normalize(await getJson(url.toString(), signal));
-	logger.log('artist %s results=%d', id || name, value.count);
+	logger.log('artist %s source=%s results=%d', id || name, source, value.count);
 	return remember(key, value);
 }
 

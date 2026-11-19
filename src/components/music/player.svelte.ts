@@ -14,8 +14,13 @@ import { parseLrc } from "./lrc";
 
 export type PlaylistRef = { id: string; name?: string };
 
+/** 曲库：id 的通行域。缺省视为网易云（站内播放器只有它）。 */
+export type MusicSource = "netease" | "qq";
+
 export type Track = {
 	id: string;
+	/** 电台里可能混着 QQ 音乐的曲目；歌单永远是网易云，所以可以不填 */
+	source?: MusicSource;
 	name: string;
 	artists: string;
 	album: string;
@@ -331,8 +336,11 @@ export async function prepareTrack(
 	}
 
 	try {
+		// source 只在 QQ 曲目时才带：老歌单的 track 没有这个字段，
+		// 多传一个 source=netease 也没坏处，但不传更贴近原来的请求
+		const source = track.source === "qq" ? "&source=qq" : "";
 		const response = await fetch(
-			`${player.apiBase}/song/?id=${encodeURIComponent(track.id)}`,
+			`${player.apiBase}/song/?id=${encodeURIComponent(track.id)}${source}`,
 		);
 		const data = await response.json().catch(() => null);
 		if (!response.ok) throw new Error(data?.error ?? `HTTP ${response.status}`);
@@ -346,7 +354,7 @@ export async function prepareTrack(
 			audio.src = data.url;
 			audio.volume = player.muted ? 0 : player.volume;
 		}
-		void loadLyric(track.id);
+		void loadLyric(track);
 
 		// 免费账号下的会员曲目只有 30 秒试听，不说明白会以为播放器坏了
 		if (data.trial) {
@@ -582,12 +590,14 @@ export function switchPlaylist(id: string): void {
 	if (player.currentIndex >= 0) void prepareTrack(player.currentIndex, false);
 }
 
-async function loadLyric(id: string): Promise<void> {
+async function loadLyric(track: Track): Promise<void> {
+	const id = track.id;
 	player.lyric = "";
 	player.tlyric = "";
 	try {
+		const source = track.source === "qq" ? "&source=qq" : "";
 		const response = await fetch(
-			`${player.apiBase}/lyric/?id=${encodeURIComponent(id)}`,
+			`${player.apiBase}/lyric/?id=${encodeURIComponent(id)}${source}`,
 		);
 		if (!response.ok) return;
 		const data = await response.json();
