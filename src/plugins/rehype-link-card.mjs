@@ -272,11 +272,39 @@ function cacheKey(url) {
 	return `${(hash >>> 0).toString(36)}-${url.length}`;
 }
 
-/** 单次 HTTP 请求，超时用 AbortController 兜住；任何异常都只返回 null */
+/**
+ * 抓取期间把事件循环撑住。
+ *
+ * undici 的空闲 socket 是 unref 的：abort 之后若 fetch 的 Promise 迟迟不 settle，
+ * 事件循环里就一个活跃 handle 都不剩，Node 直接触发 beforeExit。rollup 在
+ * beforeExit 里发现还有 markdown 的 load hook 没返回，报
+ * "Unexpected early exit. This happens when Promises returned by plugins cannot
+ * resolve." 并把整次构建判失败 —— 而且是**静默**的：Astro 一行日志都不打。
+ *
+ * 实测：EdgeOne（4 核 6G、冷缓存）上外链集体超时必挂；本地有 .link-card-cache
+ * 时一次都不抓，所以从没复现过。这里挂一个 ref 的 interval 把循环留住。
+ */
+function keepAlive(ms = 200) {
+	const timer = setInterval(() => {}, ms);
+	return () => clearInterval(timer);
+}
+
+/** abort 之后还愿意多等多久再判死；见 requestHtml 的说明 */
+const HARD_DEADLINE_GRACE = 1500;
+
+/**
+ * 单次 HTTP 请求，超时用 AbortController 兜住；任何异常都只返回 error。
+ *
+ * 光有 AbortController 不够：它只保证「abort 已发出」，不保证 Promise 一定
+ * settle（连接卡在 DNS / TCP 握手阶段时见过）。所以再叠一层硬截止，
+ * 到点直接返回错误，绝不把 unresolved 的 Promise 留给 rollup。
+ */
 async function requestHtml(url, timeout) {
 	const controller = new AbortController();
-	const timer = setTimeout(() => controller.abort(), timeout);
-	try {
+	const abortTimer = setTimeout(() => controller.abort(), timeout);
+	let hardTimer;
+
+	const attempt = (async () => {
 		const res = await fetch(url, {
 			signal: controller.signal,
 			redirect: "follow",
@@ -292,12 +320,27 @@ async function requestHtml(url, timeout) {
 		const type = res.headers.get("content-type") ?? "";
 		if (!type.includes("html")) return { error: `非 HTML (${type})` };
 		return { html: await res.text(), finalUrl: res.url || url };
-	} catch (error) {
-		const reason =
-			error?.name === "AbortError" ? `超时 ${timeout}ms` : error?.message;
-		return { error: reason };
+	})();
+
+	const settle = attempt.catch((error) => ({
+		error: error?.name === "AbortError" ? `超时 ${timeout}ms` : error?.message,
+	}));
+
+	// 竞速落败的那一路也要消费掉，否则是一个未处理的 rejection。
+	settle.catch(() => {});
+
+	const deadline = new Promise((resolve) => {
+		hardTimer = setTimeout(
+			() => resolve({ error: `超时 ${timeout}ms（硬截止）` }),
+			timeout + HARD_DEADLINE_GRACE,
+		);
+	});
+
+	try {
+		return await Promise.race([settle, deadline]);
 	} finally {
-		clearTimeout(timer);
+		clearTimeout(abortTimer);
+		clearTimeout(hardTimer);
 	}
 }
 
@@ -493,9 +536,16 @@ export default function rehypeLinkCard(options = {}) {
 		if (targets.length === 0) return;
 
 		const uniqueUrls = [...new Set(targets.map((t) => t.url))];
-		const metas = await mapWithConcurrency(uniqueUrls, MAX_CONCURRENCY, (url) =>
-			fetchMetadata(url, { timeout, cacheDir, cacheMaxAge, log }),
-		);
+		// 抓取全程撑住事件循环，否则外链集体超时时 Node 会提前退出（见 keepAlive）。
+		const release = keepAlive();
+		let metas;
+		try {
+			metas = await mapWithConcurrency(uniqueUrls, MAX_CONCURRENCY, (url) =>
+				fetchMetadata(url, { timeout, cacheDir, cacheMaxAge, log }),
+			);
+		} finally {
+			release();
+		}
 		const metaByUrl = new Map(uniqueUrls.map((url, i) => [url, metas[i]]));
 
 		// 用节点引用而不是 visit 给的下标：同一父节点下有多个目标时，先替换会

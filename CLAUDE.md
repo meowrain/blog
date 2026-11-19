@@ -200,8 +200,17 @@ Metadata (`og:title` / `og:description` / `og:image` / favicon) is fetched **at
 build time** — never in the browser, so no CORS problems. Each URL gets 5s
 (one retry within that budget), 4 fetched in parallel, and results are cached on disk in
 `.link-card-cache/` (gitignored, 7 days). Any timeout, non-200 status or missing
-meta degrades to a compact card showing the domain + URL; **a failed fetch never
-fails the build**, it only prints `warn: [link-card] ...`.
+meta degrades to a compact card showing the domain + URL; it only prints
+`warn: [link-card] ...`.
+
+**The plugin holds the event loop open while fetching** (`keepAlive`) and caps
+each request with a hard deadline on top of the AbortSignal. Without both, a
+CI build on a restricted network fails: undici's sockets are `unref`ed, so when
+every fetch stalls the loop drains and Node fires `beforeExit`; rollup then
+reports `Unexpected early exit. This happens when Promises returned by plugins
+cannot resolve.` and the build dies **without Astro printing anything**. This
+only shows up on cache-cold machines (`EdgeOne` clones fresh every time) — a
+local machine with `.link-card-cache/` never fetches, so it never reproduces.
 
 Global switch: `linkCardConfig.enable` in `src/config.ts` (set `false` to leave
 every link alone). For CI builds with restricted egress, set `LINK_CARD=0` in the

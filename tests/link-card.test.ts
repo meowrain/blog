@@ -163,6 +163,50 @@ describe("防爬壳页面", () => {
 	});
 });
 
+describe("事件循环不被抓取拖空", () => {
+	// 回归用例：EdgeOne 上外链集体超时，undici 的 socket 是 unref 的，
+	// fetch 的 Promise 迟迟不 settle，Node 直接触发 beforeExit，rollup 报
+	// "Unexpected early exit. This happens when Promises returned by plugins
+	// cannot resolve." 并把整次构建判失败（而且 Astro 一行日志都不打）。
+	const TIMEOUT = 200;
+
+	it("外链全部超时时，插件仍然正常返回而不是让进程提前退出", async () => {
+		const { rehype } = await import("rehype");
+		const { default: rehypeLinkCard } = await import(
+			"../src/plugins/rehype-link-card.mjs"
+		);
+		// .invalid 是 RFC 2606 保留的顶级域，永远解析不到，保证走超时分支
+		const tree = {
+			type: "root" as const,
+			children: [
+				para(link("https://a.invalid/one")),
+				para(link("https://b.invalid/two")),
+				para(link("https://c.invalid/three")),
+			],
+		};
+		const proc = rehype().use(rehypeLinkCard, {
+			site: "https://blog.meowrain.cn",
+			timeout: TIMEOUT,
+			cacheDir: "/tmp/link-card-test-cache",
+			log: () => {},
+		});
+
+		const startedAt = Date.now();
+		const html = String(
+			proc.stringify(await proc.run(structuredClone(tree))),
+		);
+		const elapsed = Date.now() - startedAt;
+
+		// 三张卡全降级，但流程走完了
+		assert.equal(html.match(/link-card no-styling is-degraded/g)?.length, 3);
+		// 硬截止是 timeout + 1500ms 宽限；两次重试共 2×timeout，不该无限挂
+		assert.ok(
+			elapsed < TIMEOUT * 2 + 3000,
+			`抓取耗时 ${elapsed}ms，超出了预期上限`,
+		);
+	});
+});
+
 describe("卡片 DOM", () => {
 	it("卡片链接带 no-styling，避免继承正文的虚线下划线", async () => {
 		const { rehype } = await import("rehype");

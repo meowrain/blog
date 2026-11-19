@@ -357,6 +357,8 @@ pnpm build
 
 构建机出网受限时，可以用 `LINK_CARD=0 pnpm build` 跳过链接卡片的外链抓取，避免几十个 URL 各自超时 5s×2。
 
+链接卡片插件在抓取期间会挂一个 ref 的 interval 撑住事件循环，并给每次请求叠一层硬截止。少了这两样，CI 上外链集体超时时 Node 会在 `beforeExit` 里提前退出（undici 的 socket 是 unref 的），rollup 于是报 `Unexpected early exit. This happens when Promises returned by plugins cannot resolve.` 并把整次构建判失败，而 Astro 一行日志都不会打。这个问题只在冷缓存的构建机上出现——本地有 `.link-card-cache/` 时一次都不抓，所以复现不了。
+
 ### 持续集成
 
 CNB 仓库（<https://cnb.cool/meowyyds/blog>）的 `main` 分支推送后会由 [.cnb.yml](.cnb.yml) 自动构建并部署：
