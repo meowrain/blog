@@ -19,6 +19,8 @@ const PAGE_URL = "/api/stats/page";
 export function collectPageview(overrides?: {
 	path?: string;
 	title?: string;
+	/** 本次是站内跳转（Swup 换页），referrer 不可信，服务端按「站内跳转」归类。 */
+	internal?: boolean;
 }): void {
 	if (typeof window === "undefined") return;
 	if (!statsConfig.enable) return;
@@ -26,6 +28,7 @@ export function collectPageview(overrides?: {
 		p: overrides?.path || location.pathname,
 		t: overrides?.title || document.title,
 		r: document.referrer || "",
+		i: overrides?.internal ? 1 : 0,
 	});
 	// 优先 sendBeacon（切页/关页也能发出）；不支持时退回 keepalive fetch。
 	if (navigator.sendBeacon) {
@@ -93,11 +96,12 @@ export async function loadSiteStats(): Promise<void> {
 
 /**
  * 挂载所有统计：上报当前页 + 回填页内所有 [data-page-*] + 回填全站。
- * Layout 在首次加载和 Swup 的 page:view 时各调一次。
+ * Layout 在首次加载和 Swup 的 page:view 时各调一次；换页时传 internal，
+ * 否则 document.referrer 还停在上一个外部站点，来源会被算错。
  */
-export function mountStats(): void {
+export function mountStats(options?: { internal?: boolean }): void {
 	if (typeof document === "undefined") return;
-	collectPageview();
+	collectPageview({ internal: options?.internal === true });
 	for (const el of document.querySelectorAll<HTMLElement>(
 		"[data-page-views]",
 	)) {

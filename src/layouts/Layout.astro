@@ -1632,8 +1632,9 @@ function disableAnimation() {
 
   mountStats();
 
+  // Swup 换页时 document.referrer 仍是上一个外部站点，标 internal 让服务端按站内跳转记。
   const bindStats = () => {
-    window.swup?.hooks?.on("page:view", mountStats);
+    window.swup?.hooks?.on("page:view", () => mountStats({ internal: true }));
   };
 
   if (window.swup) {

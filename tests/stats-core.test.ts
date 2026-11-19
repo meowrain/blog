@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+	type DailyPoint,
+	audienceSplit,
+	buildBarModel,
 	buildChartModel,
 	compactNumber,
+	hourLabel,
 	niceMax,
+	sharePercent,
 	shortDate,
 	toPolyline,
-	type DailyPoint,
+	weekdayLabel,
 } from "../src/utils/stats-core.ts";
 
 const series = (values: number[]): DailyPoint[] =>
@@ -62,10 +67,7 @@ describe("buildChartModel", () => {
 			[0, 5, 10, 15],
 		);
 		assert.equal(model.yTicks[0].value, 0);
-		assert.equal(
-			model.yTicks[model.yTicks.length - 1].value,
-			model.yMax,
-		);
+		assert.equal(model.yTicks[model.yTicks.length - 1].value, model.yMax);
 	});
 
 	it("刻度步长始终为整数，不出现 13/38 这种值", () => {
@@ -85,9 +87,7 @@ describe("buildChartModel", () => {
 		const model = buildChartModel(series([1, 2, 3, 4]), { width: 500 });
 		assert.equal(model.points.length, 4);
 		assert.ok(model.points.every((p) => p.x >= model.plotLeft));
-		assert.ok(
-			model.points.every((p) => p.x <= model.plotRight),
-		);
+		assert.ok(model.points.every((p) => p.x <= model.plotRight));
 	});
 
 	it("x 轴标签数量不超过上限，且不重复", () => {
@@ -114,5 +114,70 @@ describe("toPolyline", () => {
 		assert.ok(d.startsWith("M"));
 		assert.equal((d.match(/L/g) || []).length, 2);
 		assert.equal(toPolyline([], "yViews"), "");
+	});
+});
+
+describe("buildBarModel", () => {
+	it("24 根柱子等宽、贴基线，且不超出绘图区", () => {
+		const values = Array.from({ length: 24 }, (_, i) => i);
+		const model = buildBarModel(values, { width: 600, labelFor: hourLabel });
+		assert.equal(model.bars.length, 24);
+		for (const bar of model.bars) {
+			assert.ok(bar.x >= model.plotLeft - 0.001);
+			assert.ok(bar.x + bar.width <= model.plotRight + 0.001);
+			// 柱底 = 基线
+			assert.ok(Math.abs(bar.y + bar.height - model.plotBottom) < 0.001);
+		}
+		assert.equal(model.bars[23].label, "23:00");
+	});
+
+	it("峰值为 0 时仍是合法模型", () => {
+		const model = buildBarModel(new Array(24).fill(0));
+		assert.equal(model.bars.length, 24);
+		assert.ok(model.yMax >= 1);
+		assert.ok(model.bars.every((b) => b.height === 0));
+	});
+
+	it("x 轴标签按步长抽稀，不会 24 个全上", () => {
+		const model = buildBarModel(new Array(24).fill(1), { maxXLabels: 6 });
+		assert.ok(model.xLabels.length <= 8);
+	});
+
+	it("空数组不崩", () => {
+		const model = buildBarModel([]);
+		assert.equal(model.bars.length, 0);
+		assert.equal(model.xLabels.length, 0);
+	});
+});
+
+describe("hourLabel / weekdayLabel", () => {
+	it("小时补零，越界回绕", () => {
+		assert.equal(hourLabel(0), "00:00");
+		assert.equal(hourLabel(8), "08:00");
+		assert.equal(hourLabel(23), "23:00");
+		assert.equal(hourLabel(24), "00:00");
+	});
+
+	it("周几中文名，越界为空串", () => {
+		assert.equal(weekdayLabel(0), "周日");
+		assert.equal(weekdayLabel(6), "周六");
+		assert.equal(weekdayLabel(9), "");
+	});
+});
+
+describe("sharePercent / audienceSplit", () => {
+	it("占比保留一位小数，总数非正时为 0", () => {
+		assert.equal(sharePercent(1, 3), 33.3);
+		assert.equal(sharePercent(0, 0), 0);
+		assert.equal(sharePercent(5, -1), 0);
+	});
+
+	it("新老访客拆分", () => {
+		const split = audienceSplit(3, 1);
+		assert.equal(split.newPercent, 75);
+		assert.equal(split.returningPercent, 25);
+		const empty = audienceSplit(0, 0);
+		assert.equal(empty.newPercent, 0);
+		assert.equal(empty.returningPercent, 0);
 	});
 });

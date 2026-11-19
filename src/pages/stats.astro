@@ -53,6 +53,22 @@ import { Icon } from "astro-icon/components";
                 <span id="tile-range-visitors" class="stats-tile-value">–</span>
               </div>
               <div class="stats-tile">
+                <span class="stats-tile-label">日均访问量</span>
+                <span id="tile-avg-views" class="stats-tile-value">–</span>
+              </div>
+              <div class="stats-tile">
+                <span class="stats-tile-label">日均访客数</span>
+                <span id="tile-avg-visitors" class="stats-tile-value">–</span>
+              </div>
+              <div class="stats-tile">
+                <span class="stats-tile-label">人均页面数</span>
+                <span id="tile-depth" class="stats-tile-value" title="区间访问量 ÷ 区间访客数">–</span>
+              </div>
+              <div class="stats-tile">
+                <span class="stats-tile-label">最热时段</span>
+                <span id="tile-busiest-hour" class="stats-tile-value stats-tile-time">–</span>
+              </div>
+              <div class="stats-tile">
                 <span class="stats-tile-label">累计访问量</span>
                 <span id="tile-site-views" class="stats-tile-value">–</span>
               </div>
@@ -61,8 +77,16 @@ import { Icon } from "astro-icon/components";
                 <span id="tile-site-visitors" class="stats-tile-value">–</span>
               </div>
               <div class="stats-tile">
-                <span class="stats-tile-label">文章数</span>
+                <span class="stats-tile-label">有访问的页面</span>
                 <span id="tile-pages" class="stats-tile-value">–</span>
+              </div>
+              <div class="stats-tile">
+                <span class="stats-tile-label">峰值日访问量</span>
+                <span id="tile-peak" class="stats-tile-value">–</span>
+              </div>
+              <div class="stats-tile">
+                <span class="stats-tile-label">有数据天数</span>
+                <span id="tile-days-with-data" class="stats-tile-value">–</span>
               </div>
               <div class="stats-tile">
                 <span class="stats-tile-label">更新于</span>
@@ -86,30 +110,242 @@ import { Icon } from "astro-icon/components";
             </header>
             <div id="stats-chart" class="stats-chart relative mt-4">
               <p class="stats-empty">加载中…</p>
+              {/* tooltip 必须放在图表容器内部：容器才是定位参照，放外面会被
+                  card-base 的 overflow-hidden 裁掉 */}
+              <div id="stats-tooltip" class="stats-tooltip" hidden></div>
             </div>
-            <div id="stats-tooltip" class="stats-tooltip" hidden></div>
           </section>
 
-          {/* 热门文章 */}
+          {/* 时段分布 + 一周分布 */}
+          <div class="grid gap-4 xl:grid-cols-2">
+            <section class="card-base p-5 md:p-7">
+              <header class="flex flex-wrap items-center justify-between gap-2">
+                <h2 class="text-base font-bold text-black dark:text-white">时段分布</h2>
+                <span class="text-xs text-black/40 dark:text-white/40">按上海时区，区间内累计</span>
+              </header>
+              <div id="stats-hours" class="stats-chart stats-chart-bars relative mt-3">
+                <p class="stats-empty">加载中…</p>
+                <div id="stats-hours-tooltip" class="stats-tooltip" hidden></div>
+              </div>
+            </section>
+
+            <section class="card-base p-5 md:p-7">
+              <header class="flex flex-wrap items-center justify-between gap-2">
+                <h2 class="text-base font-bold text-black dark:text-white">一周分布</h2>
+                <span class="text-xs text-black/40 dark:text-white/40">按周几汇总，含日均</span>
+              </header>
+              <div class="mt-3 overflow-x-auto">
+                <table class="stats-table">
+                  <thead>
+                    <tr>
+                      <th>星期</th>
+                      <th class="stats-th-num">访问量</th>
+                      <th class="stats-th-num">访客数</th>
+                      <th class="stats-th-num">日均</th>
+                      <th class="stats-th-share">占比</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stats-weekdays">
+                    <tr><td colspan="5" class="stats-table-empty">加载中…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          {/* 受众结构 */}
           <section class="card-base p-5 md:p-7">
-            <h2 class="text-base font-bold text-black dark:text-white">热门文章</h2>
-            <p class="mt-1 text-xs text-black/40 dark:text-white/40">按累计访问量排序，取前 12 篇</p>
-            <div class="mt-3 overflow-x-auto">
-              <table class="stats-table">
-                <thead>
-                  <tr>
-                    <th class="stats-th-index">#</th>
-                    <th>文章</th>
-                    <th class="stats-th-num">访问量</th>
-                    <th class="stats-th-num">访客数</th>
-                  </tr>
-                </thead>
-                <tbody id="stats-top-pages">
-                  <tr><td colspan="4" class="stats-table-empty">加载中…</td></tr>
-                </tbody>
-              </table>
+            <header class="flex flex-wrap items-center justify-between gap-2">
+              <h2 class="text-base font-bold text-black dark:text-white">受众结构</h2>
+              <span class="text-xs text-black/40 dark:text-white/40">
+                新访客 = 全站首次出现；回访 = 其余。访客按天去重，跨天可能重复统计
+              </span>
+            </header>
+            <div id="stats-audience" class="mt-4">
+              <div class="stats-split">
+                <div id="stats-audience-new" class="stats-split-seg stats-split-new" style="width: 0%"></div>
+                <div id="stats-audience-returning" class="stats-split-seg stats-split-returning" style="width: 0%"></div>
+              </div>
+              <div class="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div class="stats-tile">
+                  <span class="stats-tile-label">
+                    <span class="stats-swatch stats-swatch-new"></span> 新访客
+                  </span>
+                  <span class="stats-tile-value">
+                    <span id="audience-new">–</span>
+                    <span id="audience-new-pct" class="stats-tile-sub">0%</span>
+                  </span>
+                </div>
+                <div class="stats-tile">
+                  <span class="stats-tile-label">
+                    <span class="stats-swatch stats-swatch-returning"></span> 回访访客
+                  </span>
+                  <span class="stats-tile-value">
+                    <span id="audience-returning">–</span>
+                    <span id="audience-returning-pct" class="stats-tile-sub">0%</span>
+                  </span>
+                </div>
+                <div class="stats-tile">
+                  <span class="stats-tile-label">区间访客数</span>
+                  <span id="audience-total" class="stats-tile-value">–</span>
+                </div>
+                <div class="stats-tile">
+                  <span class="stats-tile-label">人均页面数</span>
+                  <span id="audience-depth" class="stats-tile-value">–</span>
+                </div>
+              </div>
             </div>
           </section>
+
+          {/* 维度排行：来源 / 设备 / 浏览器 / 系统 / 国家 / 地区 */}
+          <section class="card-base p-5 md:p-7">
+            <header class="flex flex-wrap items-center justify-between gap-2">
+              <h2 class="text-base font-bold text-black dark:text-white">来源与终端</h2>
+              <span id="stats-dimension-note" class="text-xs text-black/40 dark:text-white/40">
+                维度从上线后开始采集，历史数据不含此项
+              </span>
+            </header>
+            <div class="mt-4 grid gap-x-6 gap-y-5 md:grid-cols-2">
+              <div>
+                <h3 class="stats-subtitle">来源渠道</h3>
+                <table class="stats-table">
+                  <thead>
+                    <tr>
+                      <th>来源</th>
+                      <th class="stats-th-num">访问量</th>
+                      <th class="stats-th-num">占比</th>
+                      <th class="stats-th-share"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="stats-dim-referrers">
+                    <tr><td colspan="4" class="stats-table-empty">加载中…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <h3 class="stats-subtitle">设备类型</h3>
+                <table class="stats-table">
+                  <thead>
+                    <tr>
+                      <th>设备</th>
+                      <th class="stats-th-num">访问量</th>
+                      <th class="stats-th-num">占比</th>
+                      <th class="stats-th-share"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="stats-dim-devices">
+                    <tr><td colspan="4" class="stats-table-empty">加载中…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <h3 class="stats-subtitle">浏览器</h3>
+                <table class="stats-table">
+                  <thead>
+                    <tr>
+                      <th>浏览器</th>
+                      <th class="stats-th-num">访问量</th>
+                      <th class="stats-th-num">占比</th>
+                      <th class="stats-th-share"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="stats-dim-browsers">
+                    <tr><td colspan="4" class="stats-table-empty">加载中…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <h3 class="stats-subtitle">操作系统</h3>
+                <table class="stats-table">
+                  <thead>
+                    <tr>
+                      <th>系统</th>
+                      <th class="stats-th-num">访问量</th>
+                      <th class="stats-th-num">占比</th>
+                      <th class="stats-th-share"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="stats-dim-oses">
+                    <tr><td colspan="4" class="stats-table-empty">加载中…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <h3 class="stats-subtitle">国家 / 地区</h3>
+                <table class="stats-table">
+                  <thead>
+                    <tr>
+                      <th>国家</th>
+                      <th class="stats-th-num">访问量</th>
+                      <th class="stats-th-num">占比</th>
+                      <th class="stats-th-share"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="stats-dim-countries">
+                    <tr><td colspan="4" class="stats-table-empty">加载中…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <h3 class="stats-subtitle">省份 / 区域</h3>
+                <table class="stats-table">
+                  <thead>
+                    <tr>
+                      <th>区域</th>
+                      <th class="stats-th-num">访问量</th>
+                      <th class="stats-th-num">占比</th>
+                      <th class="stats-th-share"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="stats-dim-regions">
+                    <tr><td colspan="4" class="stats-table-empty">加载中…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          {/* 热门文章 + 最近活跃 */}
+          <div class="grid gap-4 xl:grid-cols-2">
+            <section class="card-base p-5 md:p-7">
+              <h2 class="text-base font-bold text-black dark:text-white">热门页面</h2>
+              <p class="mt-1 text-xs text-black/40 dark:text-white/40">按累计访问量排序，取前 12 个</p>
+              <div class="mt-3 overflow-x-auto">
+                <table class="stats-table">
+                  <thead>
+                    <tr>
+                      <th class="stats-th-index">#</th>
+                      <th class="stats-title">页面</th>
+                      <th class="stats-th-num">访问量</th>
+                      <th class="stats-th-num">访客数</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stats-top-pages">
+                    <tr><td colspan="4" class="stats-table-empty">加载中…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="card-base p-5 md:p-7">
+              <h2 class="text-base font-bold text-black dark:text-white">最近活跃</h2>
+              <p class="mt-1 text-xs text-black/40 dark:text-white/40">按最后一次被访问的时间排序</p>
+              <div class="mt-3 overflow-x-auto">
+                <table class="stats-table">
+                  <thead>
+                    <tr>
+                      <th class="stats-title">页面</th>
+                      <th class="stats-th-num">访问量</th>
+                      <th class="stats-th-num">最近访问</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stats-recent-pages">
+                    <tr><td colspan="3" class="stats-table-empty">加载中…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
 
           <p id="stats-error" class="hidden rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400"></p>
         </>
@@ -120,28 +356,28 @@ import { Icon } from "astro-icon/components";
 
 <style is:global>
     #stats-page {
-      /* 双系列配色（dataviz 校验通过）：蓝=访问量、橙=访客数 */
+      /* 配色（dataviz validate_palette.js 校验通过）：
+         蓝=访问量、橙=访客数；青=新访客、紫=回访访客（对比度 WARN 已由
+         可见数值标签 + 表格视图兜底）。深色态是同色相的深色步进，不是简单反色。 */
       --viz-views: #2a78d6;
       --viz-visitors: #eb6834;
+      --viz-new: #1baf7a;
+      --viz-returning: #6250d6;
       --viz-grid: rgba(0, 0, 0, 0.08);
       --viz-axis-text: rgba(0, 0, 0, 0.45);
       --viz-surface: #fcfcfb;
     }
-    :root[data-theme="dark"] #stats-page {
+    /* 深色态统一用 .dark 类判断：<html data-theme> 存的是 expressive-code 的
+       主题名（github-dark），拿它当明暗开关永远匹配不上，导致这一页在深色下
+       仍然套浅色文字。 */
+    :root.dark #stats-page {
       --viz-views: #3987e5;
       --viz-visitors: #d95926;
+      --viz-new: #199e70;
+      --viz-returning: #9085e9;
       --viz-grid: rgba(255, 255, 255, 0.12);
       --viz-axis-text: rgba(255, 255, 255, 0.5);
       --viz-surface: #1a1a19;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root:not([data-theme="light"]) #stats-page {
-        --viz-views: #3987e5;
-        --viz-visitors: #d95926;
-        --viz-grid: rgba(255, 255, 255, 0.12);
-        --viz-axis-text: rgba(255, 255, 255, 0.5);
-        --viz-surface: #1a1a19;
-      }
     }
 
     .stats-range-btn {
@@ -152,7 +388,7 @@ import { Icon } from "astro-icon/components";
       color: rgba(0, 0, 0, 0.55);
       transition: background-color 0.15s, color 0.15s;
     }
-    :root[data-theme="dark"] .stats-range-btn {
+    :root.dark .stats-range-btn {
       color: rgba(255, 255, 255, 0.6);
     }
     .stats-range-btn:hover {
@@ -171,14 +407,14 @@ import { Icon } from "astro-icon/components";
       border-radius: 0.6rem;
       border: 1px solid rgba(0, 0, 0, 0.08);
     }
-    :root[data-theme="dark"] .stats-tile {
+    :root.dark .stats-tile {
       border-color: rgba(255, 255, 255, 0.1);
     }
     .stats-tile-label {
       font-size: 0.72rem;
       color: rgba(0, 0, 0, 0.5);
     }
-    :root[data-theme="dark"] .stats-tile-label {
+    :root.dark .stats-tile-label {
       color: rgba(255, 255, 255, 0.55);
     }
     .stats-tile-value {
@@ -187,7 +423,7 @@ import { Icon } from "astro-icon/components";
       line-height: 1.1;
       color: #111;
     }
-    :root[data-theme="dark"] .stats-tile-value {
+    :root.dark .stats-tile-value {
       color: #f0efec;
     }
     .stats-tile-time {
@@ -195,8 +431,70 @@ import { Icon } from "astro-icon/components";
       font-weight: 500;
       color: rgba(0, 0, 0, 0.5);
     }
-    :root[data-theme="dark"] .stats-tile-time {
+    :root.dark .stats-tile-time {
       color: rgba(255, 255, 255, 0.5);
+    }
+    /* 副数字（如 12 <small>30%</small>）：不抢主数字，文字仍用次级墨色 */
+    .stats-tile-sub {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: rgba(0, 0, 0, 0.45);
+    }
+    :root.dark .stats-tile-sub {
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .stats-subtitle {
+      margin-bottom: 0.5rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: rgba(0, 0, 0, 0.6);
+    }
+    :root.dark .stats-subtitle {
+      color: rgba(255, 255, 255, 0.65);
+    }
+
+    /* 新老访客占比条：2px 表面色缝隙分隔两段，不靠颜色单打独斗 */
+    .stats-split {
+      display: flex;
+      gap: 2px;
+      height: 0.6rem;
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(0, 0, 0, 0.06);
+    }
+    :root.dark .stats-split {
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .stats-split-seg {
+      height: 100%;
+      transition: width 0.3s ease;
+    }
+    .stats-split-new {
+      background: var(--viz-new);
+    }
+    .stats-split-returning {
+      background: var(--viz-returning);
+    }
+
+    /* 表格里的迷你占比条：中性色（不是系列色），只表达长度 */
+    .stats-share {
+      width: 4.5rem;
+    }
+    .stats-bar-track {
+      position: relative;
+      height: 0.35rem;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.07);
+      overflow: hidden;
+    }
+    :root.dark .stats-bar-track {
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .stats-bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: var(--viz-views);
     }
 
     .stats-swatch {
@@ -204,6 +502,10 @@ import { Icon } from "astro-icon/components";
       width: 0.7rem;
       height: 0.7rem;
       border-radius: 2px;
+      vertical-align: middle;
+    }
+    .stats-tile-label .stats-swatch {
+      margin-right: 0.3rem;
     }
     .stats-swatch-views {
       background: var(--viz-views);
@@ -211,10 +513,19 @@ import { Icon } from "astro-icon/components";
     .stats-swatch-visitors {
       background: var(--viz-visitors);
     }
+    .stats-swatch-new {
+      background: var(--viz-new);
+    }
+    .stats-swatch-returning {
+      background: var(--viz-returning);
+    }
 
     .stats-chart {
       width: 100%;
       min-height: 260px;
+    }
+    .stats-chart-bars {
+      min-height: 190px;
     }
     .stats-chart svg {
       display: block;
@@ -227,7 +538,7 @@ import { Icon } from "astro-icon/components";
       font-size: 0.85rem;
       color: rgba(0, 0, 0, 0.4);
     }
-    :root[data-theme="dark"] .stats-empty {
+    :root.dark .stats-empty {
       color: rgba(255, 255, 255, 0.4);
     }
 
@@ -246,7 +557,11 @@ import { Icon } from "astro-icon/components";
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
       color: #111;
     }
-    :root[data-theme="dark"] .stats-tooltip {
+    /* 顶部空间不足时翻到折线下方，锚点改为左上角 */
+    .stats-tooltip.is-below {
+      transform: translate(-50%, 0);
+    }
+    :root.dark .stats-tooltip {
       border-color: rgba(255, 255, 255, 0.14);
       background: #262624;
       color: #f0efec;
@@ -270,11 +585,13 @@ import { Icon } from "astro-icon/components";
     .stats-table th {
       text-align: left;
       font-weight: 600;
+      /* 表头不折行：「星期」「访问量」这类短词被挤成竖排很难读 */
+      white-space: nowrap;
       color: rgba(0, 0, 0, 0.5);
       padding: 0.4rem 0.5rem;
       border-bottom: 1px solid rgba(0, 0, 0, 0.08);
     }
-    :root[data-theme="dark"] .stats-table th {
+    :root.dark .stats-table th {
       color: rgba(255, 255, 255, 0.55);
       border-bottom-color: rgba(255, 255, 255, 0.1);
     }
@@ -282,12 +599,13 @@ import { Icon } from "astro-icon/components";
       padding: 0.45rem 0.5rem;
       border-bottom: 1px solid rgba(0, 0, 0, 0.05);
     }
-    :root[data-theme="dark"] .stats-table td {
+    :root.dark .stats-table td {
       border-bottom-color: rgba(255, 255, 255, 0.06);
     }
     .stats-th-index,
     .stats-th-num {
-      width: 6rem;
+      /* 6rem 太宽会把页面标题列挤成窄条，4.5rem 够放下「12.3K」和日期 */
+      width: 4.5rem;
     }
     .stats-th-num {
       text-align: right;
@@ -306,5 +624,33 @@ import { Icon } from "astro-icon/components";
     }
     .stats-table a:hover {
       text-decoration: underline;
+    }
+    /* 页面类表格的标题列：给足宽度并单行省略，否则长标题会把行高顶到七八行 */
+    .stats-table td.stats-title,
+    .stats-table th.stats-title {
+      width: 100%;
+      max-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .stats-table td.stats-title a {
+      display: inline-block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      vertical-align: bottom;
+    }
+    /* 维度表里的名称列同样单行省略 */
+    .stats-table td.stats-name {
+      max-width: 14rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    /* 日期/时间列不折行：`11-18 00:37` 拆两行很难对齐 */
+    .stats-table td.stats-num {
+      white-space: nowrap;
     }
 </style>
