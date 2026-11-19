@@ -443,6 +443,19 @@ function buildCard({ url, hostname, linkText }, meta) {
 	);
 }
 
+/**
+ * 环境变量开关：`LINK_CARD=0`（或 `false` / `off`）时直接关掉抓取。
+ *
+ * 给 CI 用：某些构建机出网受限，几十个外链只会一路超时到 5s×2，
+ * 白白拖长构建时间、抬高内存占用。关掉后卡片退化成普通链接，站点照样能构建。
+ * 放在插件里读而不是 config.ts，是因为 config.ts 会被客户端组件 import。
+ */
+function disableByEnv() {
+	const raw = process.env.LINK_CARD;
+	if (raw === undefined) return false;
+	return ["0", "false", "off", "no"].includes(raw.trim().toLowerCase());
+}
+
 export default function rehypeLinkCard(options = {}) {
 	const {
 		enable = true,
@@ -454,8 +467,10 @@ export default function rehypeLinkCard(options = {}) {
 		log = console.warn,
 	} = options;
 
+	const effectiveEnable = enable && !disableByEnv();
+
 	return async (tree) => {
-		if (!enable) return;
+		if (!effectiveEnable) return;
 
 		const targets = [];
 		visit(tree, "element", (node, index, parent) => {

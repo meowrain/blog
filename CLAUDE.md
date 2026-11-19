@@ -204,7 +204,9 @@ meta degrades to a compact card showing the domain + URL; **a failed fetch never
 fails the build**, it only prints `warn: [link-card] ...`.
 
 Global switch: `linkCardConfig.enable` in `src/config.ts` (set `false` to leave
-every link alone).
+every link alone). For CI builds with restricted egress, set `LINK_CARD=0` in the
+environment to skip all fetching without touching the config (read inside the
+plugin, because `config.ts` is also imported by client components).
 
 ## Deployment
 

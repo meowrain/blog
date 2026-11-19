@@ -342,6 +342,10 @@ pnpm build
 
 将 `dist/` 部署到静态托管平台即可。`edgeone.json` 包含 EdgeOne 使用的重定向规则；`astro.config.mjs` 中也维护了开发构建时的重定向配置。
 
+`pnpm build` 开头会跑 [scripts/build-env.js](scripts/build-env.js) 打一行构建机规格（Node 版本 / 核数 / 内存），结尾跑 [scripts/assert-dist.js](scripts/assert-dist.js) 核对产物：`dist` 不存在、缺 `index.html` / `404.html` / `rss.xml` / `sitemap-index.xml` / `_astro/`、或 HTML 页面数异常偏少时直接以非零码退出。这是为了防止「astro 中途被杀但退出码仍是 0」被平台当成构建成功——那样的结果是拿着不存在的 `dist` 去打包，最后只报一句 `ENOENT: lstat '.../dist'`（2026-11-19 的 EdgeOne 构建就是这么挂的）。
+
+构建机出网受限时，可以用 `LINK_CARD=0 pnpm build` 跳过链接卡片的外链抓取，避免几十个 URL 各自超时 5s×2。
+
 ### 持续集成
 
 CNB 仓库（<https://cnb.cool/meowyyds/blog>）的 `main` 分支推送后会由 [.cnb.yml](.cnb.yml) 自动构建并部署：
