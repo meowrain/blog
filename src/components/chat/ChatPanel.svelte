@@ -14,7 +14,9 @@ import MarkdownIt from "markdown-it";
 import { tick } from "svelte";
 import ChatHistory from "./ChatHistory.svelte";
 import ChatPostCards from "./ChatPostCards.svelte";
+import RadioCard from "./RadioCard.svelte";
 import { toolCategories, toolPostHits } from "./post-hits";
+import { toolRadioCard } from "./radio-card";
 
 /**
  * /chat/ 聊天页的主体 —— 一个通用 AI 助手：什么都聊，需要时自己联网查、自己翻站内文章。
@@ -73,11 +75,15 @@ const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const TOOL_LABELS: Record<string, string> = {
 	web_search: "联网搜索",
 	search: "站内找文章",
+	radio_tracks: "找歌",
+	radio_play: "生成电台",
 };
 
 const TOOL_RUNNING_TEXT: Record<string, string> = {
 	web_search: "正在联网搜索…",
 	search: "正在翻站内文章…",
+	radio_tracks: "正在网易云找歌…",
+	radio_play: "正在整理播放卡…",
 };
 
 const SUGGESTIONS = [
@@ -871,9 +877,10 @@ $effect(() => {
 				<div class="space-y-2">
 					{#each m.parts as part, pi}
 						{#if part.kind === "tool"}
-							{@const hits = toolPostHits(part.content)}
-							{@const categories = hits.length ? [] : toolCategories(part.content)}
-							{@const links = hits.length || categories.length ? [] : toolLinks(part)}
+							{@const radio = toolRadioCard(part.content)}
+							{@const hits = radio ? [] : toolPostHits(part.content)}
+							{@const categories = hits.length || radio ? [] : toolCategories(part.content)}
+							{@const links = hits.length || categories.length || radio ? [] : toolLinks(part)}
 							<div class="rounded-lg border border-black/10 bg-black/[0.03] px-2.5 py-2 text-[0.7rem] dark:border-white/10 dark:bg-white/[0.06]">
 								<div class="flex items-center gap-1.5">
 									{#if part.status === "running"}
@@ -891,7 +898,11 @@ $effect(() => {
 								<div class="mt-1 {part.status === 'error' ? 'text-red-500' : 'text-black/50 dark:text-white/50'}">
 									{part.status === "running" ? TOOL_RUNNING_TEXT[part.name] ?? "正在调用…" : part.summary || ""}
 								</div>
-								{#if hits.length}
+								{#if radio}
+									<div class="mt-1.5">
+										<RadioCard card={radio} />
+									</div>
+								{:else if hits.length}
 									<div class="mt-1.5">
 										<ChatPostCards posts={hits} />
 									</div>

@@ -2,6 +2,7 @@ import type { ToolDef, ToolResult } from '../_agent-loop';
 import type { PostRecord } from '../find/_corpus';
 import { SEARCH_TOOL } from '../find/_tools';
 import { wsaSearch, type WsaIndustry } from '../_wsa';
+import { RADIO_TOOLS, type RadioCtx } from './_radio';
 
 /**
  * `/assistant` 的工具注册表 —— 聊天页的两只手：联网搜（腾讯云元宝搜索）、翻站内文章。
@@ -29,15 +30,13 @@ const FRESHNESS: Record<string, string> = {
 	year: 'y1',
 };
 
-export interface ChatCtx {
+export interface ChatCtx extends RadioCtx {
 	/** 腾讯云 API 密钥；两者都非空才启用联网，否则工具如实告诉模型「联网不可用」 */
 	wsaSecretId: string;
 	wsaSecretKey: string;
-	origin: string;
 	loadPosts: () => Promise<PostRecord[]>;
 	/** 本次请求里已经给过的文章（复用 search 的去重） */
 	seen: Set<string>;
-	signal?: AbortSignal;
 }
 
 const NO_KEY = JSON.stringify({
@@ -153,4 +152,7 @@ export const TOOLS: ToolDef[] = [
 	// 站内检索与 /find 用的是同一份定义（含 categories / recent 两个模式）。
 	// 访客问「你写过关于 XX 的吗」这类站内问题时用它 —— 站内的事不要用 web_search 去搜。
 	SEARCH_TOOL,
+	// 电台：radio_tracks 找歌（结果已探过可播放性），radio_play 出播放卡。
+	// 真正的播出在前端（MusicPlayerHost 的 <audio>），工具只负责挑和写串词。
+	...RADIO_TOOLS,
 ];

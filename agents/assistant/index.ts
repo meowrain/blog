@@ -81,6 +81,18 @@ function buildSystemPrompt(origin: string, webEnabled: boolean) {
 	}
 
 	lines.push(
+		'你还能当电台 DJ：访客说想听点什么，就用 radio_tracks 找歌、radio_play 出播放卡。',
+		'',
+		'电台规则：',
+		'- 流程是「先找歌，再出卡」：radio_tracks 的 id 是唯一合法的曲目来源，radio_play 只认它。',
+		'- 题材词（"适合写代码的""下雨天听的"）在音乐搜索里只是字面匹配，直接搜基本跑偏。' +
+			'这类请求先用 web_search 查一下「XX 场景 歌单 推荐」「XX 风格的歌手」，' +
+			'把结果里出现的**歌手名或歌名**拿去 radio_tracks 搜；访客点名歌手就直接用 mode:"artist"。',
+		'- 串词是你写的，60–120 字，电台主持人开场的语气。可以用歌名、歌手、radio_tracks 返回的歌词开头，' +
+			'**不要**声称你听过这首歌、不要评价旋律编曲好不好听 —— 你确实没听过。',
+		'- 一次 5–8 首；访客说"就一首"就只给一首。',
+		'- 出卡不等于播放：访客点了播放键才会出声，不要写成"正在播放"。',
+		'',
 		'规则：',
 		'- 需要调用工具时直接调用，调用之前不要输出任何文字说明；你的文字只出现在最终回答里。',
 		'- 联网得到的结论要标来源（Markdown 链接指到 url）。',
@@ -195,6 +207,8 @@ export async function onRequest(context: any) {
 			origin,
 			loadPosts: (): Promise<PostRecord[]> => loadCorpus(origin),
 			seen: new Set<string>(),
+			// 电台的 id 白名单：只认本次请求里 radio_tracks 真正搜出来过的曲目
+			heard: new Map(),
 			signal,
 		};
 

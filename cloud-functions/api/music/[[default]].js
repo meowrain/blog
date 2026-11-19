@@ -19,12 +19,17 @@
 
 import {
 	API_PREFIX,
+	fetchArtistTop,
+	fetchCovers,
 	fetchLyric,
 	fetchPlayability,
 	fetchPlaylist,
 	fetchSongUrl,
 	isAllowedBr,
+	lyricSnippet,
 	MAX_PLAYLIST_TRACKS,
+	searchArtists,
+	searchSongs,
 } from "../../_netease.js";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
@@ -80,6 +85,10 @@ export async function onRequest(context) {
 			return songResponse(url, cookie);
 		case "lyric":
 			return lyricResponse(url, cookie);
+		case "search":
+			return searchResponse(url, cookie);
+		case "artist":
+			return artistResponse(url, cookie);
 		default:
 			return fail("未知的接口动作", 404);
 	}
@@ -143,6 +152,151 @@ async function songResponse(url, cookie) {
 	} catch (error) {
 		console.error("[music] song failed:", id, error?.message ?? error);
 		return fail("歌曲地址获取失败", 502);
+	}
+}
+
+/** 搜索关键词的长度上限——再长的不是搜索，是往上游灌垃圾 */
+const MAX_QUERY_CHARS = 60;
+/** 一次搜索最多回几首；再多，模型也挑不过来，上游也白打 */
+const MAX_SEARCH_LIMIT = 12;
+/** 最多给几首抓歌词片段（实测并发 8 首约 2s，取和默认条数同一个上界） */
+const MAX_LYRIC_TRACKS = 8;
+
+/**
+ * `GET /api/music/search?q=<关键词>&limit=8&lyric=1`
+ *
+ * 电台选歌用。返回的每一首都**已经探过可播放性**——搜索结果里同名翻唱、
+ * 无版权的一大堆（实测「下雨天」12 首只有 2 首能放），不过滤的话模型挑了
+ * 五首、访客点下去三首没声音。
+ *
+ * `lyric=1` 时顺带取每首的开头几行歌词，给模型写串词用；模型没听过歌，
+ * 只给歌名它只能写空话。
+ */
+async function searchResponse(url, cookie) {
+	const query = (url.searchParams.get("q") ?? "").trim();
+	if (!query) return fail("缺少搜索关键词 q", 400);
+	if (query.length > MAX_QUERY_CHARS) return fail("搜索关键词过长", 400);
+
+	const requested = Number(url.searchParams.get("limit") ?? 8);
+	const limit = Number.isFinite(requested) && requested > 0 ? Math.min(Math.trunc(requested), MAX_SEARCH_LIMIT) : 8;
+	const wantLyric = url.searchParams.get("lyric") === "1";
+
+	try {
+		// 多取一点再过滤：搜索结果的「能播率」因关键词而异，恰好取 limit 条会剩太少
+		const found = await searchSongs(query, { limit: Math.min(limit * 2, 24), cookie });
+		if (!found.length) return json({ query, count: 0, results: [] }, { cache: "public, max-age=180" });
+
+		const playability = await fetchPlayability(
+			found.map((track) => track.id),
+			{ cookie },
+		);
+		// 探测整体失败时不过滤，宁多勿漏（和歌单那边同一套取舍）
+		const kept = (playability ? found.filter((track) => playability.playable.has(track.id)) : found).slice(
+			0,
+			limit,
+		);
+
+		const covers = await fetchCovers(
+			kept.map((track) => track.id),
+			{ cookie },
+		).catch(() => new Map());
+
+		const lyricTargets = wantLyric ? kept.slice(0, MAX_LYRIC_TRACKS) : [];
+		const lyrics = await Promise.all(
+			lyricTargets.map((track) =>
+				fetchLyric(track.id, { cookie })
+					.then((data) => lyricSnippet(data.lyric))
+					.catch(() => ""),
+			),
+		);
+		const lyricMap = new Map(lyricTargets.map((track, index) => [track.id, lyrics[index] ?? ""]));
+
+		// 只是「同名不同版」时（「下雨天」有七八个翻唱），歌词一模一样，挑不出该放哪个。
+		// 标出来让模型优先选有原唱味道、或者干脆按歌手名和访客的说法对得上的那首。
+		const sameName = new Map();
+		for (const track of kept) sameName.set(track.name, (sameName.get(track.name) ?? 0) + 1);
+
+		return json(
+			{
+				query,
+				count: kept.length,
+				// 上游搜到多少、滤掉多少，让调用方能判断是不是关键词太泛
+				found: found.length,
+				results: kept.map((track) => ({
+					id: track.id,
+					name: track.name,
+					artists: track.artists,
+					album: track.album,
+					duration: track.duration,
+					cover: covers.get(track.id) ?? track.cover,
+					...(playability?.trial.has(track.id) ? { trial: true } : {}),
+					...(lyricMap.get(track.id) ? { lyric: lyricMap.get(track.id) } : {}),
+					...((sameName.get(track.name) ?? 0) > 1 ? { sameName: true } : {}),
+				})),
+			},
+			{ cache: "public, max-age=180" },
+		);
+	} catch (error) {
+		console.error("[music] search failed:", query, error?.message ?? error);
+		return fail("搜索失败，稍后再试", 502);
+	}
+}
+
+/**
+ * `GET /api/music/artist?id=<歌手 id>` 或 `?q=<歌手名>&limit=8`
+ *
+ * 给模型一条「搜不到歌就换人」的路：按歌手取热门 50 首，可播放率实测明显高于
+ * 关键词搜索（花粥前 20 首里 19 首能放）。`q` 形式会先 type=100 找歌手。
+ */
+async function artistResponse(url, cookie) {
+	const id = numericId(url.searchParams.get("id") ?? "");
+	const query = (url.searchParams.get("q") ?? "").trim();
+
+	const requested = Number(url.searchParams.get("limit") ?? 10);
+	const limit = Number.isFinite(requested) && requested > 0 ? Math.min(Math.trunc(requested), MAX_SEARCH_LIMIT) : 10;
+
+	try {
+		let artistId = id;
+		let artistName = "";
+		let artistPic = "";
+		if (!artistId) {
+			if (!query) return fail("缺少歌手 id 或名字 q", 400);
+			if (query.length > MAX_QUERY_CHARS) return fail("歌手名过长", 400);
+			const [hit] = await searchArtists(query, { limit: 1, cookie });
+			if (!hit) return json({ query, artist: null, count: 0, results: [] }, { cache: "public, max-age=180" });
+			artistId = hit.id;
+			artistName = hit.name;
+			artistPic = hit.pic;
+		}
+
+		const top = await fetchArtistTop(artistId, { cookie });
+		const playability = await fetchPlayability(
+			top.map((track) => track.id),
+			{ cookie },
+		);
+		const kept = (playability ? top.filter((track) => playability.playable.has(track.id)) : top).slice(0, limit);
+
+		return json(
+			{
+				...(query ? { query } : {}),
+				artist: { id: artistId, name: artistName, pic: artistPic },
+				count: kept.length,
+				found: top.length,
+				results: kept.map((track) => ({
+					id: track.id,
+					name: track.name,
+					artists: track.artists,
+					album: track.album,
+					duration: track.duration,
+					cover: track.cover,
+					...(playability?.trial.has(track.id) ? { trial: true } : {}),
+				})),
+			},
+			{ cache: "public, max-age=300" },
+		);
+	} catch (error) {
+		console.error("[music] artist failed:", id || query, error?.message ?? error);
+		return fail("歌手查询失败，稍后再试", 502);
 	}
 }
 

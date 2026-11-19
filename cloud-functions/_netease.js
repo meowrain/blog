@@ -183,7 +183,9 @@ export async function fetchPlayability(ids, { cookie = "" } = {}) {
 	for (let i = 0; i < ids.length; i += URL_BATCH_SIZE) {
 		batches.push(ids.slice(i, i + URL_BATCH_SIZE));
 	}
-	if (batches.length === 0) return new Set();
+	// 空集合也要是同一个形状：调用方一律按 { playable, trial } 读，
+	// 早先这里返回过裸 Set，ids 为空时会让调用方在 .playable 上炸掉
+	if (batches.length === 0) return { playable: new Set(), trial: new Set() };
 
 	const results = await Promise.allSettled(
 		batches.map((batch) =>
@@ -210,6 +212,123 @@ export async function fetchPlayability(ids, { cookie = "" } = {}) {
 		}
 	}
 	return { playable, trial };
+}
+
+/**
+ * 关键词搜歌（`/api/search/get?type=1`）。
+ *
+ * 这个接口只在「实体」上可靠：歌名、歌手名能搜准，题材词（"适合写代码"）基本是
+ * 按字面匹配，会把歌名里带这类字的东西捞出来。语义那一层交给模型（先联网查
+ * 推荐，再回这里精确取歌），不要指望它自己理解意图。
+ *
+ * ⚠️ 搜索结果的 album 有 picId 但没有 picUrl（图床哈希拼不出来），
+ * 封面要靠 fetchCovers 再补一次。
+ */
+export async function searchSongs(query, { limit = 12, offset = 0, cookie = "" } = {}) {
+	const data = await requestJson(
+		"/api/search/get",
+		{ s: query, type: 1, limit, offset },
+		{ cookie },
+	);
+	const songs = data?.result?.songs;
+	if (!Array.isArray(songs)) return [];
+	return songs.map(normalizeTrack).filter((track) => track.id && track.name);
+}
+
+/** 按名字找歌手（`type=100`；注意 `type=1000` 返回的是歌单，不是歌手）。 */
+export async function searchArtists(query, { limit = 5, cookie = "" } = {}) {
+	const data = await requestJson(
+		"/api/search/get",
+		{ s: query, type: 100, limit },
+		{ cookie },
+	);
+	const artists = data?.result?.artists;
+	if (!Array.isArray(artists)) return [];
+	return artists
+		.map((artist) => ({
+			id: String(artist?.id ?? ""),
+			name: text(artist?.name, 60),
+			pic: toHttps(artist?.picUrl ?? ""),
+		}))
+		.filter((artist) => artist.id && artist.name);
+}
+
+/** 歌手的热门歌曲（最多 50 首）。返回体带 al.picUrl，不用再补封面。 */
+export async function fetchArtistTop(id, { cookie = "" } = {}) {
+	const data = await requestJson("/api/artist/top/song", { id }, { cookie });
+	const songs = data?.songs;
+	if (!Array.isArray(songs)) return [];
+	return songs.map(normalizeTrack).filter((track) => track.id && track.name);
+}
+
+/**
+ * 从整段 LRC 里取前几行「真歌词」。
+ *
+ * 搜索结果只有歌名和歌手时，模型写给访客的串词全是空话（「希望你喜欢」），
+ * 给它两三句歌词才写得具体。但开头常是「作词 : xxx」这类制作信息，
+ * 时间轴也要剥掉 —— 这些都不是歌词，念出来很傻。
+ */
+/**
+ * 判断一行是不是制作信息而不是歌词。
+ *
+ * 现场版开头尤其脏：「原唱 : xxx」「音乐总监 : xxx」「乐队队长 : xxx」「键盘 : xxx」
+ * ——只能一个一个列，列不完。所以除了常见职位，再用一条通用规则：
+ * 冒号前是个短中文词（≤8 字）且不含人称代词，基本就是「职位：人名」。
+ * 歌词里出现「我说：」「他说：」是有的，所以人称那一类要放过去。
+ */
+// 「编曲/混音：某某」这种斜杠连写的也算——只匹配单个职位会漏掉它
+const LYRIC_CREDIT_WORD_RE = /^(作词|作曲|编曲|混音|母带|制作人?|出品|监制|录音|吉他|贝斯|鼓|和声|统筹|发行|策划|原唱|OP|SP)$/i;
+const LYRIC_CREDIT_RE = /^[^:：]{1,40}[:：]/;
+
+function isCreditPrefix(text) {
+	const match = LYRIC_CREDIT_RE.exec(text);
+	if (!match) return false;
+	const prefix = match[0].slice(0, -1).trim();
+	// 「编曲/混音」「作词 : 作曲」这类都拆开逐个判；只要有一个不是职位，就当歌词放过去
+	return prefix
+		.split(/[\s/、&+,，]+/)
+		.filter(Boolean)
+		.some((word) => LYRIC_CREDIT_WORD_RE.test(word));
+}
+const LYRIC_CREDIT_GENERIC_RE = /^[一-龥A-Za-z][一-龥A-Za-z ]{1,7}\s*[:：]/;
+const LYRIC_PRONOUN_RE = /[我你他她它咱]/;
+
+function isCreditLine(text) {
+	if (isCreditPrefix(text)) return true;
+	// 通用兜底：短中文词 + 冒号，且不含人称代词 —— 但歌词里「我说：别走」这种要放过去
+	const match = LYRIC_CREDIT_GENERIC_RE.exec(text);
+	if (!match) return false;
+	return !LYRIC_PRONOUN_RE.test(match[0]);
+}
+
+export function lyricSnippet(lyric, maxLines = 3, maxChars = 80) {
+	if (typeof lyric !== "string") return "";
+	const lines = [];
+	for (const raw of lyric.split(/\r?\n/)) {
+		const text = raw.replace(/^\[[^\]]*\]/g, "").trim();
+		if (!text || isCreditLine(text)) continue;
+		// 同一句在 LRC 里会按逐字时间轴重复出现多遍，去重后才凑得齐几行像样的歌词
+		if (lines.includes(text)) continue;
+		lines.push(text);
+		if (lines.length >= maxLines) break;
+	}
+	return lines.join(' / ').slice(0, maxChars);
+}
+
+/** 搜索结果的专辑封面补齐（`/api/v3/song/detail` 一次最多 200 个 id）。 */
+export async function fetchCovers(ids, { cookie = "" } = {}) {
+	const map = new Map();
+	if (!ids.length) return map;
+	const data = await requestJson(
+		"/api/v3/song/detail",
+		{ c: JSON.stringify(ids.slice(0, URL_BATCH_SIZE).map((id) => ({ id: Number(id) }))) },
+		{ cookie },
+	);
+	for (const song of data?.songs ?? []) {
+		const cover = toHttps(song?.al?.picUrl ?? "");
+		if (cover) map.set(String(song.id), cover);
+	}
+	return map;
 }
 
 export async function fetchSongUrl(id, { cookie = "", br = 320000 } = {}) {

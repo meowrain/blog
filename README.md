@@ -233,13 +233,24 @@ pnpm gallery:index --dir ../img-bed/public/api/i
 - 线上：`cloud-functions/api/music/[[default]].js`（EdgeOne Makers 云函数，部署时按文件路径自动生成 `^/api/music/(.*)$` 路由）
 - 本地：`src/plugins/dev-music-api.mjs` 在 `astro dev` 里复用同一个 `onRequest`，两边行为一致
 
-代理有三个动作：`/api/music/playlist?id=`、`/api/music/song?id=` 和 `/api/music/lyric?id=`。播放地址带时效（约 20 分钟），因此只在前端真要播放时才去取。歌单接口会顺手探一遍可播性，把无版权的歌滤掉；歌单详情一次只给 1000 首，更大的歌单会再按 `trackIds` 补齐（上限 2000 首）。
+代理有五个动作：`/api/music/playlist?id=`、`/api/music/song?id=`、`/api/music/lyric?id=`、`/api/music/search?q=` 和 `/api/music/artist?id=|q=`。播放地址带时效（约 20 分钟），因此只在前端真要播放时才去取。歌单接口会顺手探一遍可播性，把无版权的歌滤掉；歌单详情一次只给 1000 首，更大的歌单会再按 `trackIds` 补齐（上限 2000 首）。
+
+`search` / `artist` 是给聊天页电台用的，返回的每一首都**已经探过可播放性**（搜索结果里同名翻唱、无版权的一大堆）。`search&lyric=1` 会顺带取每首开头的两三句歌词，给模型写串词用。
 
 在 `src/config.ts` 的 `musicConfig.playlists` 里填歌单 ID 就能用，ID 就是歌单分享链接里 `id=` 后面那串数字；每一项还可以用 `name` 覆盖歌单显示名。默认放的是本人的「我喜欢的音乐」（`158197454`）。
 
 会员歌和私密歌单需要登录 Cookie，配到部署环境的 `NETEASE_COOKIE`（控制台环境变量）；本地调试用 `NETEASE_COOKIE="MUSIC_U=..." pnpm dev`。这个变量只从服务端读，不接受请求方传入，否则代理就成了任何人拿你的账号听歌的入口。
 
 没配 Cookie 时，会员曲目只能拿到 30 秒试听片段：这些歌在页面上会标「试听」，曲目列表底部也会说明有多少首是这种情况。
+
+### AI 电台
+
+聊天页（`/chat/`）里说「放点适合深夜写代码的」，助手会挑歌、给每首写一句串词，回一张播放卡；点「开始收听」后先念串词再放歌，放完自动接下一首。
+
+- 工具在 `agents/assistant/_radio.ts`：`radio_tracks` 找歌（走 `/api/music/search` 与 `/artist`，结果已滤掉不能播的），`radio_play` 出卡。id 只认本次真的搜出来过的曲目，模型自己拼的一律丢掉。
+- 播放卡是 `src/components/chat/RadioCard.svelte`，播放本身交给常驻的 `MusicPlayerHost`；`player.svelte.ts` 里的 `playRadio` / `stopRadio` 管队列，队列开着时 `tracks()` 优先读它，`advance()` 不改就跟着走。
+- 串词用浏览器自带的 `speechSynthesis`（`src/utils/speech.ts`），零配置；要换音质只改 `speak()` 的实现。
+- 实测边界：搜索接口只在歌手名/歌名上准，题材词是字面匹配。所以系统提示要求模型先用 `web_search` 查到具体歌手，再回来搜歌。
 
 ## 数据分享卡
 

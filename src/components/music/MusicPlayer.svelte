@@ -18,6 +18,7 @@ import {
 	progressValue,
 	seekTo,
 	setVolume,
+	stopRadio,
 	switchPlaylist,
 	toggleLyrics,
 	toggleMute,
@@ -47,7 +48,10 @@ let lines = $derived(lyrics());
 function publishCard(library: LoadedPlaylist[], activeId: string): void {
 	const first = library.find((item) => item.ref.id === activeId) ?? library[0];
 	if (!first) return;
-	const totalTracks = library.reduce((sum, item) => sum + item.tracks.length, 0);
+	const totalTracks = library.reduce(
+		(sum, item) => sum + item.tracks.length,
+		0,
+	);
 	const totalMs = library.reduce(
 		(sum, item) =>
 			sum + item.tracks.reduce((acc, track) => acc + (track.duration || 0), 0),
@@ -172,9 +176,12 @@ $effect(() => {
 					<div class="flex min-w-0 flex-col justify-between gap-4">
 						<header class="min-w-0">
 							<p class="truncate text-xs text-50">
-								{active?.meta.name ?? "歌单"}
-								{#if active?.meta.creator}
+								{player.queue?.title ?? active?.meta.name ?? "歌单"}
+								{#if !player.queue && active?.meta.creator}
 									<span class="with-divider">{active.meta.creator}</span>
+								{/if}
+								{#if player.queue}
+									<span class="with-divider">来自聊天里的电台</span>
 								{/if}
 								<span class="with-divider">{list.length} 首可播放</span>
 							</p>
@@ -319,14 +326,24 @@ $effect(() => {
 				<Icon icon="material-symbols:queue-music-rounded" class="text-[1.25rem] text-[var(--primary)]" />
 				<h2 class="text-base font-bold text-90">曲目</h2>
 				<span class="text-xs text-50">{list.length} 首</span>
-				<a
-					class="link ml-auto text-xs font-bold text-[var(--btn-content)]"
-					href={`https://music.163.com/#/playlist?id=${active?.meta.id ?? ""}`}
-					target="_blank"
-					rel="noopener noreferrer"
-				>
-					去网易云看这个歌单
-				</a>
+				{#if player.queue}
+					<button
+						type="button"
+						class="link ml-auto text-xs font-bold text-[var(--btn-content)]"
+						onclick={() => stopRadio()}
+					>
+						退出电台，回到歌单
+					</button>
+				{:else}
+					<a
+						class="link ml-auto text-xs font-bold text-[var(--btn-content)]"
+						href={`https://music.163.com/#/playlist?id=${active?.meta.id ?? ""}`}
+						target="_blank"
+						rel="noopener noreferrer"
+					>
+						去网易云看这个歌单
+					</a>
+				{/if}
 			</header>
 
 			{#if list.length === 0}
