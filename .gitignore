@@ -30,6 +30,10 @@ yarn.lock
 # Claude Code local settings (may contain API keys)
 .claude/settings.local.json
 
+# 其他 AI 工具的本地配置 / 个人偏好（不进仓库）
+.qoder/
+.commandcode/
+
 # 忽略上游仓库
 ori
 
