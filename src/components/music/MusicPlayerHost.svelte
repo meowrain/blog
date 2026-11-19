@@ -3,6 +3,7 @@ import Icon from "@iconify/svelte";
 import { onDestroy, onMount } from "svelte";
 import { registerShortcut } from "../../scripts/shortcuts";
 import {
+	type SpeechConfig,
 	advance,
 	attachAudio,
 	configure,
@@ -23,9 +24,14 @@ import {
 let {
 	apiBase,
 	playlists,
-}: { apiBase: string; playlists: { id: string; name?: string }[] } = $props();
+	tts,
+}: {
+	apiBase: string;
+	playlists: { id: string; name?: string }[];
+	tts?: SpeechConfig;
+} = $props();
 
-configure(apiBase, playlists);
+configure(apiBase, playlists, tts ?? {});
 
 let audioEl: HTMLAudioElement | undefined = $state();
 let onMusicPage = $state(false);
@@ -137,7 +143,11 @@ onMount(() => {
 		priority: 10,
 		handler: (event) => {
 			if (ignoreInteractive(event)) return false;
-			seekTo(event.key === "ArrowRight" ? Math.min(total || 0, progress + 5) : Math.max(0, progress - 5));
+			seekTo(
+				event.key === "ArrowRight"
+					? Math.min(total || 0, progress + 5)
+					: Math.max(0, progress - 5),
+			);
 		},
 	});
 

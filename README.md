@@ -273,7 +273,7 @@ QQ 整页要会员（一首拿不到）：周杰伦、许嵩、陈奕迅、林�
 
 - 工具在 `agents/assistant/_radio.ts`：`radio_tracks` 找歌（走 `/api/music/search?source=all` 与 `/artist`，网易云和 QQ 各问一遍再合并，结果已滤掉不能播的），`radio_play` 出卡。id 只认本次真的搜出来过的曲目，模型自己拼的一律丢掉。
 - 播放卡是 `src/components/chat/RadioCard.svelte`，播放本身交给常驻的 `MusicPlayerHost`；`player.svelte.ts` 里的 `playRadio` / `stopRadio` 管队列，队列开着时 `tracks()` 优先读它，`advance()` 不改就跟着走。队列里的曲目可能来自两个曲库，`Track.source` 一路带到取播放地址和歌词为止。
-- 串词用浏览器自带的 `speechSynthesis`（`src/utils/speech.ts`），零配置；要换音质只改 `speak()` 的实现。
+- 串词默认走云函数 `/api/tts/say` 合成的神经语音（Edge 朗读同款，默认晓晓女声，见 `cloud-functions/_edge-tts.js`），音色 / 语速在 `src/config.ts` 的 `musicConfig.tts` 里调，可选音色见该文件顶部的 `ALLOWED_VOICES`。云函数不可用（没部署、上游超时、限流）时自动回落浏览器自带的 `speechSynthesis`，串词照念，只是音色回到系统合成器。本地 `pnpm dev` 由 `src/plugins/dev-tts-api.mjs` 顶替云函数。
 - 实测边界：搜索接口只在歌手名/歌名上准，题材词是字面匹配。所以系统提示要求模型先用 `web_search` 查到具体歌手，再回来搜歌。
 
 ## 数据分享卡
@@ -357,7 +357,7 @@ API_TOKEN=your-token
 │   ├── src/categories/     # 分类模块
 │   ├── src/tags/           # 标签模块
 │   └── src/common/         # 文件、索引、日志等公共模块
-├── cloud-functions/        # EdgeOne Makers 云函数（图片 OG、历史、音乐代理）
+├── cloud-functions/        # EdgeOne Makers 云函数（图片 OG、历史、音乐代理、串词语音）
 │   ├── api/og/            # /api/og/* 文章与数据分享卡（satori + resvg）
 │   └── api/music/          # /api/music/* 网易云 / QQ 音乐代理
 ├── scripts/                # 文章、相册和图片清理脚本

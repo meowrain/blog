@@ -64,6 +64,7 @@ const isHomePage = pathsEqual(Astro.url.pathname, url("/"));
 
 // 音乐播放器的接口地址：线上走 EdgeOne 云函数，本地 dev 由 dev-music-api 中间件接住
 const musicApiBase = import.meta.env.PUBLIC_MUSIC_API_BASE || "/api/music";
+const ttsApiBase = import.meta.env.PUBLIC_TTS_API_BASE || "/api/tts";
 
 // defines global css variables
 // why doing this in Layout instead of GlobalStyles: https://github.com/withastro/astro/issues/6728#issuecomment-1502203757
@@ -597,6 +598,7 @@ const bannerOffset =
       client:only="svelte"
       apiBase={musicApiBase}
       playlists={musicConfig.playlists}
+      tts={musicConfig.tts ? { ...musicConfig.tts, apiBase: ttsApiBase } : undefined}
     />
     <!-- 移动端目录：同样必须在 Swup 容器外，切页后由组件自己重建目录 -->
     <MobileTOC />

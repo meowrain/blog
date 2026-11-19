@@ -290,4 +290,12 @@ export const musicConfig: MusicConfig = {
   playlists: [
     { id: "158197454", name: "我喜欢的音乐" },
   ],
+  // 电台串词的语音。默认交给云函数 /api/tts 合成（Edge 朗读的晓晓），
+  // 比浏览器自带合成器稳定得多；云端不可用时自动回落浏览器语音。
+  // 可选音色见 cloud-functions/_edge-tts.js 的 ALLOWED_VOICES。
+  tts: {
+    voice: "zh-CN-XiaoxiaoNeural",
+    rate: "-4%",
+    pitch: "-2Hz",
+  },
 };

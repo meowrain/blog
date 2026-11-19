@@ -8,7 +8,12 @@
  * 所以从 /music/ 切到任何文章页，音乐都不会停。
  */
 
-import { cancelSpeech, speak } from "../../utils/speech";
+import {
+	cancelSpeech,
+	configureSpeech,
+	speak,
+	unlockSpeech,
+} from "../../utils/speech";
 import type { LyricLine } from "./lrc";
 import { parseLrc } from "./lrc";
 
@@ -154,9 +159,37 @@ let loadStarted = false;
 let configReady = false;
 let pendingEnsure = false;
 
-export function configure(apiBase: string, playlists: PlaylistRef[]): void {
+/** 电台串词的音色 / 语速，来自 musicConfig.tts；缺省由 speech.ts 自己兜底 */
+export type SpeechConfig = {
+	/** 音色，须是 cloud-functions/_edge-tts.js 白名单里的一个 */
+	voice?: string;
+	/** 语速，形如 "-4%" */
+	rate?: string;
+	/** 音调，形如 "-2Hz" */
+	pitch?: string;
+	/** 语音合成接口基址，默认同源 /api/tts（后端拼上 /say） */
+	apiBase?: string;
+	/** false = 跳过云端语音，直接用浏览器自带合成 */
+	enable?: boolean;
+};
+
+export function configure(
+	apiBase: string,
+	playlists: PlaylistRef[],
+	speech: SpeechConfig = {},
+): void {
 	player.apiBase = apiBase;
 	player.playlists = playlists;
+	configureSpeech({
+		voice: speech.voice,
+		rate: speech.rate,
+		pitch: speech.pitch,
+		endpoint:
+			typeof speech.apiBase === "string" && speech.apiBase.trim()
+				? `${speech.apiBase.replace(/\/+$/, "")}/say`
+				: undefined,
+		useCloud: speech.enable,
+	});
 	configReady = true;
 	if (pendingEnsure) {
 		pendingEnsure = false;
@@ -327,8 +360,13 @@ export async function prepareTrack(
 	const intro = autoplay && player.queue ? radioIntroFor(index) : "";
 	// 队列循环回第一首时不再念一遍：同一段话听第二次很烦
 	const shouldSpeak = Boolean(intro) && !spokenIntros.has(track.id);
+	// 云端语音要等 1–2 秒合成，等到 mp3 回来时手势早没了，<audio> 会被拦。
+	// 所以在点击那一轮先把语音元素解锁好（同一个元素换 src 再播不触发拦截）。
+	// 只在 autoplay 这一轮做：队列自动接下一首时没有新的用户手势，云语音会被
+	// 浏览器拦下，正好回落到浏览器合成（它按同一手势的授权还能出声）。
 	let introDone: Promise<void> = Promise.resolve();
 	if (shouldSpeak) {
+		if (autoplay) unlockSpeech();
 		spokenIntros.add(track.id);
 		// 切歌时前面的 prepareTrack 可能还在等地址，先把旧串词掐掉再念新的
 		cancelSpeech();

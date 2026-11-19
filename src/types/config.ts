@@ -120,6 +120,22 @@ export type MusicConfig = {
 		/** 可选：覆盖显示名；留空就用网易云返回的歌单名 */
 		name?: string;
 	}[];
+	/**
+	 * 电台串词的语音。默认走站内云函数 /api/tts（Edge 朗读的神经语音，
+	 * 默认晓晓），音色由这里指定；合成失败时自动回落浏览器自带语音。
+	 */
+	tts?: {
+		/** false = 完全不请求云函数，直接用浏览器语音 */
+		enable?: boolean;
+		/** 音色，只接受 cloud-functions/_edge-tts.js 的白名单 */
+		voice?: string;
+		/** 语速，形如 "-4%" */
+		rate?: string;
+		/** 音调，形如 "-2Hz" */
+		pitch?: string;
+		/** 接口基址，默认 /api/tts（后面会自动拼 /say） */
+		apiBase?: string;
+	};
 };
 
 export type ImageFallbackConfig = {
