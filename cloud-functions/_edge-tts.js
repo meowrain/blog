@@ -186,9 +186,14 @@ export function buildSsml({ text, voice, rate, pitch }) {
 /**
  * 解析一条二进制帧。
  *
- * 帧格式：2 字节大端「头长度」+ 头（`\r\n` 分隔的 key:value）+ `\r\n\r\n` + 负载。
+ * 帧格式：2 字节大端「头长度」+ 头 + 音频。
+ *
+ * 坑在头：长度字段已经包含了结尾那个 `\r\n`，音频紧跟其后开始，
+ * 中间**没有**额外的空行分隔。早先按「头 + \r\n\r\n + 负载」理解、多跳 2 字节，
+ * 结果每帧都把 mp3 的帧同步字 `ff f3` 吃掉，整段音频全废（68 帧全错位，
+ * 播放器报 Header missing）。正确偏移就是 `2 + headerLength`。
+ *
  * 只有 `Path:audio` 的帧带 mp3 数据，其余（turn.start / 元数据等）一律忽略。
- * 头里没有 `Path` 的直接当坏帧丢掉。
  */
 export function parseFrame(buffer) {
 	if (!buffer || buffer.length < 2) return null;
@@ -196,8 +201,7 @@ export function parseFrame(buffer) {
 	if (headerLength <= 0 || 2 + headerLength > buffer.length) return null;
 	const header = buffer.subarray(2, 2 + headerLength).toString("latin1");
 	const path = /Path:([^\r\n]+)/.exec(header)?.[1] ?? "";
-	// 头之后固定是 \r\n\r\n；截图/抓包也验证过，不用再猜偏移
-	const audioStart = 2 + headerLength + 2;
+	const audioStart = 2 + headerLength;
 	const audio =
 		path === "audio" && audioStart <= buffer.length
 			? buffer.subarray(audioStart)
