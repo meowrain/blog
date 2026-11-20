@@ -20,12 +20,33 @@ export const MAX_CONVERSATIONS = 30;
 /** 标题最长多少个「字」（按码点算，emoji 不会被切一半） */
 const TITLE_MAX_CHARS = 24;
 
+/**
+ * 回放出来的一个片段。
+ *
+ * `tool` 片段是后加的：工具结果（播放卡、文章卡）原本只发给浏览器、不入库，
+ * 刷新一次卡片就没了。现在 assistant 消息的 metadata.parts 里带着它们，
+ * 有就用它重建，没有就退回「整段正文当一条 text」的老行为。
+ */
+export type RestoredPart =
+	| { kind: "text"; content: string }
+	| {
+			kind: "tool";
+			id: string;
+			name: string;
+			args: string;
+			status: "done" | "error";
+			summary: string;
+			content: string;
+	  };
+
 /** 回放出来的一轮消息 */
 export interface RestoredTurn {
 	role: "user" | "assistant";
 	content: string;
 	/** 图片直链；老数据没有元信息时靠正文里的 Markdown 图片语法回捞 */
 	images: string[];
+	/** 只有 assistant 的轮次可能有；为空表示老数据，按 content 单条渲染 */
+	parts: RestoredPart[];
 }
 
 function clampTitle(text: string): string {
@@ -132,6 +153,43 @@ function metaImages(meta: unknown): string[] {
 }
 
 /**
+ * 读 assistant 消息 metadata.parts（见 agents/assistant/index.ts 的落库逻辑）。
+ * 任何一条不合法就整段丢弃 —— 拼一半的片段列表比没有更容易画出错位的界面，
+ * 这种情况下宁可退回「整段正文一条 text」。
+ */
+function metaParts(meta: unknown): RestoredPart[] {
+	if (!meta || typeof meta !== "object") return [];
+	const raw = (meta as { parts?: unknown }).parts;
+	if (!Array.isArray(raw) || !raw.length) return [];
+
+	const parts: RestoredPart[] = [];
+	for (const item of raw) {
+		if (!item || typeof item !== "object") return [];
+		const p = item as Record<string, unknown>;
+		if (p.kind === "text") {
+			if (typeof p.content !== "string") return [];
+			if (!p.content.trim()) continue;
+			parts.push({ kind: "text", content: p.content });
+			continue;
+		}
+		if (p.kind !== "tool") return [];
+		const id = typeof p.id === "string" ? p.id.trim() : "";
+		const name = typeof p.name === "string" ? p.name.trim() : "";
+		if (!id || !name) return [];
+		parts.push({
+			kind: "tool",
+			id,
+			name,
+			args: typeof p.args === "string" ? p.args : "",
+			status: p.ok === false ? "error" : "done",
+			summary: typeof p.summary === "string" ? p.summary : "",
+			content: typeof p.content === "string" ? p.content : "",
+		});
+	}
+	return parts.length ? parts : [];
+}
+
+/**
  * 把 /history 返回的原始消息还原成可渲染的轮次。
  * 容错优先：字段缺了就跳过，metadata.images 优先，缺失时用正则从正文回捞。
  * 一条都读不出来就返回空数组（上层按「没有历史」处理）。
@@ -143,11 +201,16 @@ export function parseHistoryMessages(raw: unknown, limit = 50): RestoredTurn[] {
 		if (!item || typeof item !== "object") continue;
 		const m = item as { role?: unknown; content?: unknown; metadata?: unknown };
 		if (m.role !== "user" && m.role !== "assistant") continue;
-		if (typeof m.content !== "string" || !m.content.trim()) continue;
+		if (typeof m.content !== "string") continue;
+		// 只有 assistant 轮次有片段；用户消息永远走气泡
+		const parts = m.role === "assistant" ? metaParts(m.metadata) : [];
+		// 模型一个字没说、只出了卡片时 content 是空串 —— 有片段就不能丢，
+		// 否则「只出卡不说话」的那轮对话在历史里整个消失
+		if (!m.content.trim() && !parts.length) continue;
 		const fromMeta = metaImages(m.metadata);
 		const images = fromMeta.length ? fromMeta : extractImageUrls(m.content);
 		const content = images.length ? stripImageMarkdown(m.content) : m.content;
-		turns.push({ role: m.role, content, images });
+		turns.push({ role: m.role, content, images, parts });
 	}
 	const cap = Math.max(1, Math.floor(limit));
 	return turns.length > cap ? turns.slice(turns.length - cap) : turns;

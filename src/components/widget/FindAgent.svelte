@@ -2,6 +2,7 @@
 import Icon from "@iconify/svelte";
 import MarkdownIt from "markdown-it";
 import { tick } from "svelte";
+import { parseHistoryMessages } from "@utils/chat-core";
 import ChatPostCards from "../chat/ChatPostCards.svelte";
 import { toolCategories, toolPostHits } from "../chat/post-hits";
 
@@ -358,21 +359,30 @@ async function restore() {
 		});
 		if (!resp.ok) return;
 		const data = await resp.json();
-		const restored: Msg[] = (Array.isArray(data?.messages) ? data.messages : [])
-			.filter(
-				(m: any) =>
-					(m?.role === "user" || m?.role === "assistant") &&
-					typeof m?.content === "string" &&
-					m.content.trim(),
-			)
-			.map((m: any) =>
-				m.role === "user"
-					? { role: "user" as const, content: m.content }
-					: {
-							role: "assistant" as const,
-							parts: [{ kind: "text" as const, content: m.content }],
-						},
-			);
+		const turns = parseHistoryMessages(data?.messages, 50);
+		const restored: Msg[] = turns.map((t) =>
+			t.role === "user"
+				? { role: "user" as const, content: t.content }
+				: {
+						role: "assistant" as const,
+						// 搜索结果卡片也靠片段还原；老数据没有片段就整段当一条 text
+						parts: t.parts.length
+							? t.parts.map((part) =>
+									part.kind === "text"
+										? { kind: "text" as const, content: part.content }
+										: {
+												kind: "tool" as const,
+												id: part.id,
+												name: part.name,
+												args: part.args,
+												status: part.status,
+												summary: part.summary,
+												content: part.content,
+											},
+								)
+							: [{ kind: "text" as const, content: t.content }],
+					},
+		);
 		if (!restored.length) return;
 		if (msgs.length || streaming) return; // 期间用户已经开口了就不覆盖
 		msgs = restored;

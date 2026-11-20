@@ -1,5 +1,5 @@
 import { estimateTokens } from '../_article';
-import { runToolLoop, type HistoryMessage } from '../_agent-loop';
+import { runToolLoop, type HistoryMessage, type ToolLoopCollector } from '../_agent-loop';
 import { getAgentEnv } from '../_model';
 import { createLogger, createSSEResponse, stripDsml } from '../_shared';
 import { loadCorpus, loadNotes, siteOrigin, type NoteCorpus, type PostRecord } from './_corpus';
@@ -200,7 +200,8 @@ export async function onRequest(context: any) {
 		.catch((e: unknown) => logger.error('appendMessage(user) failed', (e as Error).message));
 
 	const agentEnv = getAgentEnv(rawEnv);
-	const collector = { text: '' };
+	// 搜索结果也是卡片：不记片段的话，刷新一次「找到的几篇文章」就没了
+	const collector: ToolLoopCollector = { text: '', parts: [] };
 	const ctx: FindCtx = {
 		origin,
 		loadPosts: (): Promise<PostRecord[]> => loadCorpus(origin),
@@ -224,9 +225,30 @@ export async function onRequest(context: any) {
 			});
 		} finally {
 			const finalText = stripDsml(collector.text).trim();
-			if (finalText) {
+			// 与 /assistant 一致：文章卡片的原始结果随消息一起落库，刷新后能画回来
+			const parts = (collector.parts ?? [])
+				.map((part) =>
+					part.kind === 'tool'
+						? {
+								kind: 'tool' as const,
+								id: part.id,
+								name: part.name,
+								args: part.args,
+								summary: part.summary,
+								content: part.content,
+								ok: part.ok,
+							}
+						: { kind: 'text' as const, content: stripDsml(part.content) },
+				)
+				.filter((part) => part.kind === 'tool' || part.content.trim());
+			if (finalText || parts.some((part) => part.kind === 'tool')) {
 				await store
-					?.appendMessage?.({ conversationId, role: 'assistant', content: finalText })
+					?.appendMessage?.({
+						conversationId,
+						role: 'assistant',
+						content: finalText,
+						...(parts.length ? { metadata: { parts } } : {}),
+					})
 					.catch((e: unknown) => logger.error('appendMessage(assistant) failed', (e as Error).message));
 			}
 		}

@@ -1,5 +1,11 @@
 import { createDsmlFilter, sseEvent } from './_shared';
 import { chatCompletionsUrl, modelName, type AgentEnv } from './_model';
+import {
+	type Collector,
+	createCollector,
+	pushText,
+	pushTool,
+} from './_collector';
 
 /**
  * 手写的 OpenAI 风格 tool loop —— 刻意不引任何三方包（deepagents / langchain 那套在这台
@@ -69,7 +75,25 @@ const MAX_TOOL_CALLS_PER_TURN = 4;
 const MAX_TOOL_RESULT_CHARS = 4_000;
 /** 整个请求里工具结果累计进上下文的字符上限，超了丢最早的（maxToolContextChars 可覆盖） */
 const MAX_TOOL_CONTEXT_CHARS = 20_000;
+/**
+ * 单条工具结果写进会话历史时保留的字符上限。
+ * 存的是给界面重建卡片用的原始 JSON，砍一刀就会解析失败，所以超限的整条
+ * 只留摘要、丢掉 content（卡片没了，但「调用过什么」还在）。
+ */
+const MAX_PERSISTED_TOOL_CHARS = 8_000;
 const OMITTED_NOTE = '[更早的检索结果已省略]';
+
+/**
+ * 路由用它写会话历史。
+ *
+ * 为什么需要 parts：工具结果是**只发给浏览器**的 SSE 事件，从不进 store；
+ * 而会话历史只存模型的正文。结果就是刷新一次页面，播放卡 / 文章卡片全没了，
+ * 只剩一句「播放卡已经出好了」。parts 记下文字与工具结果的出现顺序，
+ * 路由把它写进 assistant 消息的 metadata，恢复时再拼回 tool part。
+ *
+ * 具体逻辑在 _collector.ts（那里零 import，能被 node --test 直接加载）。
+ */
+export type ToolLoopCollector = Collector;
 
 export interface ToolLoopOptions {
 	env: AgentEnv;
@@ -83,8 +107,8 @@ export interface ToolLoopOptions {
 	maxIterations?: number;
 	/** 整轮工具结果累计进上下文的字符上限，默认 MAX_TOOL_CONTEXT_CHARS */
 	maxToolContextChars?: number;
-	/** 逐字追加所有外发文字，路由用它写会话历史（见 find/index.ts 的 collector） */
-	collector?: { text: string };
+	/** 逐字追加所有外发文字 / 记下工具结果，路由用它写会话历史（见 find/index.ts 的 collector） */
+	collector?: ToolLoopCollector;
 	/** 本轮覆盖模型名（比如图片轮换到视觉模型）；不传就走 env 里的默认模型 */
 	model?: string;
 	/** 首轮模型调用前发给前端的运行态提示 */
@@ -162,15 +186,21 @@ function applyToolBudget(
 }
 
 /**
- * 上游 400 是不是「带了图我不认识」。跟 _multimodal.ts 的 isVisionRejection 同一套判定，
- * 但这里不能再 import（顶层 import 限制），所以内联一份最小实现。
+ * 上游 4xx 是不是「带了图我不认识」。跟 _multimodal.ts 的 isVisionRejection 同一套判定，
+ * 但这里不能再 import（顶层 import 限制），所以内联一份最小实现——改一处必须改两处。
+ *
+ * 比关键词表更宽的两条：400/422 空 body，以及只有 `upstream_error` 这类通用壳子的
+ * 400/422。cpa.acetaffy.mom 拒图时就只回 `[code=upstream_error] The request could not be
+ * completed.`，不认这两条的话降级永远触发不了。有具体原因的 4xx（超长、参数、余额）不认。
  */
+const GENERIC_UPSTREAM_ERROR_RE = /upstream_error|the request could not be completed|internal_server_error|bad gateway/i;
+
 function looksLikeVisionRejection(status: number, detail: string): boolean {
 	if (status !== 400 && status !== 422) return false;
 	const text = detail.toLowerCase();
-	if (!text) return false;
 	if (/image_url|multimodal|multi-modal|vision|image input/.test(text)) return true;
-	return /content/.test(text) && /(image|array|string|invalid|unsupported)/.test(text);
+	if (/content/.test(text) && /(image|array|string|invalid|unsupported)/.test(text)) return true;
+	return !text.trim() || GENERIC_UPSTREAM_ERROR_RE.test(text);
 }
 
 /** 把一条 content array 压回纯文本（降级重试用）：图片换成链接，其余文字照留 */
@@ -201,7 +231,7 @@ export async function* runToolLoop(opts: ToolLoopOptions): AsyncGenerator<string
 	const turnModel = opts.model?.trim() || modelName(env);
 	const maxIterations = Math.max(2, opts.maxIterations ?? 4);
 	const logger = opts.logger ?? { log() {}, error() {} };
-	const collector = opts.collector;
+	const collector = opts.collector ?? createCollector();
 	const toolsByName = new Map(tools.map((t) => [t.name, t]));
 	const messages: Record<string, unknown>[] = [
 		{ role: 'system', content: system },
@@ -287,6 +317,7 @@ export async function* runToolLoop(opts: ToolLoopOptions): AsyncGenerator<string
 					if (piece) {
 						text += piece;
 						if (collector) collector.text += piece;
+						pushText(collector, piece);
 						yield sseEvent({ type: 'ai_response', content: piece });
 					}
 					pushToolCalls(calls, delta);
@@ -300,6 +331,7 @@ export async function* runToolLoop(opts: ToolLoopOptions): AsyncGenerator<string
 			if (tail) {
 				text += tail;
 				if (collector) collector.text += tail;
+				pushText(collector, tail);
 				yield sseEvent({ type: 'ai_response', content: tail });
 			}
 			if (dsml.hits) logger.log('stripped %d DSML marker(s)', dsml.hits);
@@ -358,6 +390,15 @@ export async function* runToolLoop(opts: ToolLoopOptions): AsyncGenerator<string
 			}
 			// 前端看到完整结果；模型只拿到截断后的版本
 			yield sseEvent({ type: 'tool_result', id: call.id, name: call.name, ok, summary, content });
+			// 顺手记一份给会话历史：刷新后要靠它把卡片画回来
+			pushTool(collector, {
+				id: call.id,
+				name: call.name,
+				args: call.args,
+				summary,
+				content: content.length > MAX_PERSISTED_TOOL_CHARS ? '' : content,
+				ok,
+			});
 			messages.push({ role: 'tool', tool_call_id: call.id, content });
 			toolMessages.push({
 				index: messages.length - 1,
@@ -373,6 +414,15 @@ export async function* runToolLoop(opts: ToolLoopOptions): AsyncGenerator<string
 				ok: false,
 				summary: `本轮调用数超上限（${MAX_TOOL_CALLS_PER_TURN}），已跳过`,
 				content: JSON.stringify({ error: 'too many tool calls in one turn' }),
+			});
+			// 跳过的调用也记一条：不然恢复历史时这段文字会「凭空出现」，没有对应的工具片段
+			pushTool(collector, {
+				id: call.id,
+				name: call.name,
+				args: call.args,
+				summary: `本轮调用数超上限（${MAX_TOOL_CALLS_PER_TURN}），已跳过`,
+				content: '',
+				ok: false,
 			});
 			messages.push({
 				role: 'tool',

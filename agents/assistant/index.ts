@@ -1,5 +1,10 @@
 import { estimateTokens } from '../_article';
-import { runToolLoop, type HistoryMessage, type LoopNotice } from '../_agent-loop';
+import {
+	runToolLoop,
+	type HistoryMessage,
+	type LoopNotice,
+	type ToolLoopCollector,
+} from '../_agent-loop';
 import {
 	buildImageNote,
 	buildUserContent,
@@ -197,7 +202,8 @@ export async function onRequest(context: any) {
 	);
 
 	const agentEnv = getAgentEnv(rawEnv);
-	const collector = { text: '' };
+	// parts 记下文字与工具结果的先后顺序，落库后刷新页面才能把播放卡 / 文章卡画回来
+	const collector: ToolLoopCollector = { text: '', parts: [] };
 
 	async function* run(signal?: AbortSignal) {
 		// ctx 在这里建：abort signal 只有这一层拿得到，元宝搜索的请求要跟着它一起被掐掉
@@ -293,9 +299,33 @@ export async function onRequest(context: any) {
 			});
 		} finally {
 			const finalText = stripDsml(collector.text).trim();
-			if (finalText) {
+			// 工具结果跟着一起落库（metadata.parts）：正文只存了模型说的话，
+			// 播放卡 / 文章卡的原始数据不存的话，刷新一次就只剩「卡已经出好了」。
+			// 超出体积上限的 content 已经在 collector 里被清空。
+			const parts = (collector.parts ?? [])
+				.map((part) =>
+					part.kind === 'tool'
+						? {
+								kind: 'tool',
+								id: part.id,
+								name: part.name,
+								args: part.args,
+								summary: part.summary,
+								content: part.content,
+								ok: part.ok,
+							}
+						: { kind: 'text', content: stripDsml(part.content) },
+				)
+				.filter((part) => part.kind === 'tool' || part.content.trim());
+			// 模型一个字都没说、只出了卡片时也要存 —— 否则整轮对话在历史里消失
+			if (finalText || parts.some((part) => part.kind === 'tool')) {
 				await store
-					?.appendMessage?.({ conversationId, role: 'assistant', content: finalText })
+					?.appendMessage?.({
+						conversationId,
+						role: 'assistant',
+						content: finalText,
+						...(parts.length ? { metadata: { parts } } : {}),
+					})
 					.catch((e: unknown) => logger.error('appendMessage(assistant) failed', (e as Error).message));
 			}
 		}

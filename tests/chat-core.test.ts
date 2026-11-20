@@ -188,7 +188,12 @@ describe("parseHistoryMessages", () => {
 
 	it("老数据（纯文本、无图片）原样保留", () => {
 		const turns = parseHistoryMessages([{ role: "user", content: "老消息" }]);
-		assert.deepEqual(turns[0], { role: "user", content: "老消息", images: [] });
+		assert.deepEqual(turns[0], {
+			role: "user",
+			content: "老消息",
+			images: [],
+			parts: [],
+		});
 	});
 
 	it("脏数据被跳过，读不到就返回空", () => {
@@ -215,5 +220,124 @@ describe("parseHistoryMessages", () => {
 			turns.map((t) => t.content),
 			["m7", "m8", "m9"],
 		);
+	});
+
+	it("还原 metadata.parts，刷新后播放卡还能画回来", () => {
+		const card = JSON.stringify({
+			card: { title: "深夜电台", tracks: [{ id: "1", name: "晴天" }] },
+		});
+		const turns = parseHistoryMessages([
+			{
+				role: "assistant",
+				content: "播放卡出好了。",
+				metadata: {
+					parts: [
+						{ kind: "text", content: "播放卡出好了。" },
+						{
+							kind: "tool",
+							id: "call_1",
+							name: "radio_play",
+							args: '{"picks":[]}',
+							summary: "7 首",
+							content: card,
+							ok: true,
+						},
+					],
+				},
+			},
+		]);
+		assert.equal(turns[0].parts.length, 2);
+		assert.deepEqual(turns[0].parts[0], {
+			kind: "text",
+			content: "播放卡出好了。",
+		});
+		const tool = turns[0].parts[1];
+		assert.equal(tool.kind, "tool");
+		if (tool.kind === "tool") {
+			assert.equal(tool.name, "radio_play");
+			assert.equal(tool.status, "done");
+			assert.equal(tool.content, card);
+		}
+	});
+
+	it("工具失败时记成 error，params 缺失也不崩", () => {
+		const turns = parseHistoryMessages([
+			{
+				role: "assistant",
+				content: "没找到。",
+				metadata: {
+					parts: [
+						{
+							kind: "tool",
+							id: "c1",
+							name: "search",
+							ok: false,
+							summary: "调用失败",
+							content: "",
+						},
+					],
+				},
+			},
+		]);
+		const tool = turns[0].parts[0];
+		assert.equal(tool.kind, "tool");
+		if (tool.kind === "tool") {
+			assert.equal(tool.status, "error");
+			assert.equal(tool.args, "");
+		}
+	});
+
+	it("parts 结构不合法时整段丢弃，退回按正文单条渲染", () => {
+		for (const parts of [
+			"nope",
+			[null],
+			[{ kind: "video", content: "x" }],
+			[{ kind: "tool", id: "", name: "x" }],
+			[{ kind: "text", content: 1 }],
+		]) {
+			const turns = parseHistoryMessages([
+				{ role: "assistant", content: "正文", metadata: { parts } },
+			]);
+			assert.deepEqual(turns[0].parts, [], `parts=${JSON.stringify(parts)}`);
+			assert.equal(turns[0].content, "正文");
+		}
+	});
+
+	it("正文为空但带卡片片段时不能丢（只出卡不说话的那轮）", () => {
+		const turns = parseHistoryMessages([
+			{
+				role: "assistant",
+				content: "",
+				metadata: {
+					parts: [
+						{
+							kind: "tool",
+							id: "c1",
+							name: "radio_play",
+							args: "{}",
+							summary: "7 首",
+							content: '{"card":{"title":"电台","tracks":[]}}',
+							ok: true,
+						},
+					],
+				},
+			},
+		]);
+		assert.equal(turns.length, 1);
+		assert.equal(turns[0].parts.length, 1);
+		assert.equal(turns[0].content, "");
+	});
+
+	it("用户消息不读 parts（气泡本来就是纯文本）", () => {
+		const turns = parseHistoryMessages([
+			{
+				role: "user",
+				content: "你好",
+				metadata: {
+					parts: [{ kind: "text", content: "你好" }],
+				},
+			},
+		]);
+		assert.deepEqual(turns[0].parts, []);
 	});
 });

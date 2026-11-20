@@ -694,7 +694,22 @@ async function restore() {
 					}
 				: {
 						role: "assistant" as const,
-						parts: [{ kind: "text" as const, content: t.content }],
+						// 有片段就照着还原（卡片才能回来）；老数据没有片段，整段正文当一条 text
+						parts: t.parts.length
+							? t.parts.map((part) =>
+									part.kind === "text"
+										? { kind: "text" as const, content: part.content }
+										: {
+												kind: "tool" as const,
+												id: part.id,
+												name: part.name,
+												args: part.args,
+												status: part.status,
+												summary: part.summary,
+												content: part.content,
+											},
+								)
+							: [{ kind: "text" as const, content: t.content }],
 					},
 		);
 		if (!restored.length) return;
